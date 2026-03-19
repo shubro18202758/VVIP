@@ -395,6 +395,8 @@ VVIP/
 
 <br/>
 
+<img width="3199" height="1785" alt="Screenshot 2026-03-19 232907" src="https://github.com/user-attachments/assets/b26f7c21-45cf-46b4-a886-8d71dccc3007" />
+
 ## 🚀 Getting Started
 
 ### Prerequisites
@@ -443,7 +445,6 @@ Navigate to `http://localhost:5173` — the VVIP Convoy Command dashboard is rea
 ---
 
 <br/>
-<img width="3199" height="1785" alt="Screenshot 2026-03-19 232907" src="https://github.com/user-attachments/assets/6f4aeeae-2fa5-4788-bae1-816e8cea4e2d" />
 
 ## 📚 Technical Documentation
 
