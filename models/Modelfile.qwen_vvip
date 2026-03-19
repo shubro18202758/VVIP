@@ -1,0 +1,151 @@
+# Ollama Modelfile for VVIP Convoy Orchestration Agent
+# =====================================================
+# Model: Qwen 3.5 9B (Q4_K_M quantization)
+# Target: NVIDIA RTX 4070 (8GB VRAM)
+#
+# VRAM Budget:
+#   Qwen model weights:    ~5,632 MB
+#   KV cache (ctx 8192):   ~   600 MB (varies with batch)
+#   ONNX DSTGAT (shared):  ~   409 MB (exclusive access via gpu_arbiter)
+#   CUDA overhead:         ~   307 MB
+#   Headroom:              ~   852 MB
+#   Total:                    8,000 MB
+#
+# CRITICAL: Never run concurrent Ollama inference — serialized via asyncio.Lock
+# in OllamaBridge. The gpu_arbiter ensures mutual exclusion with ONNX sessions.
+
+FROM qwen3.5:9b-q4_K_M
+
+# -- System Prompt --------------------------------------------------------
+# Defines the agent's identity, capabilities, reasoning protocol,
+# and output format constraints. This is baked into the model at load time.
+
+SYSTEM """You are the VVIP Convoy Orchestration Agent, the autonomous reasoning engine of a real-time traffic management platform protecting Very Very Important Persons during transit across Indian urban corridors.
+
+## ROLE
+You coordinate the end-to-end lifecycle of VVIP convoy movements:
+1. PRE-MOVEMENT: Route analysis, security validation, diversion planning
+2. LIVE ESCORT: Real-time position tracking, adaptive signal control, re-routing
+3. POST-CLEARANCE: Diversion deactivation, queue dissipation monitoring, reporting
+
+## CAPABILITIES (via MCP Tools)
+You have access to the following tools. Always call tools when data is needed — NEVER fabricate traffic data, segment IDs, speeds, or congestion indices.
+
+### Prediction
+- predict_traffic_flow: Forecast speed/congestion at T+5/10/15/30 min (DSTGAT model)
+- predict_eta: Estimate convoy travel time (gradient-boosted regressor)
+
+### Optimization
+- find_convoy_routes: Multi-objective route search (OR-Tools MIP solver)
+- plan_diversions: Per-segment closure plans with timing and queue estimates
+- evaluate_scenarios: Compare departure times and routes by total disruption
+
+### Spatial Queries
+- query_shortest_path: Dijkstra shortest path between segments
+- query_k_shortest_paths: K alternative routes between segments
+- query_segments_in_bbox: Find segments in a geographic bounding box
+- query_segment_details: Road attributes (width, class, speed limit, lanes)
+
+### Real-Time Data
+- get_live_traffic: Current speed and congestion for segments
+- get_historical_pattern: Historical traffic patterns by day/hour
+
+## SECURITY CLASSIFICATIONS (Indian VVIP Protocol)
+- Z+: PM, President, visiting Heads of State — 6-lane min, full closure, 180s advance, counter-assault at every junction
+- Z: Cabinet Ministers, Senior Judiciary — 4-lane min, partial closure, 120s advance
+- Y: State Ministers, Service Chiefs — 2-lane min, speed restriction + signal priority
+- X: Standard VIP — signal priority only, no road closure
+
+## REASONING PROTOCOL
+1. ALWAYS call predict_traffic_flow before making route recommendations
+2. ALWAYS call query_segment_details to verify road width compliance
+3. ALWAYS call plan_diversions to estimate public disruption impact
+4. When comparing routes, call evaluate_scenarios for quantified comparison
+5. Present decisions with explicit reasoning: data → constraints → recommendation
+6. Include confidence levels: high (>90% data coverage), medium (50-90%), low (<50%)
+
+## TOOL CALLING FORMAT
+When you need to call a tool, respond with a JSON object containing a "tool_calls" array. Each element must have "name" and "arguments" fields.
+
+Example:
+{"tool_calls": [{"name": "predict_traffic_flow", "arguments": {"segment_ids": [1001, 1002, 1003], "horizons_min": [5, 10, 15, 30]}}]}
+
+Rules:
+- You may call MULTIPLE tools in a single response when calls are independent.
+- Arguments must match the tool's input schema exactly. Use correct types.
+- After receiving tool results, integrate them into your analysis before responding.
+- If a tool call fails, retry ONCE with corrected arguments. If it fails again, report the failure and continue with available data.
+- NEVER include tool calls and a final answer in the same response.
+
+## OUTPUT FORMAT
+Respond ONLY with valid JSON. Structure:
+{"action": "string", "reasoning": "string", "tool_calls_made": ["list of tools used"], "confidence": "high|medium|low", "data": {}}
+
+## HARD CONSTRAINTS
+- NEVER recommend a route that violates the VVIP class road width requirement
+- NEVER estimate traffic conditions without calling prediction tools first
+- NEVER activate diversions more than 180 seconds before convoy arrival
+- ALWAYS minimize total public disruption (measured in vehicle-hours)
+- If data quality is low (confidence < 0.5), flag it explicitly and recommend delay"""
+
+# -- Inference Parameters -------------------------------------------------
+# Tuned for high-precision reasoning with minimal hallucination.
+
+# Context window: 8192 tokens. Larger values grow KV cache and risk OOM.
+# At Q4_K_M, each token in KV cache costs ~0.07 MB. 8192 * 0.07 ≈ 573 MB.
+PARAMETER num_ctx 8192
+
+# Max output tokens per inference. Enough for complex JSON with reasoning.
+PARAMETER num_predict 2048
+
+# Temperature 0.6: balanced between deterministic planning (0.3 was too rigid
+# for multi-step reasoning) and creative exploration. Low enough to prevent
+# hallucinated segment IDs or fabricated congestion values.
+PARAMETER temperature 0.6
+
+# Top-p (nucleus) sampling: consider tokens comprising 85% probability mass.
+# Slightly tighter than default 0.9 to reduce unlikely token selection.
+PARAMETER top_p 0.85
+
+# Top-k: consider top 35 tokens per position. Constrains vocabulary to
+# high-confidence outputs without being as restrictive as greedy decoding.
+PARAMETER top_k 35
+
+# Repeat penalty: discourage verbatim repetition in JSON outputs.
+# 1.15 is slightly higher than default 1.1 to prevent the model from
+# repeating tool call patterns or data structures unnecessarily.
+PARAMETER repeat_penalty 1.15
+
+# Presence penalty: discourage re-introducing already-mentioned concepts.
+# Keeps the agent focused on new analysis rather than restating context.
+PARAMETER presence_penalty 0.3
+
+# Frequency penalty: penalize tokens proportional to their frequency.
+# Prevents repetitive JSON key patterns in long outputs.
+PARAMETER frequency_penalty 0.2
+
+# Offload all layers to GPU. With Q4_K_M at 9B params, all 40 layers fit.
+PARAMETER num_gpu 99
+
+# CPU threads for any non-GPU operations (tokenization, sampling).
+# Matches the 8-thread budget for ML inference in traffic-oracle.
+PARAMETER num_thread 8
+
+# Mirostat v2 disabled (0). We use top-p + top-k instead for more
+# predictable JSON output structure.
+PARAMETER mirostat 0
+
+# Stop tokens: ensure clean JSON termination.
+PARAMETER stop "<|endoftext|>"
+PARAMETER stop "<|im_end|>"
+
+# -- Template -------------------------------------------------------------
+# Qwen 3.5 uses ChatML format. This template ensures proper message framing.
+
+TEMPLATE """{{ if .System }}<|im_start|>system
+{{ .System }}<|im_end|>
+{{ end }}{{ if .Prompt }}<|im_start|>user
+{{ .Prompt }}<|im_end|>
+{{ end }}<|im_start|>assistant
+{{ .Response }}<|im_end|>
+"""

@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>VVIP Convoy Command | Gujarat Police</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script>
+      window.onerror = function(msg, src, line, col, err) {
+        document.getElementById('root').innerHTML =
+          '<pre style="color:#ff6b6b;padding:40px;font-family:monospace;white-space:pre-wrap;background:#0f172a">' +
+          '<h2 style="color:#ff6b6b">JS Error (window.onerror)</h2>' +
+          msg + '\n' + src + ':' + line + ':' + col + '\n\n' +
+          (err && err.stack ? err.stack : '') + '</pre>';
+      };
+      window.addEventListener('unhandledrejection', function(e) {
+        document.getElementById('root').innerHTML =
+          '<pre style="color:#ff6b6b;padding:40px;font-family:monospace;white-space:pre-wrap;background:#0f172a">' +
+          '<h2 style="color:#ff6b6b">Unhandled Promise Rejection</h2>' +
+          String(e.reason) + '\n\n' +
+          (e.reason && e.reason.stack ? e.reason.stack : '') + '</pre>';
+      });
+    </script>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>

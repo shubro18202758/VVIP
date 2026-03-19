@@ -1,0 +1,43 @@
+syntax = "proto3";
+
+package vvip.traffic;
+
+option java_multiple_files = true;
+
+// Real-time traffic observation from any feed source.
+// Designed for zero-copy Arrow IPC interop.
+message TrafficSignal {
+  int64 timestamp_ms = 1;       // Unix epoch milliseconds
+  double longitude = 2;
+  double latitude = 3;
+  int64 segment_id = 4;
+  float speed_kmh = 5;
+  float congestion_index = 6;   // [0.0 = free flow, 1.0 = gridlock]
+  FeedSource source = 7;
+}
+
+enum FeedSource {
+  FEED_SOURCE_UNSPECIFIED = 0;
+  GOVERNMENT_TRAFFIC = 1;
+  MAPPING_API = 2;
+  FLEET_GPS = 3;
+  CROWDSOURCE = 4;
+}
+
+// Batch of observations for efficient transmission
+message TrafficSignalBatch {
+  repeated TrafficSignal signals = 1;
+  int64 batch_timestamp_ms = 2;
+  int32 signal_count = 3;
+}
+
+// Aggregated traffic summary for a time window
+message TrafficSummary {
+  int64 segment_id = 1;
+  int64 window_start_ms = 2;
+  int64 window_end_ms = 3;
+  float avg_speed_kmh = 4;
+  float p50_speed_kmh = 5;
+  float p95_congestion = 6;
+  int32 observation_count = 7;
+}

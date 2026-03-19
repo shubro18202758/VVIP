@@ -1,0 +1,154 @@
+# VVIP Convoy Orchestration Platform — Full Stack Compose
+# Designed for edge deployment on RTX 4070 (8GB VRAM) constrained hardware.
+#
+# VRAM Budget: Ollama (Qwen 3.5 9B) gets priority allocation.
+# All other services run on CPU / system RAM only.
+
+services:
+  # ─── Storage Layer ───────────────────────────────────────────────
+  postgis:
+    build:
+      context: ..
+      dockerfile: infra/docker/Dockerfile.postgis
+    container_name: vvip-postgis
+    environment:
+      POSTGRES_DB: corridor_db
+      POSTGRES_USER: corridor_admin
+      POSTGRES_PASSWORD: ${POSTGIS_PASSWORD:-dev_changeme}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgis_data:/var/lib/postgresql/data
+      - ../services/corridor-store/migrations:/docker-entrypoint-initdb.d
+      - ../services/corridor-store/config/postgresql.conf:/etc/postgresql/postgresql.conf
+    command: postgres -c config_file=/etc/postgresql/postgresql.conf
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U corridor_admin -d corridor_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+
+  valkey:
+    image: valkey/valkey:8-alpine
+    container_name: vvip-valkey
+    ports:
+      - "6379:6379"
+    volumes:
+      - valkey_data:/data
+    command: >
+      valkey-server
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lfu
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      timeout: 2s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 640M
+
+  nats:
+    image: nats:2-alpine
+    container_name: vvip-nats
+    ports:
+      - "4222:4222"
+      - "8222:8222"
+    command: -js -sd /data
+    volumes:
+      - nats_data:/data
+
+  # ─── LLM Runtime ────────────────────────────────────────────────
+  # Ollama runs OUTSIDE Docker to get native GPU access.
+  # Start manually: ollama serve
+  # Pull model: ollama pull qwen3.5:9b-q4_K_M
+
+  # ─── Data Integration ───────────────────────────────────────────
+  signal-ingress:
+    build:
+      context: ../services/signal-ingress
+      dockerfile: ../../infra/docker/Dockerfile.signal-ingress
+    container_name: vvip-signal-ingress
+    environment:
+      NATS_URL: nats://nats:4222
+      RUST_LOG: info
+    depends_on:
+      nats:
+        condition: service_started
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  # ─── ML / Optimization ──────────────────────────────────────────
+  traffic-oracle:
+    build:
+      context: ../services/traffic-oracle
+      dockerfile: ../../infra/docker/Dockerfile.traffic-oracle
+    container_name: vvip-traffic-oracle
+    environment:
+      VVIP_DATABASE_URL: postgresql://corridor_admin:${POSTGIS_PASSWORD:-dev_changeme}@postgis:5432/corridor_db
+      VVIP_VALKEY_URL: redis://valkey:6379
+      VVIP_NATS_URL: nats://nats:4222
+    ports:
+      - "8081:8081"
+    depends_on:
+      postgis:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+        # NOTE: GPU access via NVIDIA Container Toolkit when needed
+        # Inference uses host Ollama; ONNX models may use GPU passthrough
+
+  # ─── Agentic Orchestration ──────────────────────────────────────
+  convoy-brain:
+    build:
+      context: ../services/convoy-brain
+      dockerfile: ../../infra/docker/Dockerfile.convoy-brain
+    container_name: vvip-convoy-brain
+    environment:
+      VVIP_DATABASE_URL: postgresql://corridor_admin:${POSTGIS_PASSWORD:-dev_changeme}@postgis:5432/corridor_db
+      VVIP_VALKEY_URL: redis://valkey:6379
+      VVIP_NATS_URL: nats://nats:4222
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+      TRAFFIC_ORACLE_URL: http://traffic-oracle:8081
+      PORT: "8080"
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgis:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+      traffic-oracle:
+        condition: service_started
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+
+  # ─── Presentation ───────────────────────────────────────────────
+  command-deck:
+    build:
+      context: ../frontend
+      dockerfile: ../infra/docker/Dockerfile.frontend
+    container_name: vvip-command-deck
+    ports:
+      - "5173:80"
+    depends_on:
+      convoy-brain:
+        condition: service_started
+
+volumes:
+  postgis_data:
+  valkey_data:
+  nats_data:

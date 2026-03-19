@@ -1,0 +1,21 @@
+# Qwen 3.5 9B configuration for Ollama
+# Optimized for 8GB VRAM on NVIDIA RTX 4070
+{
+    "model": "qwen3.5:9b-q4_K_M",
+    "parameters": {
+        "num_ctx": 8192,
+        "num_predict": 2048,
+        "temperature": 0.3,
+        "top_p": 0.9,
+        "top_k": 40,
+        "repeat_penalty": 1.1,
+        "num_gpu": 99,
+        "num_thread": 8
+    },
+    "notes": {
+        "quantization": "Q4_K_M — best quality/size tradeoff for 8GB VRAM",
+        "estimated_vram_mb": 5632,
+        "kv_cache_policy": "KV cache grows with context length; keep num_ctx <= 8192 to stay under budget",
+        "concurrent_requests": "NEVER allow concurrent inference — serialized via OllamaBridge asyncio.Lock"
+    }
+}

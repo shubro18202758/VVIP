@@ -1,0 +1,59 @@
+[project]
+name = "vvip-finetune"
+version = "0.1.0"
+description = "Fine-tuning pipeline for Qwen 3.5 9B VVIP Convoy Orchestration Agent (CPT → SFT → GRPO)"
+requires-python = ">=3.11"
+license = "MIT"
+dependencies = [
+    # Unsloth — kernel-optimized LoRA training (2x speed, 60% less VRAM)
+    # Provides: FastLanguageModel, fused attention, save_pretrained_gguf
+    "unsloth[cu124-torch260]>=2025.3",
+
+    # TRL — Transformer Reinforcement Learning (SFTTrainer, GRPOTrainer)
+    # Provides: SFTConfig, GRPOConfig, reward function wiring
+    "trl>=0.15",
+
+    # PEFT — Parameter-Efficient Fine-Tuning (LoRA adapters)
+    # Provides: PeftModel, LoraConfig, adapter merge
+    "peft>=0.14",
+
+    # Transformers — model loading, tokenization, training utilities
+    "transformers>=4.48",
+
+    # Accelerate — mixed precision, gradient accumulation, device placement
+    "accelerate>=1.2",
+
+    # bitsandbytes — INT4/INT8 quantization kernels for CUDA
+    # Provides: NF4 quantization, 8-bit AdamW optimizer
+    "bitsandbytes>=0.45",
+
+    # PyTorch (CUDA 12.4 for RTX 4070 Ada Lovelace)
+    "torch>=2.6",
+
+    # Datasets — HuggingFace dataset loading and processing
+    "datasets>=3.2",
+
+    # Config and CLI
+    "pyyaml>=6.0",
+    "click>=8.1",
+
+    # Data generation dependencies (shared with generate_dataset.py)
+    "structlog>=24.4",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "ruff>=0.8",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "B", "SIM"]

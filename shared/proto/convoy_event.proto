@@ -1,0 +1,83 @@
+syntax = "proto3";
+
+package vvip.convoy;
+
+option java_multiple_files = true;
+
+// Lifecycle events for a VVIP convoy movement.
+message ConvoyEvent {
+  string movement_id = 1;
+  ConvoyEventType event_type = 2;
+  int64 timestamp_ms = 3;
+  string vvip_class = 4;         // Z+ | Z | Y | X
+  oneof payload {
+    MovementPlanned planned = 10;
+    MovementApproved approved = 11;
+    ConvoyDeparted departed = 12;
+    ConvoyPositionUpdate position = 13;
+    DiversionActivated diversion_on = 14;
+    DiversionDeactivated diversion_off = 15;
+    ConvoyArrived arrived = 16;
+    MovementCancelled cancelled = 17;
+  }
+}
+
+enum ConvoyEventType {
+  CONVOY_EVENT_UNSPECIFIED = 0;
+  MOVEMENT_PLANNED = 1;
+  MOVEMENT_APPROVED = 2;
+  CONVOY_DEPARTED = 3;
+  POSITION_UPDATE = 4;
+  DIVERSION_ACTIVATED = 5;
+  DIVERSION_DEACTIVATED = 6;
+  CONVOY_ARRIVED = 7;
+  MOVEMENT_CANCELLED = 8;
+}
+
+message MovementPlanned {
+  Coordinate origin = 1;
+  Coordinate destination = 2;
+  string planned_departure = 3;  // ISO 8601
+  repeated string candidate_route_ids = 4;
+}
+
+message MovementApproved {
+  string selected_route_id = 1;
+  string approved_by = 2;
+}
+
+message ConvoyDeparted {
+  Coordinate position = 1;
+  float speed_kmh = 2;
+}
+
+message ConvoyPositionUpdate {
+  Coordinate position = 1;
+  float speed_kmh = 2;
+  float heading_deg = 3;
+  int64 current_segment_id = 4;
+}
+
+message DiversionActivated {
+  int64 segment_id = 1;
+  string diversion_type = 2;
+}
+
+message DiversionDeactivated {
+  int64 segment_id = 1;
+}
+
+message ConvoyArrived {
+  Coordinate final_position = 1;
+  int32 total_duration_sec = 2;
+}
+
+message MovementCancelled {
+  string reason = 1;
+  string cancelled_by = 2;
+}
+
+message Coordinate {
+  double longitude = 1;
+  double latitude = 2;
+}

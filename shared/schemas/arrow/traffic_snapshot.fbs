@@ -1,0 +1,19 @@
+// FlatBuffers schema for Arrow IPC traffic snapshot interchange.
+// Used by signal-ingress (Rust) to publish and traffic-oracle (Python) to consume.
+
+namespace vvip.arrow;
+
+table TrafficSnapshot {
+  timestamp_ms: int64;
+  segment_ids: [int64];
+  longitudes: [float64];
+  latitudes: [float64];
+  speeds_kmh: [float32];
+  congestion_indices: [float32];
+  sources: [uint8];        // FeedSource enum ordinal
+  data_qualities: [uint8]; // DataQuality enum ordinal (0=Real, 1=Anomalous, 2=Synthetic)
+  confidences: [float32];  // Confidence scores [0.0 - 1.0]
+  record_count: int32;
+}
+
+root_type TrafficSnapshot;

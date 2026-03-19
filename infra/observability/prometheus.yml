@@ -1,0 +1,50 @@
+# VVIP Platform — Prometheus Configuration
+# Scrapes all services for hardware-aware observability
+
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+  scrape_timeout: 4s
+
+rule_files:
+  - "alerts.yml"
+
+scrape_configs:
+  # ─── GPU Metrics (NVIDIA Exporter) ──────────────────────────────
+  - job_name: "nvidia-gpu"
+    static_configs:
+      - targets: ["nvidia-exporter:9835"]
+    metrics_path: /metrics
+    scrape_interval: 3s
+
+  # ─── NATS Monitoring ────────────────────────────────────────────
+  - job_name: "nats"
+    static_configs:
+      - targets: ["nats:8222"]
+    metrics_path: /varz
+
+  # ─── Traffic Oracle (ML Inference Metrics) ──────────────────────
+  - job_name: "traffic-oracle"
+    static_configs:
+      - targets: ["traffic-oracle:8081"]
+    metrics_path: /metrics
+    scrape_interval: 5s
+
+  # ─── Convoy Brain (Orchestrator Metrics) ────────────────────────
+  - job_name: "convoy-brain"
+    static_configs:
+      - targets: ["convoy-brain:8080"]
+    metrics_path: /metrics
+    scrape_interval: 5s
+
+  # ─── PostgreSQL (pgRouting / pgvector metrics) ──────────────────
+  - job_name: "postgis"
+    static_configs:
+      - targets: ["postgis:9187"]
+    metrics_path: /metrics
+    scrape_interval: 10s
+
+  # ─── Prometheus Self-Monitor ────────────────────────────────────
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]

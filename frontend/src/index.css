@@ -1,0 +1,1061 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+:root {
+  /* Theme Colors */
+  --primary-orange: #ea580c;
+  --light-orange: #f97316;
+  --dark-orange: #c2410c;
+  --primary-green: #16a34a;
+  --primary-blue: #2563eb;
+  --alert-red: #dc2626;
+  --purple: #7c3aed;
+  --amber: #d97706;
+  
+  /* Backgrounds & Surfaces */
+  --bg-slate: #f1f5f9;
+  --surface-white: #ffffff;
+  --soft-surface: #f8fafc;
+  --border-default: #e2e8f0;
+  --glass-bg: rgba(255, 255, 255, 0.72);
+  --glass-border: rgba(255, 255, 255, 0.3);
+  --dark-glass-bg: rgba(15, 23, 42, 0.85);
+  --dark-glass-border: rgba(51, 65, 85, 0.5);
+  
+  /* Text Colors */
+  --text-primary: #1e293b;
+  --text-secondary: #64748b;
+  --text-muted: #94a3b8;
+
+  /* Typography */
+  --font-main: 'Outfit', system-ui, -apple-system, sans-serif;
+  --font-secondary: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+
+  /* Semantic Status */
+  --status-green-bg: #f0fdf4;
+  --status-green-text: #16a34a;
+  --status-green-border: #86efac;
+
+  --status-orange-bg: #fff7ed;
+  --status-orange-text: #ea580c;
+  --status-orange-border: #fed7aa;
+
+  --status-red-bg: #fef2f2;
+  --status-red-text: #dc2626;
+  --status-red-border: #fca5a5;
+
+  --status-blue-bg: #eff6ff;
+  --status-blue-text: #2563eb;
+  --status-blue-border: #bfdbfe;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.08);
+  --shadow-glow-orange: 0 0 20px rgba(234, 88, 12, 0.15);
+  --shadow-glow-green: 0 0 20px rgba(22, 163, 74, 0.15);
+  --shadow-glow-red: 0 0 20px rgba(220, 38, 38, 0.15);
+  --shadow-glow-blue: 0 0 20px rgba(37, 99, 235, 0.15);
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--font-main);
+  background-color: var(--bg-slate);
+  color: var(--text-primary);
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+button, input, select, textarea {
+  font-family: inherit;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-main);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+/* Custom Scrollbar */
+.sp::-webkit-scrollbar {
+  width: 4px;
+}
+
+.sp::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.sp::-webkit-scrollbar-thumb {
+  background: var(--border-default);
+  border-radius: 10px;
+}
+
+.sp::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
+/* Animations */
+@keyframes pulse {
+  0% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.1); opacity: 0.7; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.animate-pulse {
+  animation: pulse 2s infinite ease-in-out;
+}
+
+@keyframes slideLeft {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(0); }
+}
+
+@keyframes slideRight {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@keyframes borderGlow {
+  0%, 100% { border-color: rgba(234, 88, 12, 0.2); }
+  50% { border-color: rgba(234, 88, 12, 0.6); }
+}
+
+@keyframes breathe {
+  0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(234, 88, 12, 0.3); }
+  50% { transform: scale(1.02); box-shadow: 0 0 16px 2px rgba(234, 88, 12, 0.15); }
+}
+
+@keyframes convoy-march {
+  0% { stroke-dashoffset: 24; }
+  100% { stroke-dashoffset: 0; }
+}
+
+@keyframes radar-sweep {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes statusPulse {
+  0%, 100% { box-shadow: 0 0 0 0 currentColor; }
+  50% { box-shadow: 0 0 0 4px transparent; }
+}
+
+@keyframes countUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes marquee {
+  0% { transform: translateX(100%); }
+  100% { transform: translateX(-100%); }
+}
+
+@keyframes ripple {
+  0% { transform: scale(0.8); opacity: 1; }
+  100% { transform: scale(2.4); opacity: 0; }
+}
+
+.animate-fadeIn { animation: fadeIn 0.3s ease-out; }
+.animate-slideUp { animation: slideUp 0.4s ease-out; }
+.animate-breathe { animation: breathe 3s ease-in-out infinite; }
+.animate-shimmer {
+  background: linear-gradient(90deg, transparent 0%, rgba(234, 88, 12, 0.06) 50%, transparent 100%);
+  background-size: 200% 100%;
+  animation: shimmer 2s infinite;
+}
+
+/* Utilities */
+.flex { display: flex; }
+.items-center { align-items: center; }
+.justify-between { justify-content: space-between; }
+.gap-2 { gap: 0.5rem; }
+.gap-4 { gap: 1rem; }
+.w-full { width: 100%; }
+.h-full { height: 100%; }
+.relative { position: relative; }
+.absolute { position: absolute; }
+.inset-0 { top: 0; right: 0; bottom: 0; left: 0; }
+.pointer-events-none { pointer-events: none; }
+.pointer-events-auto { pointer-events: auto; }
+.overflow-y-auto { overflow-y: auto; }
+.z-10 { z-index: 10; }
+.z-20 { z-index: 20; }
+.z-30 { z-index: 30; }
+
+.badge {
+  display: inline-block;
+  min-width: 80px;
+  text-align: center;
+  padding: 2px 10px;
+  border-radius: 20px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  border: 1px solid transparent;
+}
+
+.badge-green { background: var(--status-green-text); color: #ffffff; border-color: var(--status-green-text); }
+.badge-orange { background: var(--status-orange-text); color: #ffffff; border-color: var(--status-orange-text); }
+.badge-red { background: var(--status-red-text); color: #ffffff; border-color: var(--status-red-text); }
+.badge-blue { background: var(--status-blue-text); color: #ffffff; border-color: var(--status-blue-text); }
+.badge-purple { background: var(--purple); color: #ffffff; }
+.badge-amber { background: var(--amber); color: #ffffff; }
+
+/* Glassmorphism Cards */
+.glass {
+  background: var(--glass-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--shadow-sm);
+}
+.glass-dark {
+  background: var(--dark-glass-bg);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--dark-glass-border);
+}
+.glass-card {
+  background: var(--glass-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--glass-border);
+  border-radius: 12px;
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.glass-card:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+}
+
+/* Progress Bars */
+.progress-bar {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border);
+  overflow: hidden;
+}
+.progress-bar-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Status Indicator Dot */
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+  position: relative;
+}
+.status-dot::after {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: 50%;
+  border: 1.5px solid currentColor;
+  opacity: 0.3;
+  animation: statusPulse 2s ease-in-out infinite;
+}
+
+/* Card Hover Glow */
+.hover-glow {
+  transition: box-shadow 0.3s ease, border-color 0.3s ease;
+}
+.hover-glow:hover {
+  box-shadow: var(--shadow-glow-orange);
+  border-color: rgba(234, 88, 12, 0.3);
+}
+
+/* Spin Animation for Loading Spinners */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.animate-spin {
+  animation: spin 1s linear infinite;
+}
+
+/* Dark Theme Scrollbar (InterDeptComms, AIReasoningPanel) */
+.dark-scroll::-webkit-scrollbar {
+  width: 4px;
+}
+.dark-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.dark-scroll::-webkit-scrollbar-thumb {
+  background: #334155;
+  border-radius: 10px;
+}
+.dark-scroll::-webkit-scrollbar-thumb:hover {
+  background: #475569;
+}
+
+/* Recharts tooltip override for dark backgrounds */
+.recharts-tooltip-wrapper .recharts-default-tooltip {
+  background-color: #1e293b !important;
+  border: 1px solid #334155 !important;
+  border-radius: 8px !important;
+}
+
+/* Leaflet popup override */
+.leaflet-popup-content-wrapper {
+  border-radius: 10px !important;
+  font-family: var(--font-secondary) !important;
+  font-size: 11px !important;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.18) !important;
+  border: 1px solid rgba(234, 88, 12, 0.15) !important;
+}
+.leaflet-popup-tip {
+  box-shadow: none !important;
+}
+
+/* Custom leaflet marker animations */
+.convoy-marker-pulse {
+  animation: ripple 1.5s ease-out infinite;
+  border-radius: 50%;
+  position: absolute;
+  inset: -8px;
+  border: 2px solid var(--primary-orange);
+  pointer-events: none;
+}
+
+/* Leaflet attribution styling */
+.leaflet-control-attribution {
+  font-size: 9px !important;
+  background: rgba(255,255,255,0.7) !important;
+  backdrop-filter: blur(4px);
+}
+
+/* Focus ring for inputs */
+input:focus, select:focus, textarea:focus {
+  outline: none;
+  border-color: var(--primary-orange) !important;
+  box-shadow: 0 0 0 2px rgba(234, 88, 12, 0.15);
+}
+
+/* Glow effect for live indicators */
+@keyframes glow-pulse {
+  0%, 100% { box-shadow: 0 0 4px rgba(239, 68, 68, 0.4); }
+  50% { box-shadow: 0 0 12px rgba(239, 68, 68, 0.8); }
+}
+
+.glow-live {
+  animation: glow-pulse 2s ease-in-out infinite;
+}
+
+/* Stat card micro-animation on value change */
+.stat-value-update {
+  animation: countUp 0.4s ease-out;
+}
+
+/* Mini fuel gauge */
+.fuel-gauge {
+  height: 3px;
+  border-radius: 2px;
+  background: #e2e8f0;
+  overflow: hidden;
+  position: relative;
+}
+.fuel-gauge-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 1s cubic-bezier(0.4, 0, 0.2, 1);
+  background: linear-gradient(90deg, #ef4444, #f59e0b, #22c55e);
+}
+
+/* Severity left border accent */
+.severity-border-high { border-left: 3px solid #ef4444; }
+.severity-border-medium { border-left: 3px solid #f59e0b; }
+.severity-border-low { border-left: 3px solid #3b82f6; }
+
+/* Section divider with Gujarat motif */
+.section-divider {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--border), rgba(234, 88, 12, 0.3), var(--border), transparent);
+  margin: 4px 0;
+}
+
+/* Convoy lifecycle progress bar */
+.lifecycle-track {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  width: 100%;
+}
+.lifecycle-step {
+  flex: 1;
+  height: 3px;
+  background: var(--border);
+  transition: background 0.5s ease;
+  position: relative;
+}
+.lifecycle-step.active {
+  background: var(--primary-orange);
+}
+.lifecycle-step.completed {
+  background: var(--status-green-text);
+}
+
+/* Tooltip base */
+.tooltip-trigger {
+  position: relative;
+  cursor: help;
+}
+.tooltip-trigger::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%) scale(0.95);
+  background: #0f172a;
+  color: #e2e8f0;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 10px;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s, transform 0.15s;
+  z-index: 999;
+}
+.tooltip-trigger:hover::after {
+  opacity: 1;
+  transform: translateX(-50%) scale(1);
+}
+
+/* ═══════════════════════════════════════════════════════
+   DARK COMMAND THEME — VVIP Ops Dark Mode
+   ═══════════════════════════════════════════════════════ */
+
+/* Saffron accent bar animation */
+@keyframes saffronSweep {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.saffron-sweep {
+  height: 2px;
+  background: linear-gradient(90deg, transparent 0%, #ea580c 30%, #f97316 50%, #ea580c 70%, transparent 100%);
+  background-size: 200% 100%;
+  animation: saffronSweep 3s linear infinite;
+}
+
+/* Selected segment glow on map */
+@keyframes segmentGlow {
+  0%, 100% { stroke-opacity: 0.6; }
+  50% { stroke-opacity: 1; }
+}
+
+/* Clickable dark-panel list items */
+.dark-clickable {
+  cursor: pointer;
+  transition: background 0.2s ease, border-left-color 0.2s ease, transform 0.15s ease;
+  border-left: 3px solid transparent;
+  padding-left: 8px;
+}
+.dark-clickable:hover {
+  background: rgba(234, 88, 12, 0.08);
+  border-left-color: #ea580c;
+  transform: translateX(2px);
+}
+.dark-clickable.selected {
+  background: rgba(234, 88, 12, 0.14);
+  border-left-color: #f97316;
+  box-shadow: inset 0 0 20px rgba(234, 88, 12, 0.05);
+}
+
+/* HUD stat card with top accent line */
+.hud-stat {
+  background: linear-gradient(135deg, rgba(30, 41, 59, 0.95) 0%, rgba(15, 23, 42, 0.98) 100%);
+  border: 1px solid #334155;
+  border-radius: 10px;
+  padding: 12px;
+  position: relative;
+  overflow: hidden;
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+.hud-stat::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--primary-orange), transparent);
+  opacity: 0.6;
+}
+.hud-stat:hover {
+  border-color: rgba(234, 88, 12, 0.4);
+  box-shadow: 0 0 20px rgba(234, 88, 12, 0.08);
+}
+
+/* Active convoy glow ring for map markers */
+@keyframes convoyRing {
+  0% { transform: scale(1); opacity: 0.8; border-color: #ea580c; }
+  50% { transform: scale(1.8); opacity: 0; border-color: #f97316; }
+  100% { transform: scale(1); opacity: 0.8; border-color: #ea580c; }
+}
+.convoy-ring {
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  border: 2px solid #ea580c;
+  animation: convoyRing 2s ease-in-out infinite;
+  pointer-events: none;
+}
+
+/* Dark panel scrollbar */
+.dark-panel-scroll::-webkit-scrollbar { width: 5px; }
+.dark-panel-scroll::-webkit-scrollbar-track { background: rgba(15, 23, 42, 0.3); }
+.dark-panel-scroll::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }
+.dark-panel-scroll::-webkit-scrollbar-thumb:hover { background: #475569; }
+
+/* Map dark tile contrast adjustments */
+.leaflet-container {
+  background: #0f172a !important;
+}
+
+/* Dark Leaflet popups */
+.leaflet-popup-content-wrapper {
+  background: #1e293b !important;
+  color: #e2e8f0 !important;
+}
+.leaflet-popup-tip {
+  background: #1e293b !important;
+}
+
+/* Live status blink */
+@keyframes liveBlink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+.live-blink {
+  animation: liveBlink 1.5s ease-in-out infinite;
+}
+
+/* Segment ID clickable chip */
+.seg-chip {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-family: var(--font-mono);
+  background: rgba(234, 88, 12, 0.15);
+  color: #f97316;
+  cursor: pointer;
+  border: 1px solid rgba(234, 88, 12, 0.3);
+  transition: all 0.2s;
+}
+.seg-chip:hover {
+  background: rgba(234, 88, 12, 0.3);
+  border-color: #f97316;
+  box-shadow: 0 0 8px rgba(234, 88, 12, 0.2);
+}
+
+/* Typing indicator dots */
+.typing-dots {
+  display: inline-flex;
+  gap: 3px;
+  align-items: center;
+}
+.typing-dots span {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--primary-orange);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+.typing-dots span:nth-child(2) { animation-delay: 0.15s; }
+.typing-dots span:nth-child(3) { animation-delay: 0.3s; }
+
+/* ═══ Security Dossier Panel Animations ═══ */
+@keyframes dossierSlideIn {
+  0% { transform: translateX(100%); opacity: 0; }
+  100% { transform: translateX(0); opacity: 1; }
+}
+@keyframes securityPulse {
+  0%, 100% { box-shadow: 0 0 12px rgba(220, 38, 38, 0.3); }
+  50% { box-shadow: 0 0 28px rgba(220, 38, 38, 0.6), 0 0 60px rgba(220, 38, 38, 0.15); }
+}
+@keyframes scanline {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(100%); }
+}
+
+/* ═══ Global dramatic enhancements ═══ */
+/* Glowing card hover effect */
+.glow-card {
+  transition: box-shadow 0.3s ease, border-color 0.3s ease, transform 0.2s ease;
+}
+.glow-card:hover {
+  box-shadow: 0 0 20px rgba(234, 88, 12, 0.15), 0 4px 24px rgba(0,0,0,0.4);
+  border-color: rgba(234, 88, 12, 0.3) !important;
+  transform: translateY(-1px);
+}
+
+/* Animated gradient border */
+@keyframes gradientBorder {
+  0%   { background-position: 0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+.animated-border {
+  position: relative;
+}
+.animated-border::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(120deg, #ea580c, #dc2626, #7c3aed, #2563eb, #ea580c);
+  background-size: 300% 300%;
+  animation: gradientBorder 4s ease infinite;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  -webkit-mask-composite: xor;
+  pointer-events: none;
+}
+
+/* Frosted glass panel */
+.glass-panel {
+  background: rgba(15, 23, 42, 0.85);
+  backdrop-filter: blur(16px) saturate(180%);
+  -webkit-backdrop-filter: blur(16px) saturate(180%);
+  border: 1px solid rgba(51, 65, 85, 0.5);
+}
+
+/* Status indicator with ring */
+@keyframes statusRing {
+  0% { transform: scale(1); opacity: 0.5; }
+  100% { transform: scale(2.5); opacity: 0; }
+}
+
+/* Radar sweep for map overlay */
+@keyframes radarSweep2 {
+  0%   { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* ═══ Dramatic UI Enhancements ═══ */
+
+/* Ambient vignette overlay for entire app */
+.vignette-overlay {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9998;
+  background: radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,0.35) 100%);
+}
+
+/* Subtle noise texture */
+.noise-texture::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  opacity: 0.018;
+  pointer-events: none;
+  z-index: 9997;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* Top-edge saffron accent sweep on all major panels */
+.top-accent-sweep::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, #ea580c 30%, #f97316 50%, #ea580c 70%, transparent);
+  background-size: 200% 100%;
+  animation: saffronSweep 4s linear infinite;
+  z-index: 1;
+}
+
+/* Dramatic section divider with glow */
+.section-glow-divider {
+  height: 1px;
+  margin: 8px 0;
+  background: linear-gradient(90deg, transparent, rgba(234, 88, 12, 0.5), rgba(249, 115, 22, 0.3), transparent);
+  box-shadow: 0 0 6px rgba(234, 88, 12, 0.2);
+}
+
+/* Depth card — multi-layer shadow for floating effect */
+.depth-card {
+  box-shadow:
+    0 1px 2px rgba(0,0,0,0.3),
+    0 4px 8px rgba(0,0,0,0.2),
+    0 12px 32px rgba(0,0,0,0.15),
+    inset 0 1px 0 rgba(255,255,255,0.02);
+  transition: box-shadow 0.3s ease, transform 0.2s ease;
+}
+.depth-card:hover {
+  box-shadow:
+    0 2px 4px rgba(0,0,0,0.4),
+    0 8px 16px rgba(0,0,0,0.25),
+    0 20px 48px rgba(0,0,0,0.2),
+    inset 0 1px 0 rgba(255,255,255,0.03);
+  transform: translateY(-1px);
+}
+
+/* Data readout flicker for HUD-style numbers */
+@keyframes dataFlicker {
+  0%, 100% { opacity: 1; }
+  92% { opacity: 1; }
+  93% { opacity: 0.4; }
+  94% { opacity: 1; }
+  97% { opacity: 1; }
+  98% { opacity: 0.6; }
+  99% { opacity: 1; }
+}
+.data-readout {
+  animation: dataFlicker 8s ease-in-out infinite;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Alert stripe for critical banners */
+@keyframes alertStripe {
+  0% { background-position: 0 0; }
+  100% { background-position: 40px 0; }
+}
+.alert-stripe {
+  background-image: repeating-linear-gradient(
+    -45deg,
+    transparent,
+    transparent 8px,
+    rgba(220, 38, 38, 0.08) 8px,
+    rgba(220, 38, 38, 0.08) 16px
+  );
+  background-size: 40px 40px;
+  animation: alertStripe 1.5s linear infinite;
+}
+
+/* Convoy active edge glow */
+@keyframes edgeGlow {
+  0%, 100% { box-shadow: inset 0 0 30px rgba(234, 88, 12, 0.0); }
+  50% { box-shadow: inset 0 0 30px rgba(234, 88, 12, 0.08); }
+}
+.convoy-active-glow {
+  animation: edgeGlow 3s ease-in-out infinite;
+}
+
+/* Tactical grid background for panels */
+.tactical-grid {
+  background-image:
+    linear-gradient(rgba(51, 65, 85, 0.15) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(51, 65, 85, 0.15) 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+
+/* Threat level indicator strip */
+.threat-critical { border-left: 3px solid #dc2626; box-shadow: inset 4px 0 8px rgba(220, 38, 38, 0.15); }
+.threat-elevated { border-left: 3px solid #ea580c; box-shadow: inset 4px 0 8px rgba(234, 88, 12, 0.12); }
+.threat-moderate { border-left: 3px solid #eab308; box-shadow: inset 4px 0 8px rgba(234, 179, 8, 0.1); }
+.threat-guarded { border-left: 3px solid #2563eb; box-shadow: inset 4px 0 8px rgba(37, 99, 235, 0.08); }
+.threat-nominal { border-left: 3px solid #16a34a; box-shadow: inset 4px 0 8px rgba(22, 163, 74, 0.08); }
+
+/* Holographic shimmer for important badges */
+@keyframes holoShimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.holo-badge {
+  background: linear-gradient(
+    110deg,
+    rgba(234, 88, 12, 0.9) 0%,
+    rgba(249, 115, 22, 1) 25%,
+    rgba(255, 255, 255, 0.3) 50%,
+    rgba(249, 115, 22, 1) 75%,
+    rgba(234, 88, 12, 0.9) 100%
+  );
+  background-size: 200% 100%;
+  animation: holoShimmer 3s linear infinite;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* Bottom status bar with ambient glow */
+.status-bar-ambient {
+  position: relative;
+}
+.status-bar-ambient::after {
+  content: '';
+  position: absolute;
+  bottom: 0; left: 10%; right: 10%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(234, 88, 12, 0.4), transparent);
+  box-shadow: 0 0 12px rgba(234, 88, 12, 0.15);
+}
+
+/* Map control styling — dark & dramatic */
+.leaflet-bar a {
+  background: #1e293b !important;
+  color: #e2e8f0 !important;
+  border-color: #334155 !important;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+.leaflet-bar a:hover {
+  background: #334155 !important;
+  color: #f97316 !important;
+}
+
+/* Timeline node pulse for lifecycle progress */
+@keyframes timelineNodePulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(234, 88, 12, 0.5); }
+  50% { box-shadow: 0 0 0 6px rgba(234, 88, 12, 0); }
+}
+.timeline-node-active {
+  animation: timelineNodePulse 2s ease-in-out infinite;
+}
+
+/* Slide in from bottom for notifications */
+@keyframes slideInBottom {
+  0% { transform: translateY(100%); opacity: 0; }
+  100% { transform: translateY(0); opacity: 1; }
+}
+.slide-in-bottom {
+  animation: slideInBottom 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Wipe reveal for panel sections */
+@keyframes wipeReveal {
+  0% { clip-path: inset(0 100% 0 0); opacity: 0; }
+  100% { clip-path: inset(0 0 0 0); opacity: 1; }
+}
+.wipe-reveal {
+  animation: wipeReveal 0.5s ease-out;
+}
+
+/* ═══ CONVOY VEHICLE SIMULATION ANIMATIONS ═══ */
+
+/* Convoy trail dashed line animation */
+@keyframes convoyTrailFlow {
+  0% { stroke-dashoffset: 0; }
+  100% { stroke-dashoffset: 28; }
+}
+.convoy-trail-line {
+  animation: convoyTrailFlow 1s linear infinite;
+}
+
+/* Security perimeter pulsing ring */
+@keyframes convoyPerimeterPulse {
+  0%, 100% { stroke-opacity: 0.4; fill-opacity: 0.06; transform: scale(1); }
+  50% { stroke-opacity: 0.7; fill-opacity: 0.12; transform: scale(1.05); }
+}
+.convoy-perimeter-pulse {
+  animation: convoyPerimeterPulse 2s ease-in-out infinite;
+}
+.convoy-perimeter-inner {
+  animation: convoyPerimeterPulse 2s ease-in-out infinite;
+  animation-delay: 0.5s;
+}
+
+/* Vehicle icon glow — see enhanced version at bottom */
+
+/* Convoy speed gauge fill animation */
+@keyframes gaugeGlow {
+  0%, 100% { box-shadow: 0 0 4px rgba(249, 115, 22, 0.3); }
+  50% { box-shadow: 0 0 12px rgba(249, 115, 22, 0.6); }
+}
+.convoy-gauge-fill {
+  transition: width 0.3s ease-out;
+  animation: gaugeGlow 2s ease-in-out infinite;
+}
+
+/* Convoy HUD panel slide-in */
+@keyframes convoyHudIn {
+  0% { transform: translateY(20px); opacity: 0; }
+  100% { transform: translateY(0); opacity: 1; }
+}
+.convoy-hud-panel {
+  animation: convoyHudIn 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Convoy control button hover effect */
+.convoy-ctrl-btn {
+  background: rgba(15, 23, 42, 0.9);
+  border: 1px solid #334155;
+  color: #e2e8f0;
+  padding: 6px 14px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s ease;
+  letter-spacing: 0.5px;
+}
+.convoy-ctrl-btn:hover {
+  border-color: #ea580c;
+  background: rgba(234, 88, 12, 0.15);
+  box-shadow: 0 0 16px rgba(234, 88, 12, 0.2);
+  transform: translateY(-1px);
+}
+.convoy-ctrl-btn.active {
+  background: rgba(234, 88, 12, 0.25);
+  border-color: #f97316;
+  color: #f97316;
+}
+.convoy-ctrl-btn.stop {
+  border-color: rgba(220, 38, 38, 0.4);
+}
+.convoy-ctrl-btn.stop:hover {
+  border-color: #dc2626;
+  background: rgba(220, 38, 38, 0.15);
+  box-shadow: 0 0 16px rgba(220, 38, 38, 0.2);
+}
+
+/* Live data indicator dot */
+@keyframes liveDataPulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.3); opacity: 0.7; }
+}
+.live-data-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #22c55e;
+  animation: liveDataPulse 1.5s ease-in-out infinite;
+}
+
+/* ═══ ROUTE AHEAD ANT-MARCH ANIMATION ═══ */
+@keyframes antMarch {
+  0% { stroke-dashoffset: 0; }
+  100% { stroke-dashoffset: -48; }
+}
+.convoy-route-ahead {
+  animation: antMarch 1.2s linear infinite;
+}
+
+/* ═══ VEHICLE CORE PULSE ═══ */
+@keyframes corePulse {
+  0%, 100% { opacity: 0.7; r: 3; }
+  50% { opacity: 1; r: 5; }
+}
+.convoy-core-pulse {
+  animation: corePulse 1.5s ease-in-out infinite;
+}
+
+/* ═══ OUTERMOST DETECTION PERIMETER ═══ */
+@keyframes detectionSweep {
+  0%, 100% { stroke-opacity: 0.15; stroke-dashoffset: 0; }
+  50% { stroke-opacity: 0.35; stroke-dashoffset: 20; }
+}
+.convoy-perimeter-outer {
+  animation: detectionSweep 3s ease-in-out infinite;
+}
+
+/* ═══ ORIGIN / DESTINATION WAYPOINT PULSE ═══ */
+@keyframes waypointPulse {
+  0%, 100% { stroke-opacity: 0.6; r: 10; }
+  50% { stroke-opacity: 1; r: 13; }
+}
+.convoy-waypoint-pulse {
+  animation: waypointPulse 2s ease-in-out infinite;
+}
+
+/* ═══ ENHANCED VEHICLE GLOW ═══ */
+.convoy-vehicle-icon {
+  filter: drop-shadow(0 0 10px rgba(249, 115, 22, 0.7)) drop-shadow(0 0 24px rgba(234, 88, 12, 0.35)) drop-shadow(0 0 40px rgba(234, 88, 12, 0.12));
+  transition: filter 0.3s ease;
+}
+.convoy-vehicle-icon:hover {
+  filter: drop-shadow(0 0 14px rgba(249, 115, 22, 0.95)) drop-shadow(0 0 32px rgba(234, 88, 12, 0.55)) drop-shadow(0 0 50px rgba(234, 88, 12, 0.2));
+}
+
+/* ═══ SPEED GRADIENT TRAIL SEGMENTS ═══ */
+.convoy-trail-segment {
+  transition: opacity 0.3s ease;
+}
+
+/* ═══ HUD METRIC CELL HOVER HIGHLIGHT ═══ */
+.convoy-hud-panel [style*="background: rgba(15,23,42"]:hover {
+  background: rgba(30, 41, 59, 0.9) !important;
+  border-color: rgba(249, 115, 22, 0.3) !important;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════
+   R2 ENHANCEMENTS
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ── Convoy Shockwave Ripple Rings (ConvoyMap.jsx) ── */
+@keyframes shockwaveRipple {
+  0%   { transform: scale(1);   opacity: 0.5; }
+  60%  { transform: scale(1.8); opacity: 0.2; }
+  100% { transform: scale(2.4); opacity: 0; }
+}
+
+.convoy-shockwave {
+  animation: shockwaveRipple 2.4s ease-out infinite;
+  pointer-events: none;
+}
+.convoy-shockwave-0 { animation-delay: 0s; }
+.convoy-shockwave-1 { animation-delay: 0.5s; }
+.convoy-shockwave-2 { animation-delay: 1.0s; }
+
+/* ── Route-ahead checkpoint markers ── */
+.leaflet-container .route-checkpoint {
+  transition: transform 0.2s, opacity 0.2s;
+}
+.leaflet-container .route-checkpoint:hover {
+  transform: scale(1.3);
+}
+
+/* ── Threat strip glow ── */
+@keyframes threatPulse {
+  0%, 100% { box-shadow: 0 0 4px rgba(220, 38, 38, 0.2); }
+  50%      { box-shadow: 0 0 10px rgba(220, 38, 38, 0.5); }
+}
+
+/* ── Zone transition slide-in ── */
+@keyframes zoneSlideIn {
+  from { opacity: 0; transform: translateX(-8px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+/* ── Radar chart ambient glow ── */
+@keyframes radarAmbient {
+  0%, 100% { filter: drop-shadow(0 0 3px rgba(249, 115, 22, 0.15)); }
+  50%      { filter: drop-shadow(0 0 8px rgba(249, 115, 22, 0.35)); }
+}
+
+/* ── Fuel gauge shimmer ── */
+@keyframes fuelShimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+/* ── HUD threat/zone chip styling ── */
+.convoy-hud-panel [style*="THREAT"] ~ div,
+.convoy-hud-panel [style*="ZONE"] ~ div {
+  transition: all 0.3s ease;
+}

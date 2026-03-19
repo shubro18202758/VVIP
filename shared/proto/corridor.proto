@@ -1,0 +1,42 @@
+syntax = "proto3";
+
+package vvip.corridor;
+
+option java_multiple_files = true;
+
+// Road corridor segment — the fundamental spatial unit of the system.
+message RoadSegment {
+  int64 segment_id = 1;
+  string road_name = 2;
+  string road_class = 3;  // motorway | trunk | primary | secondary | tertiary
+  int32 lanes = 4;
+  int32 speed_limit_kmh = 5;
+  bool oneway = 6;
+  // WGS84 coordinate pairs forming the segment linestring
+  repeated Coordinate points = 7;
+}
+
+message Coordinate {
+  double longitude = 1;
+  double latitude = 2;
+}
+
+message Junction {
+  int64 junction_id = 1;
+  string junction_type = 2;  // intersection | roundabout | flyover | underpass | toll_plaza | signal
+  bool signal_control = 3;
+  Coordinate location = 4;
+}
+
+message CorridorGraph {
+  repeated RoadSegment segments = 1;
+  repeated Junction junctions = 2;
+  repeated Adjacency adjacencies = 3;
+}
+
+message Adjacency {
+  int64 from_segment_id = 1;
+  int64 to_segment_id = 2;
+  int64 via_junction_id = 3;
+  float turn_cost_sec = 4;
+}

@@ -1,0 +1,35 @@
+# Flow Forecaster — GAT model hyperparameters
+# Tuned for edge deployment with minimal VRAM footprint
+
+model:
+  architecture: "graph_attention_network"
+  input_features: 8        # speed, congestion, lanes, road_class, hour, dow, is_holiday, prev_speed
+  hidden_dim: 64           # Small hidden dimension to limit ONNX model size
+  num_heads: 4
+  num_layers: 3
+  output_features: 2       # predicted_speed, predicted_congestion
+  dropout: 0.1
+
+training:
+  epochs: 50
+  batch_size: 32
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  early_stopping_patience: 10
+  optimizer: "adamw"
+  scheduler: "cosine_annealing"
+
+inference:
+  onnx_opset: 18
+  target_vram_mb: 409                  # Strict VRAM budget for ONNX model
+  execution_provider_priority:
+    - "CUDAExecutionProvider"
+    - "CPUExecutionProvider"
+  batch_timeout_ms: 100                # Max wait to batch inference requests
+
+prediction_horizons_min: [5, 10, 15, 30]
+
+data:
+  lookback_window_min: 60             # Historical window for input features
+  spatial_neighbors: 3                 # Include K-hop neighbors in graph
+  min_observations_per_segment: 10     # Skip segments with sparse data

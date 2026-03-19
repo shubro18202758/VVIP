@@ -1,0 +1,10 @@
+# Custom PostGIS image with pgRouting + pgvector for VVIP corridor platform.
+# Based on Debian (not Alpine) — pgRouting packages unavailable on Alpine.
+# Zero VRAM consumption: entirely CPU-bound spatial-graph database.
+
+FROM postgis/postgis:17-3.5
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    postgresql-17-pgrouting \
+    postgresql-17-pgvector \
+ && rm -rf /var/lib/apt/lists/*

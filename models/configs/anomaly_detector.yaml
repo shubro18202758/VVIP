@@ -1,0 +1,32 @@
+# Anomaly Detector Configuration — Tier 1 Inline (Rust)
+# Target: ~500ns per observation check
+# These thresholds are tuned for Delhi NCR corridor traffic patterns.
+
+# Z-score threshold for speed outlier detection
+z_score_threshold: 3.0
+
+# IQR multiplier for box-plot outlier detection on congestion index
+iqr_multiplier: 1.5
+
+# Maximum plausible speed change between consecutive readings (km/h)
+max_speed_jump_kmh: 40.0
+
+# Observation older than this is considered stale (milliseconds)
+# 5 minutes = 300,000ms
+stale_threshold_ms: 300000
+
+# Tolerance for future timestamps due to clock skew (milliseconds)
+# 30 seconds = 30,000ms
+future_tolerance_ms: 30000
+
+# Max distance from segment centroid for spatial check (meters)
+spatial_tolerance_m: 50.0
+
+# Minimum observations in rolling window before statistical checks activate
+min_observations: 10
+
+# Number of identical consecutive readings to flag as phantom sensor
+phantom_repeat_threshold: 5
+
+# Rolling window size for per-segment statistics
+rolling_window_size: 50

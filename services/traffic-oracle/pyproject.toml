@@ -1,0 +1,93 @@
+[project]
+name = "traffic-oracle"
+version = "0.1.0"
+description = "Predictive traffic modeling, route optimization, and scenario evaluation for VVIP corridor planning"
+requires-python = ">=3.12"
+license = "MIT"
+dependencies = [
+    # ML / Deep Learning — GPU-accelerated with CPU fallback
+    "torch>=2.6",
+    "onnxruntime>=1.20",           # ONNX Runtime for inference (CPU; GPU via onnxruntime-gpu)
+
+    # Geospatial processing
+    "geopandas>=1.0",
+    "shapely>=2.0",
+    "pyproj>=3.7",
+
+    # Graph algorithms for road network routing
+    "networkx>=3.4",
+    "igraph>=0.11",
+
+    # Combinatorial route optimization (CPU-only, no VRAM)
+    "ortools>=9.11",
+
+    # Columnar data processing — zero-copy Arrow interop
+    "polars>=1.15",
+    "pyarrow>=18",
+
+    # Database connectivity
+    "asyncpg>=0.30",               # Async PostgreSQL/PostGIS driver
+    "sqlalchemy[asyncio]>=2.0",
+    "geoalchemy2>=0.16",
+
+    # Real-time state cache
+    "valkey>=6.0",
+
+    # NATS messaging for Arrow IPC consumption
+    "nats-py>=2.9",
+
+    # Numerical computing & ML
+    "numpy>=2.1",
+    "scipy>=1.14",
+    "scikit-learn>=1.5",
+
+    # CLI tooling
+    "click>=8.1",
+
+    # Configuration and logging
+    "pydantic>=2.10",
+    "pydantic-settings>=2.6",
+    "structlog>=24.4",
+
+    # DuckDB for embedded analytical queries (no server, zero-copy Arrow)
+    "duckdb>=1.1",
+
+    # HTTP server
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+
+    # Observability
+    "prometheus-client>=0.21",
+    "psutil>=6.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "pytest-cov>=6.0",
+    "ruff>=0.8",
+    "mypy>=1.13",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/traffic_oracle"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "B", "SIM", "TCH"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

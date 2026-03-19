@@ -1,0 +1,199 @@
+# VVIP Platform — Prometheus Alert Rules
+# Monitors VRAM, LLM performance, MCP tools, API latency, spatial DB
+
+groups:
+  # ─── GPU / VRAM Alerts ──────────────────────────────────────────
+  - name: gpu_vram
+    interval: 5s
+    rules:
+      - alert: VRAMUsageCritical
+        expr: nvidia_gpu_memory_used_bytes / nvidia_gpu_memory_total_bytes > 0.92
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: "GPU VRAM usage exceeds 92%"
+          description: "VRAM at {{ $value | humanizePercentage }} — risk of OOM cascade. Ollama budget: 5632MB, ONNX: 409MB."
+
+      - alert: VRAMUsageHigh
+        expr: nvidia_gpu_memory_used_bytes / nvidia_gpu_memory_total_bytes > 0.80
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "GPU VRAM usage above 80%"
+          description: "VRAM at {{ $value | humanizePercentage }}. Headroom shrinking below 1844MB budget."
+
+      - alert: GPUTemperatureHigh
+        expr: nvidia_gpu_temperature_celsius > 85
+        for: 30s
+        labels:
+          severity: warning
+        annotations:
+          summary: "GPU temperature {{ $value }}°C — thermal throttling imminent"
+
+  # ─── LLM / Ollama Alerts ────────────────────────────────────────
+  - name: llm_performance
+    interval: 10s
+    rules:
+      - alert: LLMTokenRateLow
+        expr: rate(vvip_llm_tokens_generated_total[1m]) < 5
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Qwen token generation below 5 tok/sec"
+          description: "Current rate: {{ $value }} tok/sec. May indicate VRAM contention or model degradation."
+
+      - alert: LLMInferenceLatencyHigh
+        expr: histogram_quantile(0.99, rate(vvip_llm_inference_duration_seconds_bucket[5m])) > 30
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "LLM p99 inference latency exceeds 30s"
+
+      - alert: OllamaUnreachable
+        expr: vvip_ollama_health_up == 0
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: "Ollama API unreachable — convoy-brain degraded"
+
+  # ─── MCP Tool Execution Alerts ──────────────────────────────────
+  - name: mcp_tools
+    interval: 10s
+    rules:
+      - alert: MCPToolTimeout
+        expr: rate(vvip_mcp_tool_errors_total{error="timeout"}[5m]) > 0.1
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "MCP tool timeouts increasing — {{ $labels.tool_name }}"
+
+      - alert: MCPToolErrorRate
+        expr: rate(vvip_mcp_tool_errors_total[5m]) / rate(vvip_mcp_tool_calls_total[5m]) > 0.2
+        for: 3m
+        labels:
+          severity: critical
+        annotations:
+          summary: "MCP tool error rate >20% for {{ $labels.tool_name }}"
+
+  # ─── Reasoning Loop Detection ───────────────────────────────────
+  - name: reasoning_anomalies
+    interval: 10s
+    rules:
+      - alert: ReasoningLoopDetected
+        expr: vvip_orchestrator_tool_rounds_total > 5
+        for: 0s
+        labels:
+          severity: critical
+        annotations:
+          summary: "Orchestrator hit max tool rounds ({{ $value }}/6) — possible reasoning loop"
+          description: "Movement {{ $labels.movement_id }}. ReAct cycle may be stuck."
+
+      - alert: NonDeterministicFailure
+        expr: increase(vvip_orchestrator_nondeterministic_errors_total[10m]) > 3
+        for: 0s
+        labels:
+          severity: warning
+        annotations:
+          summary: "Multiple non-deterministic failures detected in 10 minutes"
+
+  # ─── API Bottleneck Alerts ──────────────────────────────────────
+  - name: api_performance
+    interval: 10s
+    rules:
+      - alert: ConvoyBrainLatencyHigh
+        expr: histogram_quantile(0.95, rate(vvip_api_request_duration_seconds_bucket{service="convoy-brain"}[5m])) > 5
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "convoy-brain p95 latency >5s on {{ $labels.endpoint }}"
+
+      - alert: TrafficOracleLatencyHigh
+        expr: histogram_quantile(0.95, rate(vvip_api_request_duration_seconds_bucket{service="traffic-oracle"}[5m])) > 2
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "traffic-oracle p95 latency >2s on {{ $labels.endpoint }}"
+
+      - alert: APIErrorRateHigh
+        expr: rate(vvip_api_requests_total{status=~"5.."}[5m]) / rate(vvip_api_requests_total[5m]) > 0.05
+        for: 3m
+        labels:
+          severity: critical
+        annotations:
+          summary: "API 5xx error rate >5% on {{ $labels.service }}"
+
+  # ─── Spatial DB Multi-Hop Query Alerts ──────────────────────────
+  - name: spatial_db
+    interval: 10s
+    rules:
+      - alert: PgRoutingQuerySlow
+        expr: histogram_quantile(0.95, rate(vvip_pgrouting_query_duration_seconds_bucket[5m])) > 1
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "pgRouting p95 query time >1s for {{ $labels.query_type }}"
+
+      - alert: PgVectorSearchSlow
+        expr: histogram_quantile(0.95, rate(vvip_pgvector_search_duration_seconds_bucket[5m])) > 0.5
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "pgvector HNSW search p95 >500ms"
+
+      - alert: DatabaseConnectionPoolExhausted
+        expr: vvip_db_pool_available_connections < 5
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: "PostGIS connection pool nearly exhausted ({{ $value }} remaining)"
+
+  # ─── Stream Processor Alerts ────────────────────────────────────
+  - name: stream_processor
+    interval: 5s
+    rules:
+      - alert: IngestionBackpressure
+        expr: vvip_ingress_channel_utilization > 0.8
+        for: 30s
+        labels:
+          severity: warning
+        annotations:
+          summary: "signal-ingress channel >80% full — backpressure building"
+
+      - alert: AnomalyRateSpike
+        expr: rate(vvip_anomaly_detections_total[5m]) / rate(vvip_observations_processed_total[5m]) > 0.3
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Anomaly rate >30% — potential data source corruption"
+
+  # ─── Container Health ───────────────────────────────────────────
+  - name: container_health
+    interval: 15s
+    rules:
+      - alert: ContainerMemoryHigh
+        expr: container_memory_usage_bytes / container_spec_memory_limit_bytes > 0.85
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container {{ $labels.name }} using >85% memory limit"
+
+      - alert: ContainerRestarting
+        expr: increase(container_restart_count[15m]) > 2
+        for: 0s
+        labels:
+          severity: critical
+        annotations:
+          summary: "Container {{ $labels.name }} restarted {{ $value }} times in 15m"
