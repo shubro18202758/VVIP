@@ -42,6 +42,8 @@
 
 <br/>
 
+<img width="3199" height="1788" alt="Screenshot 2026-03-19 233116" src="https://github.com/user-attachments/assets/0195417e-fe92-40b1-a7cc-9f06bec067b1" />
+
 ## 🔴 The Problem
 
 > *"Every day across India's cities, thousands of commuters are stranded — sometimes for 30+ minutes — as roads are locked down far in advance for VVIP convoy passages."*
@@ -79,6 +81,7 @@ The result? **Traffic disruption reduced by up to 6×**, convoy security maintai
 ---
 
 <br/>
+<img width="580" height="1499" alt="Screenshot 2026-03-19 232948" src="https://github.com/user-attachments/assets/176bb2f1-3cfe-4900-a492-2f09a61731a8" />
 
 ## 🎯 How It Works
 
@@ -146,6 +149,8 @@ Most convoy systems stop at escort completion. This platform goes further:
 ---
 
 <br/>
+<img width="591" height="1451" alt="Screenshot 2026-03-19 233020" src="https://github.com/user-attachments/assets/9bff891d-6037-488e-a0b3-c53466fbfda4" />  <img width="595" height="1691" alt="Screenshot 2026-03-19 233049" src="https://github.com/user-attachments/assets/9346d54b-5a1b-46c3-83d6-17641a170448" />
+
 
 ## 🏗️ Key Capabilities
 
@@ -247,6 +252,7 @@ This isn't a demo that needs a server farm. It's a **field-deployable system** t
 ---
 
 <br/>
+<img width="736" height="1795" alt="Screenshot 2026-03-19 233122" src="https://github.com/user-attachments/assets/5b701079-1464-49f8-bebd-41e1e3e8b5e1" />
 
 ## 🔧 System Architecture
 
@@ -396,7 +402,7 @@ VVIP/
 | Requirement | Minimum |
 |---|---|
 | **GPU** | NVIDIA GPU with 8+ GB VRAM (RTX 4070 recommended) |
-| **CPU** | 8+ cores (i9-13900HX recommended) |
+| **CPU** | 8+ cores (i9-14900HX recommended) |
 | **RAM** | 32 GB DDR5 |
 | **OS** | Windows 11 / Ubuntu 22.04+ |
 | **Docker** | Docker Desktop with Compose v2 |
@@ -437,6 +443,7 @@ Navigate to `http://localhost:5173` — the VVIP Convoy Command dashboard is rea
 ---
 
 <br/>
+<img width="3199" height="1785" alt="Screenshot 2026-03-19 232907" src="https://github.com/user-attachments/assets/6f4aeeae-2fa5-4788-bae1-816e8cea4e2d" />
 
 ## 📚 Technical Documentation
 
