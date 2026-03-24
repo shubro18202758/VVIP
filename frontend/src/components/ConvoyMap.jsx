@@ -266,7 +266,9 @@ const ConvoyMap = ({ overlays, routeData, mapStyle, movements }) => {
         {overlays.traffic && segments.map(seg => {
           if (!seg.geometry?.coordinates) return null;
           const traffic = liveTraffic[seg.segment_id];
-          const congestion = traffic?.congestion_idx ?? 0.3;
+          const congestion = traffic?.congestion_idx ?? 0;
+          const hasRealData = !!traffic;
+          const isElevated = congestion > 0.25;
           const coords = seg.geometry.coordinates.map(c => [c[1], c[0]]);
           if (coords.length < 2) return null;
           return (
@@ -274,9 +276,9 @@ const ConvoyMap = ({ overlays, routeData, mapStyle, movements }) => {
             <Polyline
               positions={coords}
               pathOptions={{
-                color: getCongestionColor(congestion),
-                weight: Math.max(3, (seg.lanes || 2) + 1),
-                opacity: 0.65,
+                color: isElevated ? getCongestionColor(congestion) : (hasRealData ? '#94a3b8' : '#64748b'),
+                weight: isElevated ? Math.max(3, (seg.lanes || 2) + 1) : 2,
+                opacity: isElevated ? 0.75 : (hasRealData ? 0.25 : 0.12),
                 lineCap: 'round',
                 lineJoin: 'round',
               }}
@@ -463,7 +465,7 @@ const ConvoyMap = ({ overlays, routeData, mapStyle, movements }) => {
         ))}
 
         {/* Anomaly markers from live anomaly feed */}
-        {overlays.police && anomalies?.map((anom, idx) => {
+        {overlays.anomalies && anomalies?.map((anom, idx) => {
           const seg = segments.find(s => s.segment_id === anom.segment_id);
           const mid = segMid(seg);
           if (!mid) return null;

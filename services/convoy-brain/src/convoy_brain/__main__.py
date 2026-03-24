@@ -72,6 +72,38 @@ class ChatRequest(BaseModel):
     vvip_class: str | None = None
 
 
+class ProtocolStateUpdate(BaseModel):
+    asl_checklist: dict | None = None
+    protocol_compliance: dict | None = None
+    anti_sabotage: dict | None = None
+    transit_status: dict | None = None
+    plan_b: dict | None = None
+    threat_level: str | None = None
+
+
+class DossierRequest(BaseModel):
+    vvip_class: str = Field("Z", description="VVIP class for dossier generation")
+    origin_name: str | None = Field(None, description="Human-readable origin name")
+    destination_name: str | None = Field(None, description="Human-readable destination name")
+    include_sections: list[str] | None = Field(
+        None, description="Specific dossier sections to generate, or all if None"
+    )
+
+
+class AnalyticsReasoningRequest(BaseModel):
+    metric_name: str = Field(..., description="Name of the analytics metric to reason about")
+    metric_value: float | str = Field(..., description="Current value of the metric")
+    metric_context: dict = Field(default_factory=dict, description="Additional context — related metrics, thresholds, history")
+    vvip_class: str = Field("Z", description="Active VVIP class")
+
+
+class RecommendationReasoningRequest(BaseModel):
+    statement: str = Field(..., description="The recommendation statement to explain")
+    category: str = Field("general", description="Category: speed, congestion, security, routing, incident, environmental")
+    ground_data: dict = Field(default_factory=dict, description="Current ground sensor data snapshot")
+    vvip_class: str = Field("Z", description="Active VVIP class")
+
+
 # ---------------------------------------------------------------------------
 # WebSocket connection manager
 # ---------------------------------------------------------------------------
@@ -388,6 +420,410 @@ def create_app() -> FastAPI:
             return result
         except Exception as exc:
             logger.error("clear_movement.failed", movement_id=movement_id, error=str(exc))
+            raise HTTPException(status_code=500, detail=str(exc))
+
+    # -------------------------------------------------------------------
+    # Protocol state management (Blue Book integration)
+    # -------------------------------------------------------------------
+
+    @app.get("/movements/{movement_id}/protocol")
+    async def get_protocol_state(movement_id: str) -> dict:
+        """Retrieve the current Blue Book protocol state for a movement."""
+        context_store: ConvoyContextStore = app.state.context_store
+        ctx = await context_store.get(movement_id)
+        if ctx is None:
+            raise HTTPException(status_code=404, detail="Movement not found")
+        return {
+            "movement_id": movement_id,
+            "protocol_state": ctx.protocol_state,
+        }
+
+    @app.post("/movements/{movement_id}/protocol")
+    async def update_protocol_state(movement_id: str, req: ProtocolStateUpdate) -> dict:
+        """Update Blue Book protocol state and persist to Valkey."""
+        context_store: ConvoyContextStore = app.state.context_store
+        update_data = {k: v for k, v in req.model_dump().items() if v is not None}
+        if not update_data:
+            raise HTTPException(status_code=400, detail="No fields to update")
+
+        ctx = await context_store.update_protocol_state(movement_id, update_data)
+        if ctx is None:
+            raise HTTPException(status_code=404, detail="Movement not found")
+
+        logger.info("protocol.updated", movement_id=movement_id, fields=list(update_data.keys()))
+        return {
+            "movement_id": movement_id,
+            "protocol_state": ctx.protocol_state,
+            "updated_fields": list(update_data.keys()),
+        }
+
+    @app.post("/movements/{movement_id}/protocol/assess")
+    async def assess_protocol(movement_id: str) -> dict:
+        """Use Qwen 3.5 to perform AI-powered Blue Book protocol assessment.
+
+        Feeds the current protocol state, movement context, and corridor
+        conditions to Qwen and returns a structured compliance report.
+        """
+        context_store: ConvoyContextStore = app.state.context_store
+        ctx = await context_store.get(movement_id)
+        if ctx is None:
+            raise HTTPException(status_code=404, detail="Movement not found")
+
+        orchestrator: Orchestrator = app.state.orchestrator
+        session_id = str(uuid.uuid4())
+
+        # Build assessment prompt with full context
+        assessment_prompt = (
+            f"Perform a Blue Book protocol compliance assessment for movement {movement_id}.\n\n"
+            f"VVIP Class: {ctx.vvip_class}\n"
+            f"Movement Status: {ctx.status}\n"
+            f"Protocol State:\n{json.dumps(ctx.protocol_state, indent=2)}\n\n"
+            "Analyze the following:\n"
+            "1. ASL checklist completion — identify missing critical items\n"
+            "2. 10-Rule protocol compliance — flag any violations\n"
+            "3. Anti-sabotage sweep status — assess readiness\n"
+            "4. Plan B contingency readiness — evaluate preparedness\n"
+            "5. Overall deployment readiness verdict\n\n"
+            "Use available tools to check live traffic conditions and corridor status "
+            "to enrich your assessment. Return your protocol_assessment in the standard output format."
+        )
+
+        try:
+            await orchestrator.create_session(
+                session_id=session_id,
+                movement_id=movement_id,
+                vvip_class=ctx.vvip_class,
+            )
+            result = await orchestrator.process_turn(session_id, assessment_prompt)
+
+            # Update protocol state with AI assessment metadata
+            await context_store.update_protocol_state(movement_id, {
+                "last_assessment": {
+                    "timestamp": time.time(),
+                    "confidence": result.get("confidence", "unknown"),
+                    "action": result.get("action", "assessment"),
+                },
+            })
+
+            return {
+                "movement_id": movement_id,
+                "assessment": result,
+                "protocol_state": ctx.protocol_state,
+            }
+        except Exception as exc:
+            logger.error("protocol.assess.failed", movement_id=movement_id, error=str(exc))
+            raise HTTPException(status_code=500, detail=str(exc))
+        finally:
+            orchestrator.end_session(session_id)
+
+    @app.post("/movements/{movement_id}/dossier")
+    async def generate_dossier(movement_id: str, req: DossierRequest) -> dict:
+        """Generate a comprehensive security dossier via Qwen 3.5.
+
+        Queries corridor data, anomalies, and traffic patterns via MCP tools,
+        then instructs Qwen to produce a structured security dossier covering
+        all Blue Book sections.
+        """
+        context_store: ConvoyContextStore = app.state.context_store
+        ctx = await context_store.get(movement_id)
+        if ctx is None:
+            raise HTTPException(status_code=404, detail="Movement not found")
+
+        orchestrator: Orchestrator = app.state.orchestrator
+        session_id = str(uuid.uuid4())
+
+        sections_instruction = ""
+        if req.include_sections:
+            sections_instruction = f"\nFocus on these sections: {', '.join(req.include_sections)}"
+
+        dossier_prompt = (
+            f"Generate a comprehensive VVIP Security Dossier for movement {movement_id}.\n\n"
+            f"VVIP Class: {req.vvip_class}\n"
+            f"Origin: {req.origin_name or 'Not specified'}\n"
+            f"Destination: {req.destination_name or 'Not specified'}\n"
+            f"Movement Status: {ctx.status}\n"
+            f"Protocol State:\n{json.dumps(ctx.protocol_state, indent=2)}\n"
+            f"{sections_instruction}\n\n"
+            "Use available tools to gather:\n"
+            "- Live traffic conditions along the corridor\n"
+            "- Recent anomalies in the area\n"
+            "- Traffic flow predictions for key segments\n"
+            "- Corridor summary for overall situational awareness\n\n"
+            "Produce a structured security dossier with these sections:\n"
+            "1. Movement Overview & Classification\n"
+            "2. Route Security Assessment\n"
+            "3. Threat Environment Analysis (based on anomalies + traffic)\n"
+            "4. ASL Compliance Status\n"
+            "5. Anti-Sabotage Readiness\n"
+            "6. Diversion & Traffic Management Plan\n"
+            "7. Communication Protocols (command hierarchy)\n"
+            "8. Plan B Contingency Assessment\n"
+            "9. Risk Matrix (segment-level risk scoring)\n"
+            "10. Recommendations & Action Items\n\n"
+            "Return the dossier as a JSON object with section keys and content values."
+        )
+
+        try:
+            await orchestrator.create_session(
+                session_id=session_id,
+                movement_id=movement_id,
+                vvip_class=req.vvip_class,
+            )
+            result = await orchestrator.process_turn(session_id, dossier_prompt)
+
+            # Record dossier generation in protocol state
+            await context_store.update_protocol_state(movement_id, {
+                "dossier_generated_at": time.time(),
+            })
+
+            return {
+                "movement_id": movement_id,
+                "vvip_class": req.vvip_class,
+                "dossier": result,
+                "generated_at": time.time(),
+            }
+        except Exception as exc:
+            logger.error("dossier.generate.failed", movement_id=movement_id, error=str(exc))
+            raise HTTPException(status_code=500, detail=str(exc))
+        finally:
+            orchestrator.end_session(session_id)
+
+    @app.post("/movements/{movement_id}/threat-assessment")
+    async def threat_assessment(movement_id: str) -> dict:
+        """Real-time threat assessment combining live data with Qwen analysis.
+
+        Queries live traffic, recent anomalies, and corridor conditions,
+        then uses Qwen to produce a threat-level determination with
+        Blue Book compliance status.
+        """
+        context_store: ConvoyContextStore = app.state.context_store
+        ctx = await context_store.get(movement_id)
+        if ctx is None:
+            raise HTTPException(status_code=404, detail="Movement not found")
+
+        orchestrator: Orchestrator = app.state.orchestrator
+        session_id = str(uuid.uuid4())
+
+        threat_prompt = (
+            f"Perform a real-time threat assessment for active movement {movement_id}.\n\n"
+            f"VVIP Class: {ctx.vvip_class}\n"
+            f"Status: {ctx.status}\n"
+            f"Convoy Position: {ctx.convoy_position or 'Not deployed'}\n"
+            f"Speed: {ctx.convoy_speed_kmh} km/h\n"
+            f"Active Diversions: {len(ctx.active_diversions)}\n"
+            f"Current Threat Level: {ctx.protocol_state.get('threat_level', 'nominal')}\n\n"
+            "Use these tools to gather real-time intelligence:\n"
+            "1. get_live_traffic — check current conditions on route segments\n"
+            "2. Query recent anomalies — check for suspicious patterns\n"
+            "3. predict_traffic_flow — forecast near-term conditions\n\n"
+            "Assess and return:\n"
+            "- threat_level: nominal | elevated | high | critical\n"
+            "- threat_factors: list of identified risks with severity\n"
+            "- anomaly_summary: count and types of active anomalies\n"
+            "- corridor_status: green | amber | red\n"
+            "- protocol_violations: any Blue Book rule violations detected\n"
+            "- recommended_actions: immediate actions if threat is elevated\n"
+            "- plan_b_trigger: whether Plan B activation is recommended (true/false)\n"
+        )
+
+        try:
+            await orchestrator.create_session(
+                session_id=session_id,
+                movement_id=movement_id,
+                vvip_class=ctx.vvip_class,
+            )
+            result = await orchestrator.process_turn(session_id, threat_prompt)
+
+            # Update threat level in protocol state based on AI assessment
+            assessed_threat = result.get("data", {}).get("threat_level") or result.get("threat_level")
+            if assessed_threat and assessed_threat in ("nominal", "elevated", "high", "critical"):
+                await context_store.update_protocol_state(movement_id, {
+                    "threat_level": assessed_threat,
+                })
+
+            return {
+                "movement_id": movement_id,
+                "threat": result,
+                "current_protocol_state": ctx.protocol_state,
+                "assessed_at": time.time(),
+            }
+        except Exception as exc:
+            logger.error("threat.assess.failed", movement_id=movement_id, error=str(exc))
+            raise HTTPException(status_code=500, detail=str(exc))
+        finally:
+            orchestrator.end_session(session_id)
+
+    # -------------------------------------------------------------------
+    # Deep-dive reasoning (Qwen 3.5 powered analytics + recommendations)
+    # -------------------------------------------------------------------
+
+    @app.post("/analytics/reasoning")
+    async def analytics_reasoning(req: AnalyticsReasoningRequest) -> dict:
+        """Generate mathematical reasoning behind an analytics metric using Qwen 3.5.
+
+        Calls the LLM bridge directly (bypasses orchestrator) with thinking
+        enabled so that Qwen produces deep, structured reasoning output.
+        """
+        bridge: OllamaBridge = app.state.bridge
+
+        system_prompt = (
+            "You are an elite traffic analytics mathematician for a VVIP convoy "
+            "protection unit. Your task is to produce a rigorous, multi-layered "
+            "mathematical reasoning breakdown for a given metric. Use transport "
+            "engineering formulas (BPR delay function, Greenshields speed-density, "
+            "Webster signal delay, Little's law, queueing theory) where applicable. "
+            "Think deeply, then produce the final structured JSON analysis."
+        )
+
+        user_prompt = (
+            f"METRIC: {req.metric_name}\n"
+            f"CURRENT VALUE: {req.metric_value}\n"
+            f"VVIP CLASS: {req.vvip_class}\n"
+            f"CONTEXT: {json.dumps(req.metric_context, default=str)}\n\n"
+            "Return a JSON object with exactly these fields:\n"
+            "{\n"
+            '  "metric_name": "...",\n'
+            '  "formula": "The primary mathematical formula",\n'
+            '  "secondary_formulas": ["Additional relevant formulas used"],\n'
+            '  "inputs": [{"name": "...", "value": ..., "unit": "...", "source": "..."}],\n'
+            '  "computation_steps": [\n'
+            '    {"step": 1, "operation": "...", "result": ..., "explanation": "detailed explanation", "formula_ref": "..."}\n'
+            "  ],\n"
+            '  "result": {"value": ..., "unit": "...", "precision": "...", "z_score": ..., "percentile": ...},\n'
+            '  "sensitivity": [{"factor": "...", "elasticity": ..., "direction": "positive|negative"}],\n'
+            '  "interpretation": "What this value means operationally for convoy safety",\n'
+            '  "thresholds": {"green": "...", "amber": "...", "red": "...", "critical": "..."},\n'
+            '  "trend_analysis": "Rising/falling/stable with quantified rate of change",\n'
+            '  "regime": "free_flow | synchronized | forced_flow | gridlock",\n'
+            '  "actionable_insight": "Specific tactical action for the convoy commander",\n'
+            '  "confidence": "high | medium | low",\n'
+            '  "data_quality_note": "Assessment of input data reliability"\n'
+            "}"
+        )
+
+        try:
+            raw = await bridge.generate(
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                json_mode=True,
+                suppress_thinking=False,
+            )
+            # Parse the raw JSON response
+            parsed = json.loads(raw) if raw.strip() else {}
+            return {
+                "metric_name": req.metric_name,
+                "metric_value": req.metric_value,
+                "reasoning": {
+                    "action": "analytics_reasoning",
+                    "reasoning": parsed.get("interpretation", raw[:500]),
+                    "confidence": parsed.get("confidence", "medium"),
+                    "tool_calls_made": [],
+                    "data": parsed,
+                },
+                "generated_at": time.time(),
+            }
+        except json.JSONDecodeError:
+            # LLM returned non-JSON — wrap the raw text
+            return {
+                "metric_name": req.metric_name,
+                "metric_value": req.metric_value,
+                "reasoning": {
+                    "action": "analytics_reasoning",
+                    "reasoning": raw[:1000] if raw else "Analysis could not be parsed.",
+                    "confidence": "low",
+                    "tool_calls_made": [],
+                    "data": {},
+                },
+                "generated_at": time.time(),
+            }
+        except Exception as exc:
+            logger.error("analytics.reasoning.failed", metric=req.metric_name, error=str(exc))
+            raise HTTPException(status_code=500, detail=str(exc))
+
+    @app.post("/recommendations/reasoning")
+    async def recommendation_reasoning(req: RecommendationReasoningRequest) -> dict:
+        """Generate chain-of-thought reasoning behind a recommendation using Qwen 3.5.
+
+        Calls the LLM bridge directly (bypasses orchestrator) with thinking
+        enabled so that Qwen produces a full decision chain with deep reasoning.
+        """
+        bridge: OllamaBridge = app.state.bridge
+
+        system_prompt = (
+            "You are the chief VVIP convoy security advisor with expertise in convoy "
+            "protection, traffic engineering, and real-time threat assessment. Your task "
+            "is to produce a comprehensive, multi-phase chain-of-thought reasoning "
+            "breakdown for a given recommendation. Use domain-specific reasoning: threat "
+            "classification (Z+/Z/Y/X protocols), BPR congestion modeling, corridor "
+            "resilience metrics, and risk quantification. Think deeply and thoroughly "
+            "before producing your final structured JSON analysis."
+        )
+
+        user_prompt = (
+            f"RECOMMENDATION: {req.statement}\n"
+            f"CATEGORY: {req.category}\n"
+            f"VVIP CLASS: {req.vvip_class}\n"
+            f"GROUND DATA: {json.dumps(req.ground_data, default=str)}\n\n"
+            "Produce a detailed chain-of-thought analysis. Each reasoning step must "
+            "contain at least 2-3 sentences with specific values, calculations, or "
+            "domain references. Return a JSON object with exactly these fields:\n"
+            "{\n"
+            '  "statement": "The recommendation being explained",\n'
+            '  "chain_of_thought": [\n'
+            '    {"step": 1, "phase": "Observation", "reasoning": "Detailed raw data observed with specific values and measurements"},\n'
+            '    {"step": 2, "phase": "Hypothesis", "reasoning": "Pattern identified, causal model with engineering basis"},\n'
+            '    {"step": 3, "phase": "Evidence", "reasoning": "Supporting data points, statistical backing, and formula references"},\n'
+            '    {"step": 4, "phase": "Risk Assessment", "reasoning": "Quantified threat level with probability and impact numbers"},\n'
+            '    {"step": 5, "phase": "Decision", "reasoning": "Why this specific action was chosen over alternatives with trade-off analysis"}\n'
+            "  ],\n"
+            '  "data_sources": ["list of data sources consulted"],\n'
+            '  "risk_factors": [{"factor": "...", "severity": "low|medium|high", "mitigation": "...", "probability": 0.0}],\n'
+            '  "alternative_actions": [{"action": "...", "pros": "...", "cons": "...", "risk_delta": "..."}],\n'
+            '  "impact_assessment": {"speed_delta_pct": ..., "eta_delta_sec": ..., "risk_score": ..., "disruption_radius_m": ...},\n'
+            '  "historical_precedent": "Similar situation reference if applicable",\n'
+            '  "confidence": "high | medium | low",\n'
+            '  "urgency": "immediate | short-term | advisory",\n'
+            '  "vvip_protocol_reference": "Relevant Z+/Z/Y/X protocol constraint"\n'
+            "}"
+        )
+
+        try:
+            raw = await bridge.generate(
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                json_mode=True,
+                suppress_thinking=False,
+            )
+            # Parse the raw JSON response
+            parsed = json.loads(raw) if raw.strip() else {}
+            return {
+                "statement": req.statement,
+                "category": req.category,
+                "reasoning": {
+                    "action": "recommendation_reasoning",
+                    "reasoning": parsed.get("statement", raw[:500]),
+                    "confidence": parsed.get("confidence", "medium"),
+                    "tool_calls_made": [],
+                    "data": parsed,
+                },
+                "generated_at": time.time(),
+            }
+        except json.JSONDecodeError:
+            # LLM returned non-JSON — wrap the raw text
+            return {
+                "statement": req.statement,
+                "category": req.category,
+                "reasoning": {
+                    "action": "recommendation_reasoning",
+                    "reasoning": raw[:1000] if raw else "Reasoning could not be parsed.",
+                    "confidence": "low",
+                    "tool_calls_made": [],
+                    "data": {},
+                },
+                "generated_at": time.time(),
+            }
+        except Exception as exc:
+            logger.error("recommendation.reasoning.failed", statement=req.statement[:50], error=str(exc))
             raise HTTPException(status_code=500, detail=str(exc))
 
     # -------------------------------------------------------------------

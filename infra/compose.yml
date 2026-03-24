@@ -121,9 +121,9 @@ services:
       VVIP_NATS_URL: nats://nats:4222
       OLLAMA_BASE_URL: http://host.docker.internal:11434
       TRAFFIC_ORACLE_URL: http://traffic-oracle:8081
-      PORT: "8080"
+      PORT: "8082"
     ports:
-      - "8080:8080"
+      - "8082:8082"
     depends_on:
       postgis:
         condition: service_healthy

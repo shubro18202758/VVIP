@@ -16,6 +16,7 @@ export default defineConfig({
       '/api/agent': {
         target: 'http://localhost:8082',
         changeOrigin: true,
+        timeout: 300000,
         rewrite: (path) => path.replace(/^\/api\/agent/, ''),
       },
       // convoy‑brain chat streaming

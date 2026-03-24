@@ -1,15 +1,19 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Activity, Shield, Users, AlertTriangle, ChevronRight, ChevronLeft, Gauge, Zap, Radio, Eye, Clock as ClockIcon, TrendingDown, TrendingUp, BarChart3, Layers, Radar as RadarIcon, Target, Lightbulb, Bell, ArrowUpRight, ArrowDownRight, Minus } from 'lucide-react';
-import { AreaChart, Area, LineChart, Line, BarChart, Bar, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine, PieChart, Pie, ScatterChart, Scatter, RadialBarChart, RadialBar, Legend, ComposedChart } from 'recharts';
+import { AreaChart, Area, LineChart, Line, BarChart, Bar, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine, PieChart, Pie, ScatterChart, Scatter, RadialBarChart, RadialBar, Legend, ComposedChart, RadarChart, Radar as RechartsRadar, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Treemap } from 'recharts';
 import SHdr from './SHdr';
 import { IconRouteArrow, IconArrowRight } from './CustomIcons';
 import { useConvoy } from '../context/ConvoyContext';
 import * as api from '../services/api';
+import AnalyticsDeepDive from './AnalyticsDeepDive';
+import RecommendationDeepDive from './RecommendationDeepDive';
 
 const SEVERITY_COLOR = { high: '#dc2626', medium: '#ea580c', low: '#eab308' };
 const RP_SEC_SPECS = {
+  'SPG': { minLanes: 8, closure: 'Full Lockdown', advance: 300, maxQueue: 3000 },
   'Z+': { minLanes: 6, closure: 'Full', advance: 180, maxQueue: 2000 },
   'Z':  { minLanes: 4, closure: 'Partial', advance: 120, maxQueue: 1000 },
+  'Y+': { minLanes: 3, closure: 'Partial+Spd', advance: 90, maxQueue: 750 },
   'Y':  { minLanes: 2, closure: 'Spd Restrict', advance: 60, maxQueue: 500 },
   'X':  { minLanes: 0, closure: 'Signal Only', advance: 0, maxQueue: 0 },
 };
@@ -31,6 +35,8 @@ const RightPanel = ({ open, onToggle, alerts, summary, movements, vvipClass }) =
   const [etaMap, setEtaMap] = useState({});
   const [segmentHistory, setSegmentHistory] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [deepDiveMetric, setDeepDiveMetric] = useState(null);
+  const [deepDiveRecommendation, setDeepDiveRecommendation] = useState(null);
 
   // Compute live team count from diversions in planResult
   const teamCount = useMemo(() => {
@@ -171,6 +177,222 @@ const RightPanel = ({ open, onToggle, alerts, summary, movements, vvipClass }) =
     ];
   }, [anHasData, convoySimulation]);
 
+  // Ground-level data features derived from real corridor summary + simulation state
+  // Hoisted above threatRadarData which depends on it
+  const groundDataTickRef = useRef(0);
+  const groundDataNoiseRef = useRef({ crowd: 0, weather: 0, neighbor: 0 });
+  const groundData = useMemo(() => {
+    const cs = convoySimulation;
+    const spd = cs?.speed ?? summary?.avg_speed_kmh ?? 32;
+    const cong = cs?.congestion ?? summary?.avg_congestion_idx ?? 0.4;
+    const elapsed = cs?.elapsedSeconds ?? 0;
+    const hour = new Date().getHours();
+    const minute = new Date().getMinutes();
+    const dow = new Date().getDay();
+    const hourSin = Math.sin(2 * Math.PI * hour / 24);
+    const hourCos = Math.cos(2 * Math.PI * hour / 24);
+    const dowSin = Math.sin(2 * Math.PI * dow / 7);
+    const dowCos = Math.cos(2 * Math.PI * dow / 7);
+
+    // Road properties from current simulation zone or corridor summary
+    const zone = cs?.currentZone || 'primary';
+    const laneMap = { motorway: 6, trunk: 4, primary: 3, secondary: 2, tertiary: 2, 'NH/Expressway': 6, 'Airport-Expressway': 6, 'Arterial Rd': 4, 'Urban Core': 4 };
+    const scoreMap = { motorway: 100, trunk: 85, primary: 70, secondary: 50, tertiary: 30, 'NH/Expressway': 100, 'Airport-Expressway': 100, 'Arterial Rd': 70, 'Urban Core': 50 };
+    const lanes = laneMap[zone] || 3;
+    const roadClassScore = scoreMap[zone] || 30;
+
+    // Crowd density: time-of-day profile + corridor congestion influence + zone factor
+    // Morning peak 8-10, evening peak 17-20, baseline varies by zone
+    const hourFrac = hour + minute / 60;
+    const morningPeak = Math.exp(-0.5 * ((hourFrac - 9) / 1.2) ** 2);
+    const eveningPeak = Math.exp(-0.5 * ((hourFrac - 18) / 1.5) ** 2);
+    const peakFactor = Math.max(morningPeak, eveningPeak);
+    const zoneMultiplier = zone === 'secondary' || zone === 'Urban Core' || zone === 'Raipur-Darwaza' ? 1.6 : zone === 'primary' || zone === 'Arterial Rd' ? 1.2 : 0.6;
+    const congestionInfluence = cong * 800; // high congestion = more people
+    // Small controlled random walk (smoothed noise)
+    groundDataTickRef.current += 1;
+    if (groundDataTickRef.current % 3 === 0) {
+      groundDataNoiseRef.current.crowd += (Math.random() - 0.5) * 80;
+      groundDataNoiseRef.current.crowd *= 0.85; // decay
+      groundDataNoiseRef.current.weather += (Math.random() - 0.5) * 0.04;
+      groundDataNoiseRef.current.weather *= 0.9;
+      groundDataNoiseRef.current.neighbor += (Math.random() - 0.5) * 0.06;
+      groundDataNoiseRef.current.neighbor *= 0.88;
+    }
+    const crowdDensity = Math.round(Math.max(200, 500 + peakFactor * 1200 * zoneMultiplier + congestionInfluence + groundDataNoiseRef.current.crowd));
+
+    // Intersection signal phase (cycles based on elapsed)
+    const signalPhase = Math.floor((elapsed % 120) / 30);
+
+    // Weather risk: time-of-day pattern (afternoon thunderstorm risk) + corridor data
+    const afternoonRisk = Math.exp(-0.5 * ((hourFrac - 15) / 3) ** 2) * 0.25;
+    const corridorWeatherBase = summary?.avg_congestion_idx ? summary.avg_congestion_idx * 0.15 : 0.08;
+    const weatherRisk = Math.min(1, Math.max(0, corridorWeatherBase + afternoonRisk + groundDataNoiseRef.current.weather));
+
+    // Incident probability: derived from real congestion + crowd + weather
+    const incidentProb = Math.min(1, cong * 0.4 + (crowdDensity / 3000) * 0.3 + weatherRisk * 0.3);
+
+    // Speed delta from actual history
+    const spdHistory = cs?.speedHistory?.slice(-10) || [];
+    const speedDelta = spdHistory.length > 1 ? spdHistory[spdHistory.length - 1]?.speed - spdHistory[0]?.speed : 0;
+
+    // Neighbor speed ratio: corridor avg speed vs convoy speed
+    const corridorAvgSpeed = summary?.avg_speed_kmh || 35;
+    const neighborSpeedRatio = Math.max(0.5, Math.min(1.5, spd > 0 ? corridorAvgSpeed / spd : 1 + groundDataNoiseRef.current.neighbor));
+
+    return {
+      speed: Math.round(spd * 10) / 10,
+      congestion: Math.round(cong * 100),
+      crowdDensity,
+      signalPhase,
+      weatherRisk: Math.round(weatherRisk * 100),
+      incidentProb: Math.round(incidentProb * 100),
+      lanes,
+      roadClassScore,
+      hourSin: Math.round(hourSin * 1000) / 1000,
+      hourCos: Math.round(hourCos * 1000) / 1000,
+      dowSin: Math.round(dowSin * 1000) / 1000,
+      dowCos: Math.round(dowCos * 1000) / 1000,
+      speedDelta: Math.round(speedDelta * 10) / 10,
+      neighborSpeedRatio: Math.round(neighborSpeedRatio * 100) / 100,
+      elapsed,
+    };
+  }, [convoySimulation, summary]);
+
+  /* ── Threat Radar Data (security threat vectors) ── */
+  const threatRadarData = useMemo(() => {
+    const gd = groundData || {};
+    const cs = convoySimulation;
+    return [
+      { axis: 'Congestion', value: Math.min(100, (gd.congestion || 0)), max: 100 },
+      { axis: 'Crowd Risk', value: Math.min(100, Math.round((gd.crowdDensity || 0) / 30)), max: 100 },
+      { axis: 'Incident', value: gd.incidentProb || 0, max: 100 },
+      { axis: 'Weather', value: gd.weatherRisk || 0, max: 100 },
+      { axis: 'Speed Deficit', value: Math.min(100, Math.round(Math.max(0, 50 - (cs?.speed || 30)) * 2)), max: 100 },
+      { axis: 'Signal Delay', value: Math.round((gd.signalPhase || 0) / 3 * 100), max: 100 },
+    ];
+  }, [groundData, convoySimulation]);
+
+  /* ── Rolling Speed Average + Envelope ── */
+  const rollingAvgData = useMemo(() => {
+    if (anSh.length < 6) return [];
+    const window = 5;
+    return anSh.slice(window - 1).map((_, i) => {
+      const slice = anSh.slice(i, i + window);
+      const avg = slice.reduce((s, d) => s + d.speed, 0) / window;
+      const mn = Math.min(...slice.map(d => d.speed));
+      const mx = Math.max(...slice.map(d => d.speed));
+      return { i, avg: Math.round(avg * 10) / 10, min: Math.round(mn), max: Math.round(mx), raw: Math.round(anSh[i + window - 1].speed) };
+    });
+  }, [anSh]);
+
+  /* ── Fuel Consumption Rate ── */
+  const fuelRateData = useMemo(() => {
+    const fh = convoySimulation?.fuelHistory;
+    if (!fh?.length || fh.length < 3) return [];
+    return fh.slice(1).map((d, i) => ({
+      i,
+      rate: Math.round(Math.abs((fh[i].fuel || 0) - (d.fuel || 0)) * 1000) / 10,
+      fuel: Math.round((d.fuel || 0) * 100) / 100,
+    }));
+  }, [convoySimulation?.fuelHistory]);
+
+  /* ── Segment Risk Treemap ── */
+  const segmentRiskData = useMemo(() => {
+    const cs = convoySimulation;
+    if (!cs?.active) return [];
+    const cong = cs.congestion ?? 0;
+    const spd = cs.speed ?? 30;
+    return [
+      { name: 'Urban Core', size: Math.round(cong * 35 + 15), risk: cong > 0.5 ? 'high' : 'medium', fill: '#dc2626' },
+      { name: 'Arterial', size: Math.round((1 - cong) * 25 + 10), risk: 'medium', fill: '#ea580c' },
+      { name: 'Expressway', size: Math.round((spd / 60) * 30 + 5), risk: spd > 40 ? 'low' : 'medium', fill: '#16a34a' },
+      { name: 'Sub-Urban', size: 15, risk: 'low', fill: '#3b82f6' },
+      { name: 'Transition', size: 10, risk: cong > 0.6 ? 'high' : 'low', fill: '#8b5cf6' },
+    ];
+  }, [convoySimulation]);
+
+  /* ── Velocity Jerk (rate of acceleration change — ride comfort metric) ── */
+  const jerkData = useMemo(() => {
+    if (anSh.length < 4) return [];
+    const accels = anSh.slice(1).map((d, i) => d.speed - anSh[i].speed);
+    return accels.slice(1).map((a, i) => ({
+      i, jerk: Number((a - accels[i]).toFixed(3)), accel: Number(accels[i + 1].toFixed(2)),
+    }));
+  }, [anSh]);
+
+  /* ── Speed Percentile Bands (P10/P25/P50/P75/P90 envelope) ── */
+  const percentileBands = useMemo(() => {
+    if (anSh.length < 10) return [];
+    const w = 8;
+    return anSh.slice(w - 1).map((_, idx) => {
+      const win = anSh.slice(idx, idx + w).map(d => d.speed).sort((a, b) => a - b);
+      const p = (pct) => win[Math.floor(pct / 100 * (win.length - 1))];
+      return { i: idx, p10: Math.round(p(10) * 10) / 10, p25: Math.round(p(25) * 10) / 10, p50: Math.round(p(50) * 10) / 10, p75: Math.round(p(75) * 10) / 10, p90: Math.round(p(90) * 10) / 10 };
+    });
+  }, [anSh]);
+
+  /* ── Statistical Summary (mean/median/std/skew/kurtosis) ── */
+  const speedStats = useMemo(() => {
+    if (anSh.length < 5) return null;
+    const speeds = anSh.map(d => d.speed);
+    const n = speeds.length;
+    const mean = speeds.reduce((s, v) => s + v, 0) / n;
+    const sorted = [...speeds].sort((a, b) => a - b);
+    const median = n % 2 === 0 ? (sorted[n / 2 - 1] + sorted[n / 2]) / 2 : sorted[Math.floor(n / 2)];
+    const variance = speeds.reduce((s, v) => s + (v - mean) ** 2, 0) / n;
+    const std = Math.sqrt(variance);
+    const skewness = std > 0 ? speeds.reduce((s, v) => s + ((v - mean) / std) ** 3, 0) / n : 0;
+    const kurtosis = std > 0 ? speeds.reduce((s, v) => s + ((v - mean) / std) ** 4, 0) / n - 3 : 0;
+    const cv = mean > 0 ? std / mean * 100 : 0;
+    return { mean: mean.toFixed(1), median: median.toFixed(1), std: std.toFixed(2), skewness: skewness.toFixed(3), kurtosis: kurtosis.toFixed(3), cv: cv.toFixed(1), min: sorted[0].toFixed(1), max: sorted[n - 1].toFixed(1), n, iqr: (sorted[Math.floor(n * 0.75)] - sorted[Math.floor(n * 0.25)]).toFixed(1) };
+  }, [anSh]);
+
+  /* ── Speed-Flow Fundamental Diagram ── */
+  const speedFlowData = useMemo(() => {
+    if (anSh.length < 5 || anCh.length < 5) return [];
+    return anSh.map((d, i) => {
+      const density = (anCh[i]?.congestion ?? 0) * 100;
+      const flow = d.speed * (1 - (anCh[i]?.congestion ?? 0));
+      return { speed: Math.round(d.speed * 10) / 10, density: Math.round(density), flow: Math.round(flow * 10) / 10 };
+    });
+  }, [anSh, anCh]);
+
+  /* ── CUSUM Change Detection ── */
+  const cusumData = useMemo(() => {
+    if (anSh.length < 10) return [];
+    const speeds = anSh.map(d => d.speed);
+    const mean = speeds.reduce((s, v) => s + v, 0) / speeds.length;
+    let cusumPos = 0, cusumNeg = 0;
+    const k = 0.5;
+    return speeds.map((v, i) => {
+      cusumPos = Math.max(0, cusumPos + (v - mean) - k);
+      cusumNeg = Math.max(0, cusumNeg - (v - mean) - k);
+      return { i, pos: Math.round(cusumPos * 100) / 100, neg: Math.round(cusumNeg * 100) / 100 };
+    });
+  }, [anSh]);
+
+  /* ── Phase Space (speed vs acceleration trajectory) ── */
+  const phaseSpaceData = useMemo(() => {
+    if (anSh.length < 3) return [];
+    return anSh.slice(1).map((d, i) => ({
+      speed: Math.round(d.speed * 10) / 10,
+      accel: Number((d.speed - anSh[i].speed).toFixed(2)),
+      idx: i,
+    }));
+  }, [anSh]);
+
+  /* ── Congestion Regime Classification ── */
+  const regimeData = useMemo(() => {
+    if (anSh.length < 5 || anCh.length < 5) return [];
+    return anSh.map((d, i) => {
+      const cg = anCh[i]?.congestion ?? 0;
+      const regime = cg < 0.3 ? 'Free Flow' : cg < 0.6 ? 'Synchronized' : cg < 0.8 ? 'Forced Flow' : 'Gridlock';
+      const color = cg < 0.3 ? '#22c55e' : cg < 0.6 ? '#eab308' : cg < 0.8 ? '#ea580c' : '#dc2626';
+      return { i, speed: d.speed, congestion: Math.round(cg * 100), regime, color };
+    });
+  }, [anSh, anCh]);
+
   /* ── Idle-state computed metrics ── */
   const corridorHealth = useMemo(() => {
     const cgx = summary?.avg_congestion_idx ?? 0;
@@ -203,54 +425,6 @@ const RightPanel = ({ open, onToggle, alerts, summary, movements, vvipClass }) =
   const [predictNotifs, setPredictNotifs] = useState([]);
   const [cotSteps, setCotSteps] = useState([]);
   const [futureCotSteps, setFutureCotSteps] = useState([]);
-
-  // Synthetic ground-level data features (simulates real-time sensor + crowd feeds)
-  const groundData = useMemo(() => {
-    const cs = convoySimulation;
-    const spd = cs?.speed ?? summary?.avg_speed_kmh ?? 32;
-    const cong = cs?.congestion ?? summary?.avg_congestion_idx ?? 0.4;
-    const elapsed = cs?.elapsedSeconds ?? 0;
-    const hour = new Date().getHours();
-    const dow = new Date().getDay();
-    const hourSin = Math.sin(2 * Math.PI * hour / 24);
-    const hourCos = Math.cos(2 * Math.PI * hour / 24);
-    const dowSin = Math.sin(2 * Math.PI * dow / 7);
-    const dowCos = Math.cos(2 * Math.PI * dow / 7);
-    const lanes = cs?.currentZone === 'NH/Expressway' ? 6 : cs?.currentZone === 'Urban Core' ? 4 : 3;
-    const roadClassScore = cs?.currentZone === 'NH/Expressway' ? 100 : cs?.currentZone === 'Arterial Rd' ? 70 : cs?.currentZone === 'Urban Core' ? 50 : 30;
-
-    // Simulated crowd density (people/km²)
-    const crowdDensity = Math.round(1200 + Math.sin(elapsed * 0.02) * 400 + (hour > 8 && hour < 20 ? 600 : 0));
-    // Intersection signal phase (0-3 = green/yellow/red/pending)
-    const signalPhase = Math.floor((elapsed % 120) / 30);
-    // Weather risk factor (0-1, synthetic sine-based)
-    const weatherRisk = Math.min(1, Math.max(0, 0.15 + Math.sin(elapsed * 0.005) * 0.2));
-    // Incident probability derived from congestion + crowd
-    const incidentProb = Math.min(1, cong * 0.4 + (crowdDensity / 3000) * 0.3 + weatherRisk * 0.3);
-    // Speed delta from last 10 readings
-    const spdHistory = cs?.speedHistory?.slice(-10) || [];
-    const speedDelta = spdHistory.length > 1 ? spdHistory[spdHistory.length - 1]?.speed - spdHistory[0]?.speed : 0;
-    // Avg neighbor speed ratio (synthetic)
-    const neighborSpeedRatio = Math.max(0.5, Math.min(1.5, 1 + Math.sin(elapsed * 0.015) * 0.3));
-
-    return {
-      speed: Math.round(spd * 10) / 10,
-      congestion: Math.round(cong * 100),
-      crowdDensity,
-      signalPhase,
-      weatherRisk: Math.round(weatherRisk * 100),
-      incidentProb: Math.round(incidentProb * 100),
-      lanes,
-      roadClassScore,
-      hourSin: Math.round(hourSin * 1000) / 1000,
-      hourCos: Math.round(hourCos * 1000) / 1000,
-      dowSin: Math.round(dowSin * 1000) / 1000,
-      dowCos: Math.round(dowCos * 1000) / 1000,
-      speedDelta: Math.round(speedDelta * 10) / 10,
-      neighborSpeedRatio: Math.round(neighborSpeedRatio * 100) / 100,
-      elapsed,
-    };
-  }, [convoySimulation, summary]);
 
   // Present-state recommendation engine (chain-of-thought)
   useEffect(() => {
@@ -338,20 +512,27 @@ const RightPanel = ({ open, onToggle, alerts, summary, movements, vvipClass }) =
     const gd = groundData;
     const futureSteps = [];
 
-    // Predict congestion trend
+    // Corridor-aware trend analysis using actual speed delta + corridor baseline
+    const corridorCong = summary?.avg_congestion_idx ? summary.avg_congestion_idx * 100 : gd.congestion;
+    const corridorAvgSpd = summary?.avg_speed_kmh || gd.speed;
     const congTrend = gd.speedDelta < -2 ? 'increasing' : gd.speedDelta > 2 ? 'decreasing' : 'stable';
-    const futCong5 = Math.min(100, Math.max(0, gd.congestion + (gd.speedDelta < 0 ? Math.abs(gd.speedDelta) * 3 : gd.speedDelta * -2)));
-    const futCong15 = Math.min(100, Math.max(0, futCong5 + (congTrend === 'increasing' ? 12 : congTrend === 'decreasing' ? -8 : 2)));
-    const futCong30 = Math.min(100, Math.max(0, futCong15 + (congTrend === 'increasing' ? 18 : congTrend === 'decreasing' ? -12 : 3)));
-
-    // Future speed estimates
-    const futSpd5 = Math.max(5, gd.speed + gd.speedDelta * 0.5);
-    const futSpd15 = Math.max(5, futSpd5 + (congTrend === 'increasing' ? -8 : congTrend === 'decreasing' ? 5 : 0));
-    const futSpd30 = Math.max(5, futSpd15 + (congTrend === 'increasing' ? -12 : congTrend === 'decreasing' ? 8 : -1));
-
-    // Future crowd forecast
+    
+    // Time-of-day peak factor for forward projections
     const hour = new Date().getHours();
     const peakApproaching = (hour >= 7 && hour < 9) || (hour >= 16 && hour < 19);
+    const peakFactor = peakApproaching ? 1.15 : 1.0;
+
+    // Blend current readings with corridor baseline (corridor pulls toward avg over time)
+    const futCong5 = Math.min(100, Math.max(0, (gd.congestion * 0.8 + corridorCong * 0.2) * peakFactor + (gd.speedDelta < 0 ? Math.abs(gd.speedDelta) * 2 : gd.speedDelta * -1)));
+    const futCong15 = Math.min(100, Math.max(0, (gd.congestion * 0.55 + corridorCong * 0.45) * peakFactor + (congTrend === 'increasing' ? 10 : congTrend === 'decreasing' ? -6 : 1)));
+    const futCong30 = Math.min(100, Math.max(0, (gd.congestion * 0.3 + corridorCong * 0.7) * peakFactor + (congTrend === 'increasing' ? 15 : congTrend === 'decreasing' ? -10 : 2)));
+
+    // Future speed: blend toward corridor average over longer horizons
+    const futSpd5 = Math.max(5, gd.speed * 0.85 + corridorAvgSpd * 0.15 + gd.speedDelta * 0.3);
+    const futSpd15 = Math.max(5, gd.speed * 0.6 + corridorAvgSpd * 0.4 + (congTrend === 'increasing' ? -5 : congTrend === 'decreasing' ? 3 : 0));
+    const futSpd30 = Math.max(5, gd.speed * 0.4 + corridorAvgSpd * 0.6 + (congTrend === 'increasing' ? -8 : congTrend === 'decreasing' ? 6 : -1));
+
+    // Future crowd forecast based on time-of-day peak proximity
     const futCrowd = gd.crowdDensity + (peakApproaching ? 400 : -150);
 
     futureSteps.push({
@@ -400,7 +581,7 @@ const RightPanel = ({ open, onToggle, alerts, summary, movements, vvipClass }) =
     });
 
     setFutureCotSteps(futureSteps);
-  }, [groundData]);
+  }, [groundData, summary]);
 
   // Live notification generator based on ground data + predictions
   useEffect(() => {
@@ -440,18 +621,32 @@ const RightPanel = ({ open, onToggle, alerts, summary, movements, vvipClass }) =
     }
   }, [groundData, convoySimulation]);
 
-  // Future forecast data for mini charts
+  // Future forecast data for mini charts — corridor-aware projections
   const forecastChartData = useMemo(() => {
     const gd = groundData;
-    const trend = gd.speedDelta < -2 ? 'up' : gd.speedDelta > 2 ? 'down' : 'flat';
+    const speedTrend = gd.speedDelta < -2 ? 'degrading' : gd.speedDelta > 2 ? 'improving' : 'stable';
+    // Corridor baseline congestion (from corridor summary API)
+    const corridorCong = summary?.avg_congestion_idx ? summary.avg_congestion_idx * 100 : gd.congestion;
+    // Time-of-day congestion uptick factor
+    const h = new Date().getHours();
+    const peakRising = (h >= 7 && h < 9) || (h >= 16 && h < 19);
+    const peakFading = (h >= 10 && h < 12) || (h >= 20 && h < 22);
+    const todFactor = peakRising ? 1.12 : peakFading ? 0.92 : 1.0;
+    // Blend current congestion with corridor baseline for forward projections
+    const blend = (curr, weight, horizon) => {
+      const pull = corridorCong * (1 - weight) + curr * weight;
+      const drift = speedTrend === 'degrading' ? horizon * 2.5 : speedTrend === 'improving' ? -horizon * 1.8 : horizon * 0.3;
+      return Math.min(100, Math.max(0, Math.round(pull * todFactor + drift)));
+    };
+    const spdProject = (delta, factor) => Math.max(5, Math.round(gd.speed + delta * factor));
     return [
       { t: 'Now', congestion: gd.congestion, speed: Math.round(gd.speed) },
-      { t: 'T+5', congestion: Math.min(100, gd.congestion + (trend === 'up' ? 8 : trend === 'down' ? -5 : 2)), speed: Math.max(5, Math.round(gd.speed + gd.speedDelta * 0.5)) },
-      { t: 'T+10', congestion: Math.min(100, gd.congestion + (trend === 'up' ? 14 : trend === 'down' ? -8 : 3)), speed: Math.max(5, Math.round(gd.speed + gd.speedDelta * 0.8)) },
-      { t: 'T+15', congestion: Math.min(100, gd.congestion + (trend === 'up' ? 20 : trend === 'down' ? -12 : 4)), speed: Math.max(5, Math.round(gd.speed + gd.speedDelta * 1.1)) },
-      { t: 'T+30', congestion: Math.min(100, gd.congestion + (trend === 'up' ? 30 : trend === 'down' ? -18 : 5)), speed: Math.max(5, Math.round(gd.speed + gd.speedDelta * 1.5)) },
+      { t: 'T+5', congestion: blend(gd.congestion, 0.85, 1), speed: spdProject(gd.speedDelta, 0.5) },
+      { t: 'T+10', congestion: blend(gd.congestion, 0.7, 2), speed: spdProject(gd.speedDelta, 0.8) },
+      { t: 'T+15', congestion: blend(gd.congestion, 0.55, 3), speed: spdProject(gd.speedDelta, 1.1) },
+      { t: 'T+30', congestion: blend(gd.congestion, 0.35, 5), speed: spdProject(gd.speedDelta, 1.5) },
     ];
-  }, [groundData]);
+  }, [groundData, summary]);
 
   return (
     <>
@@ -1024,6 +1219,82 @@ const RightPanel = ({ open, onToggle, alerts, summary, movements, vvipClass }) =
               </div>
             )}
 
+            {/* ═══ LIVE PHASE SPACE PORTRAIT ═══ */}
+            {phaseSpaceData.length > 2 && (
+              <div style={{ marginBottom: '6px' }}>
+                <div style={{ fontSize: '8px', color: '#64748b', textTransform: 'uppercase', fontWeight: 600, letterSpacing: '0.5px', marginBottom: '2px', display: 'flex', justifyContent: 'space-between' }}>
+                  <span>Phase Space Portrait (v, dv/dt)</span>
+                  <span style={{ fontSize: '7px', color: '#8b5cf6', fontWeight: 700, fontFamily: 'var(--font-mono)' }}>
+                    STATE: {Math.abs(phaseSpaceData[phaseSpaceData.length - 1]?.accel || 0) < 0.5 ? 'STEADY' : phaseSpaceData[phaseSpaceData.length - 1]?.accel > 0 ? 'ACCEL' : 'DECEL'}
+                  </span>
+                </div>
+                <div style={{ height: '90px', backgroundColor: '#0f172a', borderRadius: '6px', padding: '2px', border: '1px solid #1e293b' }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <ScatterChart margin={{ top: 4, right: 8, left: 0, bottom: 4 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                      <XAxis type="number" dataKey="speed" tick={{ fontSize: 7, fill: '#64748b' }} label={{ value: 'Speed', position: 'insideBottom', fontSize: 6, fill: '#475569', offset: -2 }} />
+                      <YAxis type="number" dataKey="accel" tick={{ fontSize: 7, fill: '#64748b' }} width={22} label={{ value: 'dv/dt', angle: -90, position: 'insideLeft', fontSize: 6, fill: '#475569' }} />
+                      <ReferenceLine y={0} stroke="#475569" strokeDasharray="3 3" />
+                      <Tooltip contentStyle={{ fontSize: '8px', backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '6px', color: '#e2e8f0' }} formatter={(v, name) => [`${v.toFixed(2)}`, name === 'speed' ? 'v (km/h)' : 'a (Δv/Δt)']} />
+                      <Scatter data={phaseSpaceData.slice(-40)} fill="#8b5cf6" fillOpacity={0.6} r={2.5} />
+                      {/* Current point highlighted */}
+                      <Scatter data={[phaseSpaceData[phaseSpaceData.length - 1]]} fill="#f472b6" r={5} />
+                    </ScatterChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            )}
+
+            {/* ═══ LIVE RIDE COMFORT INDEX ═══ */}
+            {jerkData.length > 0 && (() => {
+              const latestJerk = Math.abs(jerkData[jerkData.length - 1]?.jerk || 0);
+              const comfortScore = Math.max(0, Math.min(100, 100 - latestJerk * 25));
+              const comfortLabel = comfortScore > 80 ? 'EXCELLENT' : comfortScore > 60 ? 'GOOD' : comfortScore > 40 ? 'FAIR' : comfortScore > 20 ? 'POOR' : 'CRITICAL';
+              const comfortColor = comfortScore > 80 ? '#22c55e' : comfortScore > 60 ? '#3b82f6' : comfortScore > 40 ? '#eab308' : comfortScore > 20 ? '#ea580c' : '#dc2626';
+              return (
+                <div style={{ marginBottom: '6px' }}>
+                  <div style={{ fontSize: '8px', color: '#64748b', textTransform: 'uppercase', fontWeight: 600, letterSpacing: '0.5px', marginBottom: '2px', display: 'flex', justifyContent: 'space-between' }}>
+                    <span>Ride Comfort Index</span>
+                    <span style={{ fontFamily: 'var(--font-mono)', fontSize: '9px', fontWeight: 800, color: comfortColor }}>{comfortLabel}</span>
+                  </div>
+                  <div style={{ position: 'relative', height: '14px', backgroundColor: '#0f172a', borderRadius: '8px', border: '1px solid #1e293b', overflow: 'hidden' }}>
+                    <div style={{
+                      position: 'absolute', left: 0, top: 0, bottom: 0,
+                      width: `${comfortScore}%`,
+                      background: `linear-gradient(90deg, ${comfortColor}40, ${comfortColor}90)`,
+                      borderRadius: '8px',
+                      transition: 'width 0.5s ease',
+                      boxShadow: `0 0 6px ${comfortColor}40`,
+                    }} />
+                    <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <span style={{ fontSize: '8px', fontWeight: 800, color: '#e2e8f0', fontFamily: 'var(--font-mono)', textShadow: '0 1px 2px rgba(0,0,0,0.5)' }}>{comfortScore.toFixed(0)}%</span>
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '2px' }}>
+                    <span style={{ fontSize: '6px', color: '#475569' }}>Jerk: {latestJerk.toFixed(3)} m/s³</span>
+                    <span style={{ fontSize: '6px', color: '#475569' }}>Target: &lt;1.0 m/s³</span>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* ═══ LIVE REGIME STATE STRIP ═══ */}
+            {regimeData.length > 0 && (
+              <div style={{ marginBottom: '6px' }}>
+                <div style={{ fontSize: '8px', color: '#64748b', textTransform: 'uppercase', fontWeight: 600, letterSpacing: '0.5px', marginBottom: '2px', display: 'flex', justifyContent: 'space-between' }}>
+                  <span>Traffic Regime Timeline</span>
+                  <span style={{ fontSize: '9px', fontWeight: 800, color: regimeData[regimeData.length - 1]?.color || '#94a3b8', fontFamily: 'var(--font-mono)' }}>
+                    {regimeData[regimeData.length - 1]?.regime || '—'}
+                  </span>
+                </div>
+                <div style={{ height: '12px', display: 'flex', gap: '0.5px', borderRadius: '4px', overflow: 'hidden', border: '1px solid #1e293b' }}>
+                  {regimeData.slice(-80).map((d, i) => (
+                    <div key={i} style={{ flex: 1, backgroundColor: d.color, opacity: 0.5 + (i / 80) * 0.5 }} title={`${d.regime} | ${d.speed.toFixed(0)} km/h | CGX ${d.congestion}%`} />
+                  ))}
+                </div>
+              </div>
+            )}
+
           </div>
         )}
 
@@ -1287,11 +1558,11 @@ const RightPanel = ({ open, onToggle, alerts, summary, movements, vvipClass }) =
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
                 {cotSteps.map((st, i) => (
-                  <div key={i} style={{
-                    padding: '5px 8px', borderRadius: '5px',
+                  <div key={i} onClick={() => setDeepDiveRecommendation({ statement: st.thought, label: st.label, status: st.status, step: st.step, category: 'present_analysis' })} style={{
+                    padding: '5px 8px', borderRadius: '5px', cursor: 'pointer', transition: 'all 0.15s ease',
                     background: st.status === 'fail' ? 'rgba(239,68,68,0.06)' : st.status === 'warn' ? 'rgba(245,158,11,0.06)' : 'rgba(34,197,94,0.05)',
                     borderLeft: `2px solid ${st.status === 'fail' ? '#ef4444' : st.status === 'warn' ? '#f59e0b' : '#22c55e'}`,
-                  }}>
+                  }} onMouseEnter={e => { e.currentTarget.style.transform = 'translateX(2px)'; e.currentTarget.style.boxShadow = '0 0 8px rgba(34,197,94,0.15)'; }} onMouseLeave={e => { e.currentTarget.style.transform = 'translateX(0)'; e.currentTarget.style.boxShadow = 'none'; }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '2px' }}>
                       <span style={{ fontSize: '8px', fontWeight: 700, color: st.status === 'fail' ? '#ef4444' : st.status === 'warn' ? '#f59e0b' : '#22c55e' }}>
                         {st.step === cotSteps.length ? '⚡' : `${st.step}.`}
@@ -1300,6 +1571,7 @@ const RightPanel = ({ open, onToggle, alerts, summary, movements, vvipClass }) =
                       {st.status === 'pass' && <span style={{ marginLeft: 'auto', fontSize: '7px', color: '#22c55e' }}>✓</span>}
                       {st.status === 'warn' && <span style={{ marginLeft: 'auto', fontSize: '7px', color: '#f59e0b' }}>⚠</span>}
                       {st.status === 'fail' && <span style={{ marginLeft: 'auto', fontSize: '7px', color: '#ef4444' }}>✗</span>}
+                      <span style={{ fontSize: '6px', color: '#3b82f6', marginLeft: '4px', opacity: 0.7 }}>↗</span>
                     </div>
                     <div style={{ fontSize: '7.5px', color: '#94a3b8', lineHeight: '1.4', paddingLeft: '12px' }}>{st.thought}</div>
                   </div>
@@ -1349,11 +1621,11 @@ const RightPanel = ({ open, onToggle, alerts, summary, movements, vvipClass }) =
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
                 {futureCotSteps.map((st, i) => (
-                  <div key={i} style={{
-                    padding: '5px 8px', borderRadius: '5px',
+                  <div key={i} onClick={() => setDeepDiveRecommendation({ statement: st.thought, label: st.label, status: st.status, step: st.step, horizon: st.horizon, metrics: st.metrics, category: 'future_prediction' })} style={{
+                    padding: '5px 8px', borderRadius: '5px', cursor: 'pointer', transition: 'all 0.15s ease',
                     background: st.status === 'fail' ? 'rgba(239,68,68,0.06)' : st.status === 'warn' ? 'rgba(245,158,11,0.06)' : 'rgba(139,92,246,0.05)',
                     borderLeft: `2px solid ${st.status === 'fail' ? '#ef4444' : st.status === 'warn' ? '#f59e0b' : '#a78bfa'}`,
-                  }}>
+                  }} onMouseEnter={e => { e.currentTarget.style.transform = 'translateX(2px)'; e.currentTarget.style.boxShadow = '0 0 8px rgba(139,92,246,0.15)'; }} onMouseLeave={e => { e.currentTarget.style.transform = 'translateX(0)'; e.currentTarget.style.boxShadow = 'none'; }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '2px' }}>
                       {st.horizon && (
                         <span style={{
@@ -1402,15 +1674,16 @@ const RightPanel = ({ open, onToggle, alerts, summary, movements, vvipClass }) =
                 {/* Corridor Quick Metrics */}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '5px' }}>
                   {[
-                    { label: 'Speed Quality', value: `${corridorHealth.flowCapacity}%`, color: corridorHealth.flowCapacity > 60 ? '#22c55e' : '#eab308', desc: 'of max flow' },
-                    { label: 'Network Load', value: `${corridorHealth.networkLoad}%`, color: corridorHealth.networkLoad > 70 ? '#dc2626' : '#22c55e', desc: 'congestion' },
-                    { label: 'Critical Ratio', value: `${(corridorHealth.critRatio * 100).toFixed(1)}%`, color: corridorHealth.critRatio > 0.1 ? '#dc2626' : '#22c55e', desc: 'of segments' },
-                    { label: 'Avg Speed', value: `${corridorHealth.spd.toFixed(1)}`, color: '#3b82f6', desc: 'km/h avg' },
+                    { label: 'Speed Quality', value: `${corridorHealth.flowCapacity}%`, numVal: corridorHealth.flowCapacity, color: corridorHealth.flowCapacity > 60 ? '#22c55e' : '#eab308', desc: 'of max flow', type: 'speed', unit: '%', max: 100, threshold: 60 },
+                    { label: 'Network Load', value: `${corridorHealth.networkLoad}%`, numVal: corridorHealth.networkLoad, color: corridorHealth.networkLoad > 70 ? '#dc2626' : '#22c55e', desc: 'congestion', type: 'congestion', unit: '%', max: 100, threshold: 70 },
+                    { label: 'Critical Ratio', value: `${(corridorHealth.critRatio * 100).toFixed(1)}%`, numVal: corridorHealth.critRatio * 100, color: corridorHealth.critRatio > 0.1 ? '#dc2626' : '#22c55e', desc: 'of segments', type: 'congestion', unit: '%', max: 100, threshold: 10 },
+                    { label: 'Avg Speed', value: `${corridorHealth.spd.toFixed(1)}`, numVal: corridorHealth.spd, color: '#3b82f6', desc: 'km/h avg', type: 'speed', unit: 'km/h', max: 60, threshold: 30 },
                   ].map(m => (
-                    <div key={m.label} style={{ padding: '8px 6px', backgroundColor: '#0f172a', borderRadius: '6px', border: '1px solid #1e293b', textAlign: 'center' }}>
+                    <div key={m.label} onClick={() => setDeepDiveMetric({ name: m.label, value: m.numVal, type: m.type, unit: m.unit, category: 'corridor', max: m.max, threshold: m.threshold, status: m.color === '#dc2626' ? 'red' : m.color === '#eab308' ? 'amber' : 'green', context: { source: 'corridor_analytics', desc: m.desc } })} style={{ padding: '8px 6px', backgroundColor: '#0f172a', borderRadius: '6px', border: '1px solid #1e293b', textAlign: 'center', cursor: 'pointer', transition: 'all 0.15s ease' }} onMouseEnter={e => { e.currentTarget.style.borderColor = m.color + '60'; e.currentTarget.style.transform = 'scale(1.03)'; }} onMouseLeave={e => { e.currentTarget.style.borderColor = '#1e293b'; e.currentTarget.style.transform = 'scale(1)'; }}>
                       <div style={{ fontSize: '14px', fontWeight: 800, fontFamily: 'var(--font-mono)', color: m.color }}>{m.value}</div>
                       <div style={{ fontSize: '7px', color: '#475569', textTransform: 'uppercase', fontWeight: 600, marginTop: '1px' }}>{m.desc}</div>
                       <div style={{ fontSize: '6px', color: '#64748b', textTransform: 'uppercase', fontWeight: 600, marginTop: '1px' }}>{m.label}</div>
+                      <div style={{ fontSize: '5px', color: '#3b82f6', marginTop: '2px', opacity: 0.7 }}>Click for AI analysis ↗</div>
                     </div>
                   ))}
                 </div>
@@ -1486,12 +1759,13 @@ const RightPanel = ({ open, onToggle, alerts, summary, movements, vvipClass }) =
 
             {/* ═══ Speed + Congestion Overlay ═══ */}
             {anHasData && (
-              <div>
+              <div onClick={() => setDeepDiveMetric({ name: 'Speed + Congestion Overlay', value: convoySimulation.speed?.toFixed(1) || 0, type: 'speed', unit: 'km/h', category: 'live_analytics', max: 60, threshold: 25, status: (convoySimulation.speed || 0) > 25 ? 'green' : 'red', context: { source: 'speed_congestion_overlay', congestion: (convoySimulation.congestion * 100).toFixed(1) + '%' } })} style={{ cursor: 'pointer' }}>
                 <div className="flex items-center justify-between" style={{ marginBottom: '4px' }}>
                   <span style={{ fontSize: '9px', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 700 }}>Speed + Congestion</span>
-                  <div style={{ display: 'flex', gap: '8px' }}>
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                     <span style={{ fontSize: '7px', color: '#ea580c' }}>● Speed</span>
                     <span style={{ fontSize: '7px', color: '#dc2626' }}>● Congest</span>
+                    <span style={{ fontSize: '6px', color: '#3b82f6', opacity: 0.7 }}>↗</span>
                   </div>
                 </div>
                 <div style={{ width: '100%', height: '110px' }}>
@@ -1552,8 +1826,8 @@ const RightPanel = ({ open, onToggle, alerts, summary, movements, vvipClass }) =
 
             {/* ═══ Speed Distribution Histogram (fine bins) ═══ */}
             {speedBins.length > 0 && (
-              <div>
-                <div style={{ fontSize: '9px', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 700, marginBottom: '4px' }}>Speed Distribution (km/h)</div>
+              <div onClick={() => setDeepDiveMetric({ name: 'Speed Distribution', value: convoySimulation.speed?.toFixed(1) || 0, type: 'speed', unit: 'km/h', category: 'distribution_analysis', max: 60, threshold: 25, status: 'green', context: { source: 'speed_histogram', bins: speedBins.length } })} style={{ cursor: 'pointer' }}>
+                <div className="flex items-center justify-between" style={{ marginBottom: '4px' }}><span style={{ fontSize: '9px', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 700 }}>Speed Distribution (km/h)</span><span style={{ fontSize: '6px', color: '#3b82f6', opacity: 0.7 }}>Click for AI analysis ↗</span></div>
                 <div style={{ width: '100%', height: '80px' }}>
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={speedBins} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
@@ -1624,8 +1898,8 @@ const RightPanel = ({ open, onToggle, alerts, summary, movements, vvipClass }) =
 
             {/* ═══ ETA Trend ═══ */}
             {etaTrend.length > 0 && (
-              <div>
-                <div style={{ fontSize: '9px', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 700, marginBottom: '4px' }}>ETA Trend (minutes)</div>
+              <div onClick={() => setDeepDiveMetric({ name: 'ETA Trend', value: etaTrend[etaTrend.length - 1]?.eta?.toFixed(1) || 0, type: 'eta', unit: 'min', category: 'analytics', max: 60, threshold: 30, status: (etaTrend[etaTrend.length - 1]?.eta || 0) < 30 ? 'green' : 'amber', context: { source: 'eta_trend', points: etaTrend.length } })} style={{ cursor: 'pointer' }}>
+                <div className="flex items-center justify-between" style={{ marginBottom: '4px' }}><span style={{ fontSize: '9px', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 700 }}>ETA Trend (minutes)</span><span style={{ fontSize: '6px', color: '#3b82f6', opacity: 0.7 }}>Click for AI analysis ↗</span></div>
                 <div style={{ width: '100%', height: '65px' }}>
                   <ResponsiveContainer width="100%" height="100%">
                     <AreaChart data={etaTrend} margin={{ top: 2, right: 4, left: 0, bottom: 0 }}>
@@ -1647,8 +1921,11 @@ const RightPanel = ({ open, onToggle, alerts, summary, movements, vvipClass }) =
 
             {/* ═══ Performance Radial Bar ═══ */}
             {performanceData.length > 0 && (
-              <div>
-                <div style={{ fontSize: '9px', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 700, marginBottom: '4px' }}>Performance Metrics</div>
+              <div onClick={() => setDeepDiveMetric({ name: 'Performance Index', value: performanceData[0]?.value || 0, type: 'performance', unit: '%', category: 'analytics', max: 100, threshold: 50, status: (performanceData[0]?.value || 0) > 50 ? 'green' : 'amber', context: { source: 'performance_radial', metrics: performanceData.map(d => d.name).join(', ') } })} style={{ cursor: 'pointer' }}>
+                <div className="flex items-center justify-between" style={{ marginBottom: '4px' }}>
+                  <span style={{ fontSize: '9px', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 700 }}>Performance Metrics</span>
+                  <span style={{ fontSize: '6px', color: '#3b82f6', opacity: 0.7 }}>Click for AI analysis ↗</span>
+                </div>
                 <div style={{ width: '100%', height: '130px' }}>
                   <ResponsiveContainer width="100%" height="100%">
                     <RadialBarChart cx="50%" cy="50%" innerRadius="20%" outerRadius="90%" data={performanceData} startAngle={180} endAngle={0}>
@@ -1657,6 +1934,294 @@ const RightPanel = ({ open, onToggle, alerts, summary, movements, vvipClass }) =
                       <Tooltip contentStyle={{ fontSize: '9px', backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '6px', color: '#e2e8f0' }} />
                     </RadialBarChart>
                   </ResponsiveContainer>
+                </div>
+              </div>
+            )}
+
+            {/* ═══ Threat Vector Radar ═══ */}
+            {threatRadarData.length > 0 && (
+              <div onClick={() => setDeepDiveMetric({ name: 'Threat Vector Analysis', value: Math.round(threatRadarData.reduce((s, d) => s + d.value, 0) / threatRadarData.length), type: 'security', unit: 'score', category: 'threat_analysis', max: 100, threshold: 60, status: 'amber', context: { source: 'threat_radar', vectors: threatRadarData.map(d => `${d.axis}: ${d.value}`).join(', ') } })} style={{ cursor: 'pointer' }}>
+                <div className="flex items-center justify-between" style={{ marginBottom: '4px' }}>
+                  <span style={{ fontSize: '9px', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 700 }}>Threat Vector Radar</span>
+                  <span style={{ fontSize: '6px', color: '#3b82f6', opacity: 0.7 }}>Click for AI analysis ↗</span>
+                </div>
+                <div style={{ width: '100%', height: '160px' }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <RadarChart data={threatRadarData} cx="50%" cy="50%" outerRadius="70%">
+                      <PolarGrid stroke="#1e293b" />
+                      <PolarAngleAxis dataKey="axis" tick={{ fontSize: 7, fill: '#94a3b8' }} />
+                      <PolarRadiusAxis angle={30} domain={[0, 100]} tick={{ fontSize: 6, fill: '#475569' }} axisLine={false} />
+                      <RechartsRadar name="Threat Level" dataKey="value" stroke="#ef4444" fill="#ef4444" fillOpacity={0.2} strokeWidth={1.5} dot={{ r: 2, fill: '#ef4444' }} />
+                      <RechartsRadar name="Safe Threshold" dataKey="threshold" stroke="#22c55e" fill="none" strokeWidth={1} strokeDasharray="4 2" />
+                      <Tooltip contentStyle={{ fontSize: '9px', backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '6px', color: '#e2e8f0' }} />
+                    </RadarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            )}
+
+            {/* ═══ Rolling Average Speed Envelope ═══ */}
+            {rollingAvgData.length > 0 && (
+              <div onClick={() => setDeepDiveMetric({ name: 'Speed Rolling Average', value: rollingAvgData[rollingAvgData.length - 1]?.avg?.toFixed(1) || 0, type: 'speed', unit: 'km/h', category: 'analytics', max: 60, threshold: 25, status: (rollingAvgData[rollingAvgData.length - 1]?.avg || 0) > 25 ? 'green' : 'red', context: { source: 'rolling_average', window: '5-point', points: rollingAvgData.length } })} style={{ cursor: 'pointer' }}>
+                <div className="flex items-center justify-between" style={{ marginBottom: '4px' }}>
+                  <span style={{ fontSize: '9px', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 700 }}>Speed Rolling Avg (5pt)</span>
+                  <span style={{ fontSize: '6px', color: '#3b82f6', opacity: 0.7 }}>Click for AI analysis ↗</span>
+                </div>
+                <div style={{ width: '100%', height: '90px' }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <ComposedChart data={rollingAvgData} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
+                      <defs>
+                        <linearGradient id="rollEnvGrad" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#3b82f6" stopOpacity={0.15} />
+                          <stop offset="100%" stopColor="#3b82f6" stopOpacity={0} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                      <XAxis dataKey="i" hide />
+                      <YAxis tick={{ fontSize: 7, fill: '#64748b' }} width={22} domain={['auto', 'auto']} />
+                      <Area type="monotone" dataKey="max" stroke="none" fill="url(#rollEnvGrad)" isAnimationActive={false} />
+                      <Area type="monotone" dataKey="min" stroke="none" fill="#0f172a" isAnimationActive={false} />
+                      <Line type="monotone" dataKey="avg" stroke="#3b82f6" strokeWidth={2} dot={false} isAnimationActive={false} />
+                      <Line type="monotone" dataKey="raw" stroke="#475569" strokeWidth={0.5} dot={false} isAnimationActive={false} strokeDasharray="2 2" />
+                      <Tooltip contentStyle={{ fontSize: '9px', backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '6px', color: '#e2e8f0' }} />
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            )}
+
+            {/* ═══ Segment Risk Treemap ═══ */}
+            {segmentRiskData.length > 0 && (
+              <div onClick={() => setDeepDiveMetric({ name: 'Segment Risk Distribution', value: segmentRiskData.reduce((s, d) => s + d.size, 0), type: 'congestion', unit: 'risk_score', category: 'risk_analysis', max: 500, threshold: 300, status: 'amber', context: { source: 'segment_treemap', zones: segmentRiskData.map(d => d.name).join(', ') } })} style={{ cursor: 'pointer' }}>
+                <div className="flex items-center justify-between" style={{ marginBottom: '4px' }}>
+                  <span style={{ fontSize: '9px', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 700 }}>Segment Risk Map</span>
+                  <span style={{ fontSize: '6px', color: '#3b82f6', opacity: 0.7 }}>Click for AI analysis ↗</span>
+                </div>
+                <div style={{ width: '100%', height: '120px' }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <Treemap data={segmentRiskData} dataKey="size" nameKey="name" aspectRatio={4 / 3} stroke="#0f172a" strokeWidth={2}
+                      content={({ x, y, width, height, name, fill }) => (
+                        <g>
+                          <rect x={x} y={y} width={width} height={height} fill={fill} rx={3} style={{ transition: 'all 0.2s' }} />
+                          {width > 30 && height > 20 && <text x={x + width / 2} y={y + height / 2} textAnchor="middle" fill="#e2e8f0" fontSize={8} fontWeight={700} fontFamily="JetBrains Mono, monospace">{name}</text>}
+                        </g>
+                      )}
+                    />
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            )}
+
+            {/* ═══ Fuel Consumption Trend ═══ */}
+            {fuelRateData.length > 0 && (
+              <div onClick={() => setDeepDiveMetric({ name: 'Fuel Consumption Rate', value: fuelRateData[fuelRateData.length - 1]?.rate?.toFixed(1) || 0, type: 'performance', unit: 'L/100km', category: 'analytics', max: 30, threshold: 15, status: (fuelRateData[fuelRateData.length - 1]?.rate || 0) < 15 ? 'green' : 'amber', context: { source: 'fuel_rate', trend: fuelRateData.length > 1 ? (fuelRateData[fuelRateData.length - 1].rate > fuelRateData[0].rate ? 'increasing' : 'decreasing') : 'stable' } })} style={{ cursor: 'pointer' }}>
+                <div className="flex items-center justify-between" style={{ marginBottom: '4px' }}>
+                  <span style={{ fontSize: '9px', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 700 }}>Fuel Consumption Rate</span>
+                  <span style={{ fontSize: '6px', color: '#3b82f6', opacity: 0.7 }}>Click for AI analysis ↗</span>
+                </div>
+                <div style={{ width: '100%', height: '70px' }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={fuelRateData} margin={{ top: 2, right: 4, left: 0, bottom: 0 }}>
+                      <defs>
+                        <linearGradient id="fuelGrad" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#f59e0b" stopOpacity={0.3} />
+                          <stop offset="100%" stopColor="#f59e0b" stopOpacity={0} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                      <XAxis dataKey="i" hide />
+                      <YAxis tick={{ fontSize: 7, fill: '#64748b' }} width={22} />
+                      <Tooltip contentStyle={{ fontSize: '9px', backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '6px', color: '#e2e8f0' }} formatter={(v) => `${v.toFixed(1)} L/100km`} />
+                      <Area type="monotone" dataKey="rate" stroke="#f59e0b" fill="url(#fuelGrad)" strokeWidth={1.5} dot={false} isAnimationActive={false} />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            )}
+
+            {/* ═══ Statistical Summary Card ═══ */}
+            {speedStats && (
+              <div onClick={() => setDeepDiveMetric({ name: 'Statistical Summary', value: parseFloat(speedStats.mean), type: 'speed', unit: 'km/h', category: 'statistical_analysis', max: 60, threshold: 25, status: parseFloat(speedStats.mean) > 25 ? 'green' : 'red', context: { source: 'stat_summary', ...speedStats } })} style={{ cursor: 'pointer' }}>
+                <div className="flex items-center justify-between" style={{ marginBottom: '4px' }}>
+                  <span style={{ fontSize: '9px', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 700 }}>Statistical Profile</span>
+                  <span style={{ fontSize: '6px', color: '#3b82f6', opacity: 0.7 }}>Click for AI analysis ↗</span>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '3px' }}>
+                  {[
+                    { label: 'μ Mean', value: speedStats.mean, color: '#3b82f6' },
+                    { label: 'M̃ Median', value: speedStats.median, color: '#8b5cf6' },
+                    { label: 'σ Std', value: speedStats.std, color: '#ea580c' },
+                    { label: 'CV%', value: speedStats.cv, color: parseFloat(speedStats.cv) > 30 ? '#dc2626' : '#22c55e' },
+                    { label: 'Skew γ₁', value: speedStats.skewness, color: Math.abs(parseFloat(speedStats.skewness)) > 1 ? '#dc2626' : '#94a3b8' },
+                    { label: 'Kurt κ', value: speedStats.kurtosis, color: Math.abs(parseFloat(speedStats.kurtosis)) > 2 ? '#ea580c' : '#94a3b8' },
+                    { label: 'IQR', value: speedStats.iqr, color: '#06b6d4' },
+                    { label: 'n', value: speedStats.n, color: '#64748b' },
+                  ].map(s => (
+                    <div key={s.label} style={{ padding: '4px 3px', backgroundColor: '#0f172a', borderRadius: '4px', border: '1px solid #1e293b', textAlign: 'center' }}>
+                      <div style={{ fontSize: '6px', color: '#475569', fontWeight: 600, letterSpacing: '0.02em' }}>{s.label}</div>
+                      <div style={{ fontSize: '10px', fontWeight: 700, color: s.color, fontFamily: 'JetBrains Mono, monospace' }}>{s.value}</div>
+                    </div>
+                  ))}
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '3px', padding: '0 2px' }}>
+                  <span style={{ fontSize: '7px', color: '#475569' }}>Range: {speedStats.min}–{speedStats.max} km/h</span>
+                  <span style={{ fontSize: '7px', color: parseFloat(speedStats.cv) > 30 ? '#ea580c' : '#22c55e' }}>{parseFloat(speedStats.cv) > 30 ? 'HIGH VARIANCE' : 'STABLE'}</span>
+                </div>
+              </div>
+            )}
+
+            {/* ═══ Velocity Jerk (Ride Comfort) ═══ */}
+            {jerkData.length > 0 && (
+              <div onClick={() => setDeepDiveMetric({ name: 'Velocity Jerk (Ride Comfort)', value: jerkData[jerkData.length - 1]?.jerk?.toFixed(3) || 0, type: 'performance', unit: 'm/s³', category: 'comfort_analysis', max: 5, threshold: 2, status: Math.abs(jerkData[jerkData.length - 1]?.jerk || 0) < 2 ? 'green' : 'red', context: { source: 'jerk_analysis', description: 'Rate of acceleration change — lower values indicate smoother ride' } })} style={{ cursor: 'pointer' }}>
+                <div className="flex items-center justify-between" style={{ marginBottom: '4px' }}>
+                  <span style={{ fontSize: '9px', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 700 }}>Velocity Jerk (da/dt)</span>
+                  <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                    <span style={{ fontSize: '7px', color: Math.abs(jerkData[jerkData.length - 1]?.jerk || 0) < 1 ? '#22c55e' : Math.abs(jerkData[jerkData.length - 1]?.jerk || 0) < 2.5 ? '#eab308' : '#dc2626', fontFamily: 'var(--font-mono)', fontWeight: 700 }}>
+                      {Math.abs(jerkData[jerkData.length - 1]?.jerk || 0) < 1 ? 'SMOOTH' : Math.abs(jerkData[jerkData.length - 1]?.jerk || 0) < 2.5 ? 'MODERATE' : 'ROUGH'}
+                    </span>
+                    <span style={{ fontSize: '6px', color: '#3b82f6', opacity: 0.7 }}>↗</span>
+                  </div>
+                </div>
+                <div style={{ width: '100%', height: '75px' }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <ComposedChart data={jerkData} margin={{ top: 2, right: 4, left: 0, bottom: 0 }}>
+                      <defs>
+                        <linearGradient id="jerkGrad" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#a78bfa" stopOpacity={0.3} />
+                          <stop offset="100%" stopColor="#a78bfa" stopOpacity={0} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                      <XAxis dataKey="i" hide />
+                      <YAxis tick={{ fontSize: 7, fill: '#64748b' }} width={22} />
+                      <ReferenceLine y={0} stroke="#475569" strokeWidth={1} />
+                      <ReferenceLine y={2} stroke="#dc262640" strokeDasharray="4 3" />
+                      <ReferenceLine y={-2} stroke="#dc262640" strokeDasharray="4 3" />
+                      <Tooltip contentStyle={{ fontSize: '9px', backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '6px', color: '#e2e8f0' }} formatter={(v) => `${v.toFixed(3)} m/s³`} />
+                      <Area type="monotone" dataKey="jerk" stroke="#a78bfa" fill="url(#jerkGrad)" strokeWidth={1.5} dot={false} isAnimationActive={false} />
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            )}
+
+            {/* ═══ Speed Percentile Bands ═══ */}
+            {percentileBands.length > 0 && (
+              <div onClick={() => setDeepDiveMetric({ name: 'Speed Percentile Bands', value: percentileBands[percentileBands.length - 1]?.p50?.toFixed(1) || 0, type: 'speed', unit: 'km/h', category: 'distribution_analysis', max: 60, threshold: 25, status: 'green', context: { source: 'percentile_bands', description: 'P10-P90 speed envelope showing variability over sliding window' } })} style={{ cursor: 'pointer' }}>
+                <div className="flex items-center justify-between" style={{ marginBottom: '4px' }}>
+                  <span style={{ fontSize: '9px', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 700 }}>Speed Percentile Envelope</span>
+                  <span style={{ fontSize: '6px', color: '#3b82f6', opacity: 0.7 }}>Click for AI analysis ↗</span>
+                </div>
+                <div style={{ width: '100%', height: '100px' }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={percentileBands} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
+                      <defs>
+                        <linearGradient id="p90Grad" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#06b6d4" stopOpacity={0.08} />
+                          <stop offset="100%" stopColor="#06b6d4" stopOpacity={0} />
+                        </linearGradient>
+                        <linearGradient id="p75Grad" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#06b6d4" stopOpacity={0.15} />
+                          <stop offset="100%" stopColor="#06b6d4" stopOpacity={0.03} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                      <XAxis dataKey="i" hide />
+                      <YAxis tick={{ fontSize: 7, fill: '#64748b' }} width={22} domain={['auto', 'auto']} />
+                      <Tooltip contentStyle={{ fontSize: '8px', backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '6px', color: '#e2e8f0' }} />
+                      <Area type="monotone" dataKey="p90" stroke="#06b6d430" fill="url(#p90Grad)" strokeWidth={0.5} dot={false} isAnimationActive={false} name="P90" />
+                      <Area type="monotone" dataKey="p75" stroke="#06b6d450" fill="url(#p75Grad)" strokeWidth={0.5} dot={false} isAnimationActive={false} name="P75" />
+                      <Line type="monotone" dataKey="p50" stroke="#06b6d4" strokeWidth={2} dot={false} isAnimationActive={false} name="P50 (Median)" />
+                      <Area type="monotone" dataKey="p25" stroke="#06b6d450" fill="none" strokeWidth={0.5} dot={false} isAnimationActive={false} name="P25" />
+                      <Area type="monotone" dataKey="p10" stroke="#06b6d430" fill="none" strokeWidth={0.5} dot={false} isAnimationActive={false} name="P10" />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'center', gap: '8px', marginTop: '2px' }}>
+                  {['P10', 'P25', 'P50', 'P75', 'P90'].map((p, i) => (
+                    <span key={p} style={{ fontSize: '6px', color: '#64748b', opacity: 0.4 + i * 0.15 }}>
+                      <span style={{ color: '#06b6d4' }}>●</span> {p}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* ═══ Speed-Flow Fundamental Diagram ═══ */}
+            {speedFlowData.length > 0 && (
+              <div onClick={() => setDeepDiveMetric({ name: 'Speed-Flow Fundamental Diagram', value: speedFlowData[speedFlowData.length - 1]?.flow?.toFixed(1) || 0, type: 'performance', unit: 'flow', category: 'traffic_engineering', max: 60, threshold: 30, status: 'amber', context: { source: 'fundamental_diagram', description: 'Classic traffic engineering: plots flow capacity vs density (congestion proxy)' } })} style={{ cursor: 'pointer' }}>
+                <div className="flex items-center justify-between" style={{ marginBottom: '4px' }}>
+                  <span style={{ fontSize: '9px', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 700 }}>Speed-Flow Diagram</span>
+                  <span style={{ fontSize: '6px', color: '#3b82f6', opacity: 0.7 }}>Click for AI analysis ↗</span>
+                </div>
+                <div style={{ width: '100%', height: '110px' }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <ScatterChart margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                      <XAxis type="number" dataKey="density" name="Density %" tick={{ fontSize: 7, fill: '#64748b' }} label={{ value: 'Density %', position: 'insideBottomRight', fontSize: 7, fill: '#475569', offset: -2 }} />
+                      <YAxis type="number" dataKey="flow" name="Flow" tick={{ fontSize: 7, fill: '#64748b' }} width={22} label={{ value: 'Flow', angle: -90, position: 'insideLeft', fontSize: 7, fill: '#475569' }} />
+                      <Tooltip contentStyle={{ fontSize: '9px', backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '6px', color: '#e2e8f0' }} formatter={(v, name) => [`${v.toFixed(1)}`, name]} />
+                      <Scatter data={speedFlowData} fill="#f97316" fillOpacity={0.7} r={3} />
+                    </ScatterChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            )}
+
+            {/* ═══ CUSUM Change Detection ═══ */}
+            {cusumData.length > 0 && (
+              <div onClick={() => setDeepDiveMetric({ name: 'CUSUM Change Detection', value: cusumData[cusumData.length - 1]?.pos?.toFixed(2) || 0, type: 'performance', unit: 'cusum', category: 'change_detection', max: 20, threshold: 5, status: (cusumData[cusumData.length - 1]?.pos || 0) > 5 || (cusumData[cusumData.length - 1]?.neg || 0) > 5 ? 'red' : 'green', context: { source: 'cusum_detection', description: 'Cumulative Sum control chart — detects regime shifts in speed data. Spikes indicate statistically significant changes.' } })} style={{ cursor: 'pointer' }}>
+                <div className="flex items-center justify-between" style={{ marginBottom: '4px' }}>
+                  <span style={{ fontSize: '9px', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 700 }}>CUSUM Change Detection</span>
+                  <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                    <span style={{ fontSize: '7px', color: (cusumData[cusumData.length - 1]?.pos || 0) > 5 || (cusumData[cusumData.length - 1]?.neg || 0) > 5 ? '#dc2626' : '#22c55e', fontWeight: 700 }}>
+                      {(cusumData[cusumData.length - 1]?.pos || 0) > 5 || (cusumData[cusumData.length - 1]?.neg || 0) > 5 ? 'SHIFT DETECTED' : 'STABLE'}
+                    </span>
+                    <span style={{ fontSize: '6px', color: '#3b82f6', opacity: 0.7 }}>↗</span>
+                  </div>
+                </div>
+                <div style={{ width: '100%', height: '80px' }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <ComposedChart data={cusumData} margin={{ top: 2, right: 4, left: 0, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                      <XAxis dataKey="i" hide />
+                      <YAxis tick={{ fontSize: 7, fill: '#64748b' }} width={22} />
+                      <ReferenceLine y={5} stroke="#dc262660" strokeDasharray="4 3" label={{ value: 'H', position: 'right', fontSize: 7, fill: '#dc262680' }} />
+                      <Tooltip contentStyle={{ fontSize: '9px', backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '6px', color: '#e2e8f0' }} />
+                      <Line type="monotone" dataKey="pos" stroke="#22c55e" strokeWidth={1.5} dot={false} isAnimationActive={false} name="CUSUM+" />
+                      <Line type="monotone" dataKey="neg" stroke="#ef4444" strokeWidth={1.5} dot={false} isAnimationActive={false} name="CUSUM−" />
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            )}
+
+            {/* ═══ Congestion Regime Classification ═══ */}
+            {regimeData.length > 0 && (
+              <div onClick={() => setDeepDiveMetric({ name: 'Traffic Regime Classification', value: regimeData[regimeData.length - 1]?.regime || 'Unknown', type: 'congestion', unit: 'regime', category: 'regime_analysis', max: 100, threshold: 60, status: regimeData[regimeData.length - 1]?.congestion > 60 ? 'red' : 'green', context: { source: 'regime_classification', description: 'Traffic state classification: Free Flow → Synchronized → Forced Flow → Gridlock' } })} style={{ cursor: 'pointer' }}>
+                <div className="flex items-center justify-between" style={{ marginBottom: '4px' }}>
+                  <span style={{ fontSize: '9px', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 700 }}>Regime Classification</span>
+                  <span style={{ fontSize: '8px', fontWeight: 700, color: regimeData[regimeData.length - 1]?.color || '#94a3b8', fontFamily: 'var(--font-mono)' }}>
+                    {regimeData[regimeData.length - 1]?.regime || '—'}
+                  </span>
+                </div>
+                <div style={{ width: '100%', height: '25px', display: 'flex', gap: '1px', borderRadius: '4px', overflow: 'hidden' }}>
+                  {regimeData.slice(-60).map((d, i) => (
+                    <div key={i} style={{ flex: 1, backgroundColor: d.color, opacity: 0.7 + (i / 60) * 0.3, transition: 'background-color 0.3s' }} title={`${d.regime}: CGX ${d.congestion}%, Spd ${d.speed.toFixed(0)} km/h`} />
+                  ))}
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '3px' }}>
+                  {[
+                    { label: 'Free Flow', color: '#22c55e', pct: regimeData.filter(d => d.regime === 'Free Flow').length },
+                    { label: 'Synced', color: '#eab308', pct: regimeData.filter(d => d.regime === 'Synchronized').length },
+                    { label: 'Forced', color: '#ea580c', pct: regimeData.filter(d => d.regime === 'Forced Flow').length },
+                    { label: 'Gridlock', color: '#dc2626', pct: regimeData.filter(d => d.regime === 'Gridlock').length },
+                  ].map(r => (
+                    <div key={r.label} style={{ textAlign: 'center' }}>
+                      <div style={{ fontSize: '6px', color: r.color, fontWeight: 700 }}>{r.label}</div>
+                      <div style={{ fontSize: '8px', color: '#e2e8f0', fontFamily: 'var(--font-mono)', fontWeight: 700 }}>{regimeData.length > 0 ? Math.round(r.pct / regimeData.length * 100) : 0}%</div>
+                    </div>
+                  ))}
                 </div>
               </div>
             )}
@@ -2067,6 +2632,28 @@ const RightPanel = ({ open, onToggle, alerts, summary, movements, vvipClass }) =
           </>
         )}
       </div>
+
+      {/* ═══ Deep-Dive Overlays ═══ */}
+      {deepDiveMetric && (
+        <div style={{
+          position: 'fixed', top: 0, right: 0, width: `${RWIDTH + 120}px`, height: '100vh', zIndex: 2000,
+          backgroundColor: '#0a0f1e', borderLeft: '1px solid rgba(59,130,246,0.2)',
+          overflowY: 'auto', scrollbarWidth: 'thin',
+          animation: 'slideInRight 0.3s ease-out',
+        }}>
+          <AnalyticsDeepDive metric={deepDiveMetric} onBack={() => setDeepDiveMetric(null)} vvipClass={vvipClass} />
+        </div>
+      )}
+      {deepDiveRecommendation && (
+        <div style={{
+          position: 'fixed', top: 0, right: 0, width: `${RWIDTH + 120}px`, height: '100vh', zIndex: 2000,
+          backgroundColor: '#0a0f1e', borderLeft: '1px solid rgba(139,92,246,0.2)',
+          overflowY: 'auto', scrollbarWidth: 'thin',
+          animation: 'slideInRight 0.3s ease-out',
+        }}>
+          <RecommendationDeepDive recommendation={deepDiveRecommendation} onBack={() => setDeepDiveRecommendation(null)} vvipClass={vvipClass} />
+        </div>
+      )}
 
       {/* Toggle Button */}
       <button

@@ -17,16 +17,32 @@ export const createMovement = (data) =>
   api.post('/api/agent/movements', data);
 
 export const planMovement = (movementId, data) =>
-  api.post(`/api/agent/movements/${movementId}/plan`, data);
+  api.post(`/api/agent/movements/${movementId}/plan`, data, { timeout: 300000 });
 
 export const startEscort = (movementId, data) =>
-  api.post(`/api/agent/movements/${movementId}/escort`, data);
+  api.post(`/api/agent/movements/${movementId}/escort`, data, { timeout: 300000 });
 
 export const clearMovement = (movementId) =>
   api.post(`/api/agent/movements/${movementId}/clear`);
 
+// Blue Book protocol management
+export const getProtocolState = (movementId) =>
+  api.get(`/api/agent/movements/${movementId}/protocol`);
+
+export const updateProtocolState = (movementId, data) =>
+  api.post(`/api/agent/movements/${movementId}/protocol`, data);
+
+export const assessProtocol = (movementId) =>
+  api.post(`/api/agent/movements/${movementId}/protocol/assess`, {}, { timeout: 300000 });
+
+export const generateDossier = (movementId, data) =>
+  api.post(`/api/agent/movements/${movementId}/dossier`, data, { timeout: 300000 });
+
+export const getThreatAssessment = (movementId) =>
+  api.post(`/api/agent/movements/${movementId}/threat-assessment`, {}, { timeout: 300000 });
+
 export const sendChat = (data) =>
-  api.post('/api/agent/chat', data);
+  api.post('/api/agent/chat', data, { timeout: 300000 });
 
 // Streaming chat — returns raw fetch Response for NDJSON
 export const streamChat = (data) =>
@@ -76,5 +92,22 @@ export const getHistoricalPattern = (segmentId, patternType = 'daily_profile') =
   api.get(`/api/v1/traffic/historical?segment_id=${segmentId}&pattern_type=${patternType}`);
 export const getSegmentHistory = (segmentId) =>
   api.get(`/api/v1/traffic/history/${segmentId}`);
+
+// Deep-dive reasoning (Qwen 3.5 powered) — extended timeout for LLM inference
+// 5-min timeout: LLM inference (~30-60s) + potential asyncio.Lock queueing behind other requests
+export const analyticsReasoning = (metricName, metricValue, metricContext = {}, vvipClass = 'Z') =>
+  api.post('/api/agent/analytics/reasoning', {
+    metric_name: metricName,
+    metric_value: metricValue,
+    metric_context: metricContext,
+    vvip_class: vvipClass,
+  }, { timeout: 300000 });
+export const recommendationReasoning = (statement, category = 'general', groundData = {}, vvipClass = 'Z') =>
+  api.post('/api/agent/recommendations/reasoning', {
+    statement,
+    category,
+    ground_data: groundData,
+    vvip_class: vvipClass,
+  }, { timeout: 300000 });
 
 export default api;

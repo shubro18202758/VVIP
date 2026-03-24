@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { Brain, ChevronDown, ChevronRight, Activity, AlertTriangle, CheckCircle, Clock, Shield, X, Maximize2, Minimize2, Send } from 'lucide-react';
+import { Brain, ChevronDown, ChevronRight, Activity, AlertTriangle, CheckCircle, Clock, Shield, X, Maximize2, Minimize2, Send, ShieldAlert, FileText, Crosshair } from 'lucide-react';
 import { useConvoy } from '../context/ConvoyContext';
 
 const TYPE_STYLE = {
@@ -11,10 +11,18 @@ const TYPE_STYLE = {
   plan: { color: '#16a34a', bg: 'rgba(22,163,74,0.06)', icon: CheckCircle, label: 'Plan' },
   escort: { color: '#16a34a', bg: 'rgba(22,163,74,0.06)', icon: Shield, label: 'Escort' },
   clear: { color: '#2563eb', bg: 'rgba(37,99,235,0.06)', icon: CheckCircle, label: 'Clear' },
+  critical: { color: '#dc2626', bg: 'rgba(220,38,38,0.10)', icon: ShieldAlert, label: 'Critical' },
+  protocol: { color: '#eab308', bg: 'rgba(234,179,8,0.06)', icon: Shield, label: 'Protocol' },
+  dossier: { color: '#06b6d4', bg: 'rgba(6,182,212,0.06)', icon: FileText, label: 'Dossier' },
+  threat: { color: '#f97316', bg: 'rgba(249,115,22,0.08)', icon: Crosshair, label: 'Threat' },
 };
 
 const AIReasoningPanel = ({ visible, onClose }) => {
-  const { aiReasoning, lifecycle, planResult, gpuHealth, chatStreaming, sendChatMessage, flyToSegment } = useConvoy();
+  const {
+    aiReasoning, lifecycle, planResult, gpuHealth, chatStreaming, sendChatMessage, flyToSegment,
+    assessingProtocol, assessingThreat, protocolAssessment, threatBrief, movementId,
+    runProtocolAssessment, runThreatAssessment, runDossierGeneration, generatingDossier,
+  } = useConvoy();
 
   // Parse segment references like "Seg 1234", "segment 1234", "segment_id: 1234" into clickable chips
   const renderTextWithSegLinks = (text) => {
@@ -123,6 +131,15 @@ const AIReasoningPanel = ({ visible, onClose }) => {
               {lifecycle.toUpperCase()}
             </span>
           )}
+          {threatBrief?.threat_level && (() => {
+            const tl = threatBrief.threat_level;
+            const tc = { nominal: '#16a34a', elevated: '#eab308', high: '#f97316', critical: '#dc2626' }[tl] || '#64748b';
+            return (
+              <span style={{ fontSize: '8px', padding: '1px 5px', borderRadius: '3px', backgroundColor: `${tc}22`, color: tc, fontWeight: 700, letterSpacing: '0.04em' }}>
+                THREAT: {tl.toUpperCase()}
+              </span>
+            );
+          })()}
         </div>
         <div style={{ display: 'flex', gap: '6px' }}>
           <button onClick={(e) => { e.stopPropagation(); setExpanded((v) => !v); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', padding: '2px' }}>
@@ -211,6 +228,45 @@ const AIReasoningPanel = ({ visible, onClose }) => {
               );
             })}
           </div>
+
+          {/* Protocol Quick Actions */}
+          {movementId && lifecycle !== 'idle' && (
+            <div style={{ display: 'flex', gap: '4px', padding: '6px 14px', borderTop: '1px solid #334155', backgroundColor: '#0f172a', flexShrink: 0, flexWrap: 'wrap' }}>
+              <button
+                onClick={runProtocolAssessment}
+                disabled={assessingProtocol}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '4px', padding: '4px 8px', borderRadius: '4px',
+                  fontSize: '9px', fontWeight: 700, border: '1px solid #eab30844', backgroundColor: '#eab30811',
+                  color: assessingProtocol ? '#64748b' : '#eab308', cursor: assessingProtocol ? 'wait' : 'pointer',
+                }}
+              >
+                <Shield size={9} /> {assessingProtocol ? 'Assessing…' : 'Protocol Check'}
+              </button>
+              <button
+                onClick={runThreatAssessment}
+                disabled={assessingThreat}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '4px', padding: '4px 8px', borderRadius: '4px',
+                  fontSize: '9px', fontWeight: 700, border: '1px solid #f9731644', backgroundColor: '#f9731611',
+                  color: assessingThreat ? '#64748b' : '#f97316', cursor: assessingThreat ? 'wait' : 'pointer',
+                }}
+              >
+                <Crosshair size={9} /> {assessingThreat ? 'Scanning…' : 'Threat Scan'}
+              </button>
+              <button
+                onClick={() => runDossierGeneration()}
+                disabled={generatingDossier}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '4px', padding: '4px 8px', borderRadius: '4px',
+                  fontSize: '9px', fontWeight: 700, border: '1px solid #06b6d444', backgroundColor: '#06b6d411',
+                  color: generatingDossier ? '#64748b' : '#06b6d4', cursor: generatingDossier ? 'wait' : 'pointer',
+                }}
+              >
+                <FileText size={9} /> {generatingDossier ? 'Generating…' : 'Gen Dossier'}
+              </button>
+            </div>
+          )}
 
           {/* Chat Input */}
           <div style={{

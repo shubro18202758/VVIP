@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback, useRef, useEffect } from 'react';
+import React, { createContext, useContext, useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import * as api from '../services/api';
 
 const ConvoyContext = createContext(null);
@@ -32,6 +32,238 @@ export function ConvoyProvider({ children }) {
   const [aiReasoning, setAiReasoning] = useState([]);
   const [chatMessages, setChatMessages] = useState([]);
   const [chatStreaming, setChatStreaming] = useState(false);
+
+  const addReasoning = useCallback((entry) => {
+    setAiReasoning((prev) => [{ ...entry, timestamp: Date.now() }, ...prev].slice(0, 50));
+  }, []);
+
+  // ─── Blue Book ASL Pre-Deployment Checklist ────────────────────
+  const [aslChecklist, setAslChecklist] = useState({
+    asl_meeting:      false,  // ASL multi-agency meeting (SPG, DGP/SSP, DM, IB)
+    route_finalised:  false,  // Route finalisation complete
+    vuln_points:      false,  // Vulnerable points identified
+    contingency_route:false,  // Contingency (Plan B) route planned & sanitised
+    threat_briefing:  false,  // Threat intelligence briefing
+    comms_protocol:   false,  // Communication protocols established
+    route_survey:     false,  // Physical route survey (culverts/bridges/drains)
+    antisab_sweep:    false,  // Anti-sabotage sweep (sniffer dogs, DFMD, explosive det.)
+    vehicles_cleared: false,  // Unmarked vehicles removed from route
+    vehicle_checks:   false,  // Convoy vehicle mechanical + anti-sabotage checks
+    driver_vetting:   false,  // Driver antecedents verified, speed sync briefed
+    flag_mounted:     false,  // National Flag fender-mounted on VVIP vehicle
+  });
+
+  // ─── Blue Book 10-Rule Protocol Compliance ─────────────────────
+  const [protocolCompliance, setProtocolCompliance] = useState({
+    r1_state_responsibility: true,   // Rule 1: State Govt. responsibility acknowledged
+    r2_police_arrangements:  false,  // Rule 2: State police protective arrangements in place
+    r3_no_stop_rule:         true,   // Rule 3: Convoy will not stop until destination
+    r4_dgp_chief_sec:        false,  // Rule 4: DGP + Chief Sec. present on VVIP arrival
+    r5_contingency_rehearsed:false,  // Rule 5: Contingency plans exercised via physical rehearsal
+    r6_same_make_vehicles:   false,  // Rule 6: All convoy vehicles same make/colour
+    r7_spg_director_clearance:false, // Rule 7: SPG Director explicit clearance
+    r8_realtime_updates:     false,  // Rule 8: State police → SPG real-time updates active
+    r9_security_faces_crowd: true,   // Rule 9: Security personnel face crowd, not VVIP
+    r10_incidents_logged:    true,   // Rule 10: All incidents formally logged
+  });
+
+  // ─── Anti-Sabotage Framework Status (Blue Book §6) ────────────
+  const [antiSabotage, setAntiSabotage] = useState({
+    physical_search: false,  // Visual + manual inspection of persons, vehicles, spaces
+    technical_gadgets: false, // DFMD, HHMD, explosive detectors, mine sweepers
+    sniffer_dogs: false,     // Trained dogs for explosive/contraband detection
+  });
+
+  // ─── ECM / Transit Protocol Status ─────────────────────────────
+  const [transitStatus, setTransitStatus] = useState({
+    ecm_active: false,       // Electronic countermeasures (ECM/jamming) active
+    spg_clearance: false,    // SPG Director clearance received
+    route_sanitised: false,  // State police have sanitised the route
+    formation_intact: true,  // Convoy box formation integrity
+  });
+
+  // ─── Blue Book §3.5 — Plan B Contingency System ─────────────────
+  const [planB, setPlanB] = useState({
+    active: false,                    // Plan B currently activated
+    altRouteSanitised: false,         // Alternate route swept & personnel posted
+    altRouteRehearsed: false,         // Physical trial run completed during ASL
+    contingencyMotorcadeReady: false, // Backup convoy formation at halting location
+    transportFallback: false,         // Road fallback if heli/air unavailable
+    nearestHospital: null,            // { name, distance_km, eta_min, coords }
+    nearestSafeHouse: null,           // { name, distance_km, eta_min, coords }
+    emergencyFacilities: [],          // Array of { type, name, distance_km, coords }
+    activatedAt: null,                // Timestamp when Plan B was triggered
+    reason: null,                     // Why Plan B was activated
+  });
+
+  // Emergency facilities along Ahmedabad VVIP corridors (Raj Bhavan → SVPI Airport)
+  const EMERGENCY_FACILITIES = useMemo(() => [
+    { type: 'hospital', name: 'Civil Hospital Ahmedabad', distance_km: 1.8, eta_min: 4, coords: [23.0225, 72.5714] },
+    { type: 'hospital', name: 'VS General Hospital', distance_km: 2.5, eta_min: 5, coords: [23.0110, 72.5850] },
+    { type: 'hospital', name: 'SVP Hospital (Trauma)', distance_km: 3.2, eta_min: 6, coords: [23.0440, 72.5530] },
+    { type: 'hospital', name: 'Sterling Hospital SG', distance_km: 5.8, eta_min: 10, coords: [23.0300, 72.5070] },
+    { type: 'safe_house', name: 'Gujarat SPG Safe House Alpha', distance_km: 1.1, eta_min: 3, coords: [23.0350, 72.5660] },
+    { type: 'safe_house', name: 'IB Secure Point Bravo', distance_km: 2.4, eta_min: 5, coords: [23.0480, 72.5900] },
+    { type: 'safe_house', name: 'NSG Hub Charlie', distance_km: 4.0, eta_min: 7, coords: [23.0600, 72.5400] },
+    { type: 'helipad', name: 'SVPI Airport Helipad', distance_km: 8.5, eta_min: 14, coords: [23.0733, 72.6266] },
+    { type: 'helipad', name: 'Raj Bhavan Helipad', distance_km: 0.5, eta_min: 2, coords: [23.0337, 72.5609] },
+  ], []);
+
+  const activatePlanB = useCallback((reason = 'Manual activation') => {
+    const nearest = (type) => EMERGENCY_FACILITIES.filter(f => f.type === type)
+      .sort((a, b) => a.distance_km - b.distance_km)[0] || null;
+    setPlanB(prev => ({
+      ...prev,
+      active: true,
+      activatedAt: Date.now(),
+      reason,
+      nearestHospital: nearest('hospital'),
+      nearestSafeHouse: nearest('safe_house'),
+      emergencyFacilities: EMERGENCY_FACILITIES,
+    }));
+    addReasoning({ type: 'critical', title: 'PLAN B ACTIVATED', detail: `Contingency protocol triggered: ${reason}. Nearest hospital: ${nearest('hospital')?.name}. Safe house: ${nearest('safe_house')?.name}.` });
+  }, [EMERGENCY_FACILITIES, addReasoning]);
+
+  const deactivatePlanB = useCallback(() => {
+    setPlanB(prev => ({ ...prev, active: false, activatedAt: null, reason: null }));
+    addReasoning({ type: 'system', title: 'Plan B Deactivated', detail: 'Contingency protocol stood down. Resuming primary route operations.' });
+  }, [addReasoning]);
+
+  const simulatePlanBReadiness = useCallback(() => {
+    setPlanB(prev => ({
+      ...prev,
+      altRouteSanitised: true,
+      altRouteRehearsed: true,
+      contingencyMotorcadeReady: true,
+      transportFallback: true,
+      emergencyFacilities: EMERGENCY_FACILITIES,
+      nearestHospital: EMERGENCY_FACILITIES.find(f => f.type === 'hospital'),
+      nearestSafeHouse: EMERGENCY_FACILITIES.find(f => f.type === 'safe_house'),
+    }));
+  }, [EMERGENCY_FACILITIES]);
+
+  // ─── Backend protocol sync (debounced) ─────────────────────────
+  const protocolSyncTimerRef = useRef(null);
+
+  const syncProtocolToBackend = useCallback((update) => {
+    if (!movementId) return;
+    if (protocolSyncTimerRef.current) clearTimeout(protocolSyncTimerRef.current);
+    protocolSyncTimerRef.current = setTimeout(() => {
+      api.updateProtocolState(movementId, update).catch(() => {});
+    }, 500);
+  }, [movementId]);
+
+  // Sync ASL changes to backend
+  useEffect(() => {
+    if (movementId && lifecycle !== 'idle') {
+      syncProtocolToBackend({ asl_checklist: aslChecklist });
+    }
+  }, [aslChecklist, movementId, lifecycle, syncProtocolToBackend]);
+
+  // Sync protocol compliance to backend
+  useEffect(() => {
+    if (movementId && lifecycle !== 'idle') {
+      syncProtocolToBackend({ protocol_compliance: protocolCompliance });
+    }
+  }, [protocolCompliance, movementId, lifecycle, syncProtocolToBackend]);
+
+  // Sync anti-sabotage to backend
+  useEffect(() => {
+    if (movementId && lifecycle !== 'idle') {
+      syncProtocolToBackend({ anti_sabotage: antiSabotage });
+    }
+  }, [antiSabotage, movementId, lifecycle, syncProtocolToBackend]);
+
+  // Sync transit status to backend
+  useEffect(() => {
+    if (movementId && lifecycle !== 'idle') {
+      syncProtocolToBackend({ transit_status: transitStatus });
+    }
+  }, [transitStatus, movementId, lifecycle, syncProtocolToBackend]);
+
+  // ─── AI-powered protocol actions ──────────────────────────────
+  const [protocolAssessment, setProtocolAssessment] = useState(null);
+  const [assessingProtocol, setAssessingProtocol] = useState(false);
+  const [securityDossier, setSecurityDossier] = useState(null);
+  const [generatingDossier, setGeneratingDossier] = useState(false);
+  const [threatBrief, setThreatBrief] = useState(null);
+  const [assessingThreat, setAssessingThreat] = useState(false);
+
+  const runProtocolAssessment = useCallback(async () => {
+    if (!movementId) return;
+    setAssessingProtocol(true);
+    addReasoning({ type: 'thought', title: 'Protocol Assessment', detail: 'Qwen 3.5 analyzing Blue Book compliance...' });
+    try {
+      const res = await api.assessProtocol(movementId);
+      setProtocolAssessment(res.data?.assessment);
+      addReasoning({
+        type: 'decision',
+        title: 'Protocol Assessment Complete',
+        detail: `Confidence: ${res.data?.assessment?.confidence || 'N/A'}`,
+        data: res.data?.assessment,
+      });
+      return res.data;
+    } catch (err) {
+      addReasoning({ type: 'error', title: 'Assessment Failed', detail: err.message });
+      throw err;
+    } finally {
+      setAssessingProtocol(false);
+    }
+  }, [movementId, addReasoning]);
+
+  const runDossierGeneration = useCallback(async (params = {}) => {
+    if (!movementId) return;
+    setGeneratingDossier(true);
+    addReasoning({ type: 'thought', title: 'Dossier Generation', detail: 'Qwen 3.5 generating comprehensive security dossier...' });
+    try {
+      const res = await api.generateDossier(movementId, {
+        vvip_class: params.vvipClass || planResult?.vvip_class || 'Z',
+        origin_name: params.originName || null,
+        destination_name: params.destinationName || null,
+        include_sections: params.sections || null,
+      });
+      setSecurityDossier(res.data?.dossier);
+      addReasoning({
+        type: 'decision',
+        title: 'Security Dossier Generated',
+        detail: `${Object.keys(res.data?.dossier || {}).length} sections produced by Qwen 3.5`,
+        data: res.data?.dossier,
+      });
+      return res.data;
+    } catch (err) {
+      addReasoning({ type: 'error', title: 'Dossier Failed', detail: err.message });
+      throw err;
+    } finally {
+      setGeneratingDossier(false);
+    }
+  }, [movementId, planResult, addReasoning]);
+
+  const runThreatAssessment = useCallback(async () => {
+    if (!movementId) return;
+    setAssessingThreat(true);
+    addReasoning({ type: 'thought', title: 'Threat Assessment', detail: 'Qwen 3.5 analyzing real-time threat environment...' });
+    try {
+      const res = await api.getThreatAssessment(movementId);
+      setThreatBrief(res.data?.threat);
+      // Update local threat level from AI assessment
+      const level = res.data?.threat?.data?.threat_level || res.data?.threat?.threat_level;
+      if (level) {
+        setPlanB(prev => ({ ...prev })); // force re-render
+      }
+      addReasoning({
+        type: res.data?.threat?.data?.threat_level === 'critical' ? 'critical' : 'decision',
+        title: 'Threat Assessment',
+        detail: `Threat Level: ${level || 'assessed'}`,
+        data: res.data?.threat,
+      });
+      return res.data;
+    } catch (err) {
+      addReasoning({ type: 'error', title: 'Threat Assessment Failed', detail: err.message });
+      throw err;
+    } finally {
+      setAssessingThreat(false);
+    }
+  }, [movementId, addReasoning]);
 
   // ─── Map interaction state (shared between map ↔ sidebars) ─────
   const [mapSegments, setMapSegments] = useState([]);
@@ -69,9 +301,58 @@ export function ConvoyProvider({ children }) {
     return ((Math.atan2(y, x) * 180 / Math.PI) + 360) % 360;
   }, []);
 
-  const addReasoning = useCallback((entry) => {
-    setAiReasoning((prev) => [{ ...entry, timestamp: Date.now() }, ...prev].slice(0, 50));
+  // ─── ASL Checklist Helpers ─────────────────────────────────────
+  const toggleAslItem = useCallback((key) => {
+    setAslChecklist(prev => ({ ...prev, [key]: !prev[key] }));
   }, []);
+
+  const aslReadiness = useMemo(() => {
+    const items = Object.values(aslChecklist);
+    const checked = items.filter(Boolean).length;
+    return { checked, total: items.length, pct: Math.round((checked / items.length) * 100), ready: checked === items.length };
+  }, [aslChecklist]);
+
+  // Critical ASL items that MUST be checked before deploy
+  const aslCriticalReady = useMemo(() => {
+    return aslChecklist.asl_meeting && aslChecklist.route_finalised && aslChecklist.route_survey && aslChecklist.antisab_sweep && aslChecklist.vehicle_checks && aslChecklist.driver_vetting;
+  }, [aslChecklist]);
+
+  // Auto-simulate ASL completion during demo
+  const simulateAslCompletion = useCallback(() => {
+    const keys = Object.keys(aslChecklist);
+    let delay = 0;
+    keys.forEach((key) => {
+      delay += 400 + Math.random() * 300;
+      setTimeout(() => {
+        setAslChecklist(prev => ({ ...prev, [key]: true }));
+      }, delay);
+    });
+    // After all items checked, auto-set anti-sabotage and transit
+    setTimeout(() => {
+      setAntiSabotage({ physical_search: true, technical_gadgets: true, sniffer_dogs: true });
+      setTransitStatus(prev => ({ ...prev, route_sanitised: true, spg_clearance: true }));
+      simulatePlanBReadiness();
+      setProtocolCompliance(prev => ({
+        ...prev,
+        r2_police_arrangements: true,
+        r5_contingency_rehearsed: true,
+        r6_same_make_vehicles: true,
+        r7_spg_director_clearance: true,
+        r8_realtime_updates: true,
+      }));
+      addReasoning({ type: 'system', title: 'ASL Complete', detail: 'All 12 Blue Book pre-deployment checks verified. SPG Director clearance granted.' });
+    }, delay + 600);
+  }, [aslChecklist, addReasoning, simulatePlanBReadiness]);
+
+  const toggleProtocolRule = useCallback((key) => {
+    setProtocolCompliance(prev => ({ ...prev, [key]: !prev[key] }));
+  }, []);
+
+  const protocolScore = useMemo(() => {
+    const items = Object.values(protocolCompliance);
+    const checked = items.filter(Boolean).length;
+    return { checked, total: items.length, pct: Math.round((checked / items.length) * 100) };
+  }, [protocolCompliance]);
 
   const startConvoySimulation = useCallback((routeSegmentIds) => {
     // Build ordered polyline from segment geometries
@@ -151,10 +432,17 @@ export function ConvoyProvider({ children }) {
       const st = simStateRef.current;
       if (!st || !st.active || st.paused) return;
 
-      // Realistic speed variation: ±5 km/h oscillation + random micro-jitter
-      const baseSpeed = 35 + 15 * Math.sin(Date.now() / 8000); // oscillate 20-50 km/h
+      // Speed based on current segment's road class + congestion influence + jitter
+      const segProg = st.distanceTraveledM / Math.max(1, st.totalDistanceM);
+      const curSegIdx = Math.min(Math.floor(segProg * st.segmentIds.length), st.segmentIds.length - 1);
+      const curSeg = st.routeSegments?.[curSegIdx];
+      const segSpeedLimit = curSeg?.speed_limit_kmh || curSeg?.properties?.speed_limit_kmh || 40;
+      const segRdClass = curSeg?.road_class || curSeg?.properties?.road_class || 'primary';
+      const rdClassSpeedMap = { motorway: 80, trunk: 60, primary: 45, secondary: 35, tertiary: 30, residential: 25, service: 20 };
+      const rdBaseSpeed = rdClassSpeedMap[segRdClass] || segSpeedLimit;
+      // Smooth oscillation around road-class speed ± 12%, with micro-jitter
       const jitter = (Math.random() - 0.5) * 6;
-      const speed = Math.max(5, Math.min(65, baseSpeed + jitter));
+      const speed = Math.max(5, Math.min(80, rdBaseSpeed + rdBaseSpeed * 0.12 * Math.sin(Date.now() / 10000) + jitter));
       const speedMps = speed * 1000 / 3600;
       const dt = 0.2; // 200ms intervals
       const advanceM = speedMps * dt * 12; // 12x time multiplier for demo visibility
@@ -197,10 +485,15 @@ export function ConvoyProvider({ children }) {
       const remaining = st.totalDistanceM - newDist;
       const estimatedEta = speedMps > 0 ? remaining / speedMps / 12 : 9999; // account for 12x multiplier
 
-      // Synthetic congestion at current position (based on road segment)
+      // Congestion based on road class of current segment + time-of-day + jitter
       const segProgress = newDist / st.totalDistanceM;
       const currentSegIdx = Math.min(Math.floor(segProgress * st.segmentIds.length), st.segmentIds.length - 1);
-      const congestion = 0.15 + 0.35 * Math.sin(now / 5000) + 0.1 * Math.random(); // 0.15-0.6 range
+      const segRoadClass = st.routeSegments?.[currentSegIdx]?.road_class || st.routeSegments?.[currentSegIdx]?.properties?.road_class || 'primary';
+      const congBaseMap = { motorway: 0.10, trunk: 0.18, primary: 0.30, secondary: 0.42, tertiary: 0.50, residential: 0.55, service: 0.35 };
+      const congBase = congBaseMap[segRoadClass] ?? 0.30;
+      const curHour = new Date().getHours();
+      const hourEffect = (curHour >= 8 && curHour <= 10) || (curHour >= 17 && curHour <= 20) ? 0.15 : curHour >= 11 && curHour <= 16 ? 0.05 : -0.05;
+      const congestion = Math.max(0.05, Math.min(0.95, congBase + hourEffect + (Math.random() - 0.5) * 0.12));
 
       // Record history (keep last 60 points = ~12 seconds of demo time)
       const speedHist = [...st.speedHistory, { t: elapsed, speed: Math.round(speed), ts: now }].slice(-60);
@@ -467,8 +760,10 @@ export function ConvoyProvider({ children }) {
       const lng = p1[1] + (p2[1] - p1[1]) * localT;
       const hdg = bearing(p1[0], p1[1], p2[0], p2[1]);
 
-      // Road-class-aware congestion
-      const congestion = Math.max(0, Math.min(1, meta.congestion_base + 0.12 * Math.sin(now / 7000) + (Math.random() - 0.5) * 0.08));
+      // Road-class-aware congestion with time-of-day influence
+      const demoHour = new Date().getHours();
+      const demoPeakFactor = (demoHour >= 8 && demoHour <= 10) || (demoHour >= 17 && demoHour <= 20) ? 0.12 : demoHour >= 11 && demoHour <= 16 ? 0.04 : -0.04;
+      const congestion = Math.max(0, Math.min(1, meta.congestion_base + demoPeakFactor + (Math.random() - 0.5) * 0.08));
 
       const remaining = st.totalDistanceM - newDist;
       const estimatedEta = speedMps > 0 ? remaining / speedMps / 5 : 9999;
@@ -691,6 +986,19 @@ export function ConvoyProvider({ children }) {
         data: planRes.data,
       });
 
+      // Step 3: Load protocol state from backend
+      try {
+        const protocolRes = await api.getProtocolState(mid);
+        const ps = protocolRes.data?.protocol_state;
+        if (ps) {
+          if (ps.asl_checklist) setAslChecklist(prev => ({ ...prev, ...ps.asl_checklist }));
+          if (ps.protocol_compliance) setProtocolCompliance(prev => ({ ...prev, ...ps.protocol_compliance }));
+          if (ps.anti_sabotage) setAntiSabotage(prev => ({ ...prev, ...ps.anti_sabotage }));
+          if (ps.transit_status) setTransitStatus(prev => ({ ...prev, ...ps.transit_status }));
+          if (ps.plan_b) setPlanB(prev => ({ ...prev, ...ps.plan_b }));
+        }
+      } catch { /* protocol state not yet available — use defaults */ }
+
       return planRes.data;
     } catch (err) {
       setLifecycleError(err.message || 'Planning failed');
@@ -755,7 +1063,17 @@ export function ConvoyProvider({ children }) {
     setHighlightedSegments([]);
     stopConvoySimulation();
     setConvoySimulation(null);
-  }, [stopConvoySimulation]);
+    // Reset Blue Book state
+    setAslChecklist(Object.fromEntries(Object.keys(aslChecklist).map(k => [k, false])));
+    setAntiSabotage({ physical_search: false, technical_gadgets: false, sniffer_dogs: false });
+    setTransitStatus({ ecm_active: false, spg_clearance: false, route_sanitised: false, formation_intact: true });
+    setPlanB({ active: false, altRouteSanitised: false, altRouteRehearsed: false, contingencyMotorcadeReady: false, transportFallback: false, nearestHospital: null, nearestSafeHouse: null, emergencyFacilities: [], activatedAt: null, reason: null });
+    setProtocolCompliance(prev => ({
+      ...prev,
+      r2_police_arrangements: false, r4_dgp_chief_sec: false, r5_contingency_rehearsed: false,
+      r6_same_make_vehicles: false, r7_spg_director_clearance: false, r8_realtime_updates: false,
+    }));
+  }, [stopConvoySimulation, aslChecklist]);
 
   const highlightSegments = useCallback((segIds, flyToFirst = true) => {
     setHighlightedSegments(segIds || []);
@@ -905,6 +1223,34 @@ export function ConvoyProvider({ children }) {
     startDemoSimulation,
     stopConvoySimulation,
     pauseConvoySimulation,
+    // Blue Book ASL & Protocol
+    aslChecklist,
+    toggleAslItem,
+    aslReadiness,
+    aslCriticalReady,
+    simulateAslCompletion,
+    protocolCompliance,
+    toggleProtocolRule,
+    protocolScore,
+    antiSabotage,
+    setAntiSabotage,
+    transitStatus,
+    setTransitStatus,
+    // Blue Book Plan B
+    planB,
+    activatePlanB,
+    deactivatePlanB,
+    simulatePlanBReadiness,
+    // AI-powered protocol actions
+    protocolAssessment,
+    assessingProtocol,
+    runProtocolAssessment,
+    securityDossier,
+    generatingDossier,
+    runDossierGeneration,
+    threatBrief,
+    assessingThreat,
+    runThreatAssessment,
   };
 
   return <ConvoyContext.Provider value={value}>{children}</ConvoyContext.Provider>;

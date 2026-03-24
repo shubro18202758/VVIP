@@ -7,9 +7,9 @@ import RightPanel from './RightPanel';
 import AIReasoningPanel from './AIReasoningPanel';
 import SecurityDossierPanel from './SecurityDossierPanel';
 import { useConvoy } from '../context/ConvoyContext';
-import { Navigation, Shield, Users, Radio, Activity, AlertTriangle, Cpu, Brain, TrendingUp, Gauge, FileText, Play, Pause, Square, MapPin } from 'lucide-react';
+import { Navigation, Radio, Activity, AlertTriangle, Cpu, Brain, TrendingUp, Gauge, FileText, Play, Pause, Square, MapPin } from 'lucide-react';
 
-const VVIP_CLASSES = ['Z+', 'Z', 'Y', 'X'];
+const VVIP_CLASSES = ['SPG', 'Z+', 'Z', 'Y+', 'Y', 'X'];
 
 const VVIPDashboard = ({ navigate }) => {
   const {
@@ -35,10 +35,10 @@ const VVIPDashboard = ({ navigate }) => {
   const [rightOpen, setRightOpen] = useState(true);
   const [clock, setClock] = useState(new Date());
   const [vvipClass, setVvipClass] = useState('Z+');
-  const [overlays, setOverlays] = useState({ police: true, personnel: true, traffic: true, anomalies: true });
+  const [overlays, setOverlays] = useState({ traffic: true, anomalies: true });
   const [mapStyle, setMapStyle] = useState('light');
   // Fleet size per VVIP class — must match FLEET_TEMPLATES in LeftPanel
-  const FLEET_SIZE = { 'Z+': 6, 'Z': 4, 'Y': 3, 'X': 2 };
+  const FLEET_SIZE = { 'SPG': 10, 'Z+': 8, 'Z': 5, 'Y+': 4, 'Y': 3, 'X': 2 };
   const [selectedVehicles, setSelectedVehicles] = useState(() =>
     Array.from({ length: FLEET_SIZE['Z+'] }, (_, i) => i + 1)
   );
@@ -138,7 +138,7 @@ const VVIPDashboard = ({ navigate }) => {
               padding: '2px',
               border: '1px solid #334155'
             }}>
-              {['light', 'live'].map((style) => (
+              {['light', 'dark', 'live'].map((style) => (
                 <button
                   key={style}
                   onClick={() => setMapStyle(style)}
@@ -461,8 +461,6 @@ const VVIPDashboard = ({ navigate }) => {
             <FileText size={14} /> Dossier
           </button>
           {[
-            { key: 'police', icon: <Shield size={14} />, label: 'Police Stn.', activeColor: '#2563eb' },
-            { key: 'personnel', icon: <Users size={14} />, label: 'Personnel', activeColor: '#16a34a' },
             { key: 'traffic', icon: <Activity size={14} />, label: 'Traffic Flow', activeColor: '#ea580c' },
             { key: 'anomalies', icon: <AlertTriangle size={14} />, label: 'Anomalies', activeColor: '#dc2626' },
           ].map(({ key, icon, label, activeColor }) => (

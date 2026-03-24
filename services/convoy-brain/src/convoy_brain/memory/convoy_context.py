@@ -38,6 +38,59 @@ class ConvoyContext:
     active_diversions: list[str] = field(default_factory=list)
     decisions_log: list[dict] = field(default_factory=list)
     alerts: list[dict] = field(default_factory=list)
+    # Blue Book protocol state — persisted to Valkey alongside movement
+    protocol_state: dict = field(default_factory=lambda: {
+        "asl_checklist": {
+            "asl_meeting": False,
+            "route_finalised": False,
+            "route_survey": False,
+            "antisab_sweep": False,
+            "vehicle_checks": False,
+            "driver_vetting": False,
+            "comm_channels": False,
+            "hospital_mapping": False,
+            "safe_houses": False,
+            "helipad_locations": False,
+            "counter_surveillance": False,
+            "rehearsal_completed": False,
+        },
+        "protocol_compliance": {
+            "r1_no_last_minute_changes": True,
+            "r2_police_arrangements": False,
+            "r3_dedicated_road": True,
+            "r4_dgp_chief_sec": False,
+            "r5_contingency_rehearsed": False,
+            "r6_same_make_vehicles": False,
+            "r7_spg_director_clearance": False,
+            "r8_realtime_updates": False,
+            "r9_security_faces_crowd": True,
+            "r10_incidents_logged": True,
+        },
+        "anti_sabotage": {
+            "physical_search": False,
+            "technical_gadgets": False,
+            "sniffer_dogs": False,
+        },
+        "transit_status": {
+            "ecm_active": False,
+            "spg_clearance": False,
+            "route_sanitised": False,
+            "formation_intact": True,
+        },
+        "plan_b": {
+            "active": False,
+            "alt_route_sanitised": False,
+            "alt_route_rehearsed": False,
+            "contingency_motorcade_ready": False,
+            "transport_fallback": False,
+            "nearest_hospital": None,
+            "nearest_safe_house": None,
+            "activated_at": None,
+            "reason": None,
+        },
+        "threat_level": "nominal",
+        "dossier_generated_at": None,
+    })
 
     def to_dict(self) -> dict:
         """Serialize to a JSON-safe dictionary."""
@@ -138,6 +191,23 @@ class ConvoyContextStore:
                 except (json.JSONDecodeError, TypeError, KeyError):
                     continue
         return results
+
+    async def update_protocol_state(self, movement_id: str, protocol_update: dict) -> ConvoyContext | None:
+        """Merge a partial protocol state update into the convoy context."""
+        await self._ensure_client()
+        ctx = await self.get(movement_id)
+        if ctx is None:
+            logger.warning("convoy_context.protocol.no_context", movement_id=movement_id)
+            return None
+        # Deep-merge the protocol_state dict
+        for key, value in protocol_update.items():
+            if key in ctx.protocol_state and isinstance(ctx.protocol_state[key], dict) and isinstance(value, dict):
+                ctx.protocol_state[key].update(value)
+            else:
+                ctx.protocol_state[key] = value
+        await self.put(ctx)
+        logger.info("convoy_context.protocol_updated", movement_id=movement_id)
+        return ctx
 
     async def close(self) -> None:
         """Close the Valkey connection."""

@@ -3,35 +3,54 @@ import {
   Shield, AlertTriangle, Users, Radio, Navigation, Clock, 
   Crosshair, MapPin, Zap, ChevronRight, X, Lock, Eye, 
   Truck, Activity, CheckCircle, XCircle, Target, Siren,
-  BadgeAlert, ArrowRightLeft, HeartPulse, Wifi, Milestone
+  BadgeAlert, ArrowRightLeft, HeartPulse, Wifi, Milestone,
+  CheckSquare, Square, Building2, Home, Plane, AlertOctagon
 } from 'lucide-react';
 import { useConvoy } from '../context/ConvoyContext';
 
 // ── Blue Book security specs per VVIP class (mirrors LeftPanel SECURITY_SPECS) ──
 const SECURITY_SPECS = {
-  'Z+': { minLanes: 6, closure: 'Full closure', advance: '180s', maxQueue: '2000m', color: '#dc2626', label: 'SOVEREIGN / HEAD OF STATE' },
-  'Z':  { minLanes: 4, closure: 'Partial closure', advance: '120s', maxQueue: '1000m', color: '#ea580c', label: 'CABINET / HIGH COMMAND' },
-  'Y':  { minLanes: 2, closure: 'Speed restriction + signal priority', advance: '60s', maxQueue: '500m', label: 'SENIOR OFFICIALS', color: '#2563eb' },
-  'X':  { minLanes: 0, closure: 'Signal priority only', advance: '0s', maxQueue: '0m', label: 'ADMINISTRATIVE', color: '#64748b' },
+  'SPG': { minLanes: 8, closure: 'Full corridor lockdown', advance: '300s', maxQueue: '3000m', color: '#7f1d1d', label: 'PRIME MINISTER — SPG EXCLUSIVE', personnel: '40-60+', agency: 'SPG (Cabinet Sec.)' },
+  'Z+': { minLanes: 6, closure: 'Full closure', advance: '180s', maxQueue: '2000m', color: '#dc2626', label: 'HIGH-RISK PROTECTEE — NSG+POLICE', personnel: '55', agency: 'NSG + Police' },
+  'Z':  { minLanes: 4, closure: 'Partial closure', advance: '120s', maxQueue: '1000m', color: '#ea580c', label: 'CABINET / HIGH COMMAND', personnel: '22', agency: 'NSG/ITBP/CRPF' },
+  'Y+': { minLanes: 3, closure: 'Partial + speed restriction', advance: '90s', maxQueue: '750m', color: '#9333ea', label: 'MODERATE-RISK — COMMANDO ESCORT', personnel: '11', agency: 'Commandos + Police' },
+  'Y':  { minLanes: 2, closure: 'Speed restriction + signal priority', advance: '60s', maxQueue: '500m', label: 'LOW-MODERATE — SENIOR OFFICIALS', color: '#2563eb', personnel: '8', agency: 'Commandos + Police' },
+  'X':  { minLanes: 0, closure: 'Signal priority only', advance: '0s', maxQueue: '0m', label: 'MINIMAL THREAT — ARMED POLICE', color: '#64748b', personnel: '2', agency: 'Armed Police' },
 };
 
-// ── Fleet template structure per VVIP class (mirrors LeftPanel FLEET_TEMPLATES) ──
+// ── Blue Book §3.1 convoy security box formation per VVIP class ──
 const FLEET_ROLES = {
-  'Z+': ['Pilot Vehicle', 'Advance Scout', 'VVIP Primary', 'Rear Guard', 'Medical Unit', 'Traffic Control'],
-  'Z':  ['Pilot Vehicle', 'VVIP Primary', 'Rear Guard', 'Traffic Control'],
-  'Y':  ['Lead Escort', 'VVIP Primary', 'Tail Vehicle'],
-  'X':  ['Lead Escort', 'VVIP Primary'],
+  'SPG': ['Pilot Warning Car', 'Advance Recon Unit', 'ECM / Technical Car', 'VVIP Primary (VR10)', 'Escort Car I', 'Escort Car II', 'Spare / Decoy Car', 'Medical Ambulance', 'SSP / DM Authority', 'IB Liaison Vehicle'],
+  'Z+': ['Pilot Warning Car', 'ECM / Technical Car', 'VVIP Primary (VR10)', 'Escort Car I', 'Escort Car II', 'Spare / Decoy Car', 'Medical Ambulance', 'SSP / DM / IB Trail'],
+  'Z':  ['Pilot Warning Car', 'VVIP Primary Car', 'Escort Car', 'Medical Support', 'Authority Trail'],
+  'Y+': ['Pilot Car', 'VVIP Primary Car', 'Escort Vehicle', 'Traffic Coordination'],
+  'Y':  ['Lead Escort', 'VVIP Primary Car', 'Traffic Support'],
+  'X':  ['VVIP Vehicle', 'Traffic Escort'],
 };
 
 const ROLE_ICONS = {
-  'Pilot Vehicle': Siren,
-  'Advance Scout': Eye,
-  'VVIP Primary': Shield,
-  'Rear Guard': Target,
-  'Medical Unit': HeartPulse,
-  'Traffic Control': ArrowRightLeft,
+  'Pilot Warning Car': Siren,
+  'Advance Recon Unit': Eye,
+  'ECM / Technical Car': Wifi,
+  'VVIP Primary (VR10)': Shield,
+  'VVIP Primary Car': Shield,
+  'VVIP Vehicle': Shield,
+  'Escort Car I': Target,
+  'Escort Car II': Target,
+  'Escort Car': Target,
+  'Escort Vehicle': Target,
+  'Spare / Decoy Car': Shield,
+  'Medical Ambulance': HeartPulse,
+  'Medical Support': HeartPulse,
+  'SSP / DM Authority': Users,
+  'SSP / DM / IB Trail': Users,
+  'Authority Trail': Users,
+  'IB Liaison Vehicle': Radio,
   'Lead Escort': Siren,
-  'Tail Vehicle': Truck,
+  'Pilot Car': Siren,
+  'Traffic Support': ArrowRightLeft,
+  'Traffic Escort': ArrowRightLeft,
+  'Traffic Coordination': ArrowRightLeft,
 };
 
 // ── Agency abbreviation mapping ──
@@ -54,6 +73,27 @@ const SecurityDossierPanel = ({ visible, onClose, vvipClass = 'Z+' }) => {
     anomalies,
     activeMovements,
     movementId,
+    // Blue Book Protocol
+    aslChecklist,
+    aslReadiness,
+    protocolCompliance,
+    protocolScore,
+    antiSabotage,
+    transitStatus,
+    planB,
+    activatePlanB,
+    deactivatePlanB,
+    simulatePlanBReadiness,
+    // AI Dossier & Threat
+    securityDossier,
+    generatingDossier,
+    runDossierGeneration,
+    threatBrief,
+    assessingThreat,
+    runThreatAssessment,
+    protocolAssessment,
+    assessingProtocol,
+    runProtocolAssessment,
   } = useConvoy();
 
   const spec = SECURITY_SPECS[vvipClass] || SECURITY_SPECS['Z+'];
@@ -215,10 +255,110 @@ const SecurityDossierPanel = ({ visible, onClose, vvipClass = 'Z+' }) => {
         <div style={{ marginTop: '4px', fontSize: '9px', fontWeight: 700, color: currentPhase.color, letterSpacing: '0.06em' }}>
           {currentPhase.label}
         </div>
+
+        {/* AI Dossier Action Buttons */}
+        {movementId && (
+          <div style={{ marginTop: '10px', display: 'flex', gap: '4px' }}>
+            <button
+              onClick={() => runDossierGeneration({ vvip_class: vvipClass })}
+              disabled={generatingDossier}
+              style={{
+                flex: 1, padding: '7px 8px', fontSize: '9px', fontWeight: 700,
+                background: generatingDossier ? '#334155' : 'linear-gradient(135deg, #06b6d4, #0891b2)',
+                color: 'white', border: 'none', borderRadius: '6px',
+                cursor: generatingDossier ? 'wait' : 'pointer', letterSpacing: '0.04em',
+              }}
+            >
+              {generatingDossier ? '⟳ Generating…' : '🧠 Generate AI Dossier'}
+            </button>
+            <button
+              onClick={runProtocolAssessment}
+              disabled={assessingProtocol}
+              style={{
+                flex: 1, padding: '7px 8px', fontSize: '9px', fontWeight: 700,
+                background: assessingProtocol ? '#334155' : 'linear-gradient(135deg, #eab308, #ca8a04)',
+                color: 'white', border: 'none', borderRadius: '6px',
+                cursor: assessingProtocol ? 'wait' : 'pointer', letterSpacing: '0.04em',
+              }}
+            >
+              {assessingProtocol ? '⟳ Assessing…' : '🛡 Protocol Check'}
+            </button>
+            <button
+              onClick={runThreatAssessment}
+              disabled={assessingThreat}
+              style={{
+                flex: 0.8, padding: '7px 8px', fontSize: '9px', fontWeight: 700,
+                background: assessingThreat ? '#334155' : 'linear-gradient(135deg, #f97316, #ea580c)',
+                color: 'white', border: 'none', borderRadius: '6px',
+                cursor: assessingThreat ? 'wait' : 'pointer', letterSpacing: '0.04em',
+              }}
+            >
+              {assessingThreat ? '⟳…' : '🎯 Threat'}
+            </button>
+          </div>
+        )}
       </div>
 
       {/* ── Scrollable Body ── */}
       <div className="dark-panel-scroll" style={{ flex: 1, overflowY: 'auto', padding: '14px 16px' }}>
+
+        {/* ═══ AI-GENERATED DOSSIER (Qwen 3.5) ═══ */}
+        {securityDossier && (
+          <>
+            <SectionBadge icon={Shield} title="AI Security Dossier" status="QWEN 3.5" statusColor="#06b6d4" />
+            <div style={{
+              padding: '10px 12px', marginBottom: '16px', borderRadius: '8px',
+              background: 'rgba(6,182,212,0.04)', border: '1px solid rgba(6,182,212,0.15)',
+            }}>
+              <div style={{
+                fontSize: '10px', color: '#cbd5e1', lineHeight: 1.6, whiteSpace: 'pre-wrap',
+                fontFamily: 'var(--font-mono)', maxHeight: '300px', overflowY: 'auto',
+              }}>
+                {typeof securityDossier === 'string'
+                  ? securityDossier
+                  : securityDossier?.dossier || securityDossier?.response || JSON.stringify(securityDossier, null, 2)}
+              </div>
+              <div style={{ marginTop: '6px', fontSize: '8px', color: '#475569', fontStyle: 'italic' }}>
+                Generated by Qwen 3.5 9B · Movement {movementId?.slice(0, 8) || '—'}
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* ═══ AI THREAT BRIEF (Qwen 3.5) ═══ */}
+        {threatBrief && (
+          <>
+            <SectionBadge icon={Crosshair} title="AI Threat Brief" status={(threatBrief.threat_level || 'NOMINAL').toUpperCase()} statusColor={threatBrief.threat_level === 'critical' ? '#dc2626' : threatBrief.threat_level === 'high' ? '#f97316' : '#eab308'} />
+            <div style={{
+              padding: '10px 12px', marginBottom: '16px', borderRadius: '8px',
+              background: threatBrief.threat_level === 'critical' ? 'rgba(220,38,38,0.06)' : 'rgba(249,115,22,0.04)',
+              border: `1px solid ${threatBrief.threat_level === 'critical' ? 'rgba(220,38,38,0.2)' : 'rgba(249,115,22,0.15)'}`,
+            }}>
+              <div style={{ fontSize: '10px', color: '#cbd5e1', lineHeight: 1.6, whiteSpace: 'pre-wrap', fontFamily: 'var(--font-mono)', maxHeight: '200px', overflowY: 'auto' }}>
+                {typeof threatBrief === 'string'
+                  ? threatBrief
+                  : threatBrief?.assessment || threatBrief?.response || JSON.stringify(threatBrief, null, 2)}
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* ═══ AI PROTOCOL ASSESSMENT ═══ */}
+        {protocolAssessment && (
+          <>
+            <SectionBadge icon={CheckCircle} title="Protocol Compliance" status="AI VALIDATED" statusColor="#eab308" />
+            <div style={{
+              padding: '10px 12px', marginBottom: '16px', borderRadius: '8px',
+              background: 'rgba(234,179,8,0.04)', border: '1px solid rgba(234,179,8,0.15)',
+            }}>
+              <div style={{ fontSize: '10px', color: '#cbd5e1', lineHeight: 1.6, whiteSpace: 'pre-wrap', fontFamily: 'var(--font-mono)', maxHeight: '200px', overflowY: 'auto' }}>
+                {typeof protocolAssessment === 'string'
+                  ? protocolAssessment
+                  : protocolAssessment?.response || JSON.stringify(protocolAssessment, null, 2)}
+              </div>
+            </div>
+          </>
+        )}
 
         {/* ═══ SECTION 1: THREAT ASSESSMENT ═══ */}
         <SectionBadge icon={Crosshair} title="Threat Assessment" status={threatAssessment.level} statusColor={threatAssessment.color} />
@@ -505,16 +645,126 @@ const SecurityDossierPanel = ({ visible, onClose, vvipClass = 'Z+' }) => {
           )}
         </div>
 
-        {/* ═══ SECTION 5: CONTINGENCY / ALTERNATE ROUTES ═══ */}
+        {/* ═══ SECTION 5: CONTINGENCY / PLAN B (Blue Book §3.5) ═══ */}
         <SectionBadge 
           icon={ArrowRightLeft} 
-          title="Contingency Routing" 
-          status={alternateRoutes.length > 0 ? `${alternateRoutes.length} ALT ROUTE${alternateRoutes.length > 1 ? 'S' : ''}` : 'NONE'}
-          statusColor={alternateRoutes.length > 0 ? '#2563eb' : '#64748b'}
+          title="Contingency — Plan B" 
+          status={planB.active ? '⚡ ACTIVATED' : alternateRoutes.length > 0 ? `${alternateRoutes.length} ALT` : 'STANDBY'}
+          statusColor={planB.active ? '#dc2626' : alternateRoutes.length > 0 ? '#2563eb' : '#64748b'}
         />
         <div style={{ padding: '0 6px 16px 6px' }}>
+          {/* Plan B readiness checks */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px', marginBottom: '8px' }}>
+            {[
+              { key: 'altRouteSanitised', label: 'Alt Route Sanitised', icon: '🛣️' },
+              { key: 'altRouteRehearsed', label: 'Trial Run Done', icon: '🏃' },
+              { key: 'contingencyMotorcadeReady', label: 'Motorcade Staged', icon: '🚓' },
+              { key: 'transportFallback', label: 'Road Fallback Ready', icon: '🚗' },
+            ].map(check => (
+              <div key={check.key} style={{
+                display: 'flex', alignItems: 'center', gap: '6px',
+                padding: '5px 8px', borderRadius: '6px',
+                backgroundColor: planB[check.key] ? 'rgba(22,163,98,0.08)' : '#1e293b',
+                border: `1px solid ${planB[check.key] ? 'rgba(22,163,98,0.3)' : '#334155'}`,
+              }}>
+                <span style={{ fontSize: '12px' }}>{check.icon}</span>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: '8px', fontWeight: 600, color: planB[check.key] ? '#4ade80' : '#94a3b8' }}>{check.label}</div>
+                  <div style={{ fontSize: '7px', color: planB[check.key] ? '#16a34a' : '#475569', fontWeight: 700 }}>
+                    {planB[check.key] ? 'READY' : 'PENDING'}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Simulate readiness + Activate buttons */}
+          <div style={{ display: 'flex', gap: '4px', marginBottom: '8px' }}>
+            {!planB.altRouteSanitised && (
+              <button
+                onClick={simulatePlanBReadiness}
+                style={{
+                  flex: 1, padding: '5px 8px', borderRadius: '6px', border: '1px solid #334155',
+                  background: 'rgba(37,99,235,0.1)', color: '#60a5fa', cursor: 'pointer',
+                  fontSize: '8px', fontWeight: 700, letterSpacing: '0.3px',
+                }}
+              >
+                ✓ SIMULATE READINESS
+              </button>
+            )}
+            <button
+              onClick={() => planB.active ? deactivatePlanB() : activatePlanB('Manual contingency activation')}
+              style={{
+                flex: 1, padding: '5px 8px', borderRadius: '6px', border: 'none',
+                background: planB.active ? 'rgba(220,38,38,0.15)' : 'rgba(234,88,12,0.12)',
+                color: planB.active ? '#dc2626' : '#ea580c', cursor: 'pointer',
+                fontSize: '8px', fontWeight: 700, letterSpacing: '0.3px',
+              }}
+            >
+              {planB.active ? '✕ DEACTIVATE PLAN B' : '⚡ ACTIVATE PLAN B'}
+            </button>
+          </div>
+
+          {/* Plan B activation banner */}
+          {planB.active && (
+            <div style={{
+              padding: '8px 10px', borderRadius: '8px', marginBottom: '8px',
+              background: 'linear-gradient(135deg, rgba(220,38,38,0.12), rgba(234,88,12,0.08))',
+              border: '1px solid rgba(220,38,38,0.4)',
+            }}>
+              <div style={{ fontSize: '9px', fontWeight: 800, color: '#dc2626', marginBottom: '2px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <AlertOctagon size={12} /> PLAN B ACTIVE
+              </div>
+              <div style={{ fontSize: '8px', color: '#fca5a5' }}>{planB.reason}</div>
+              {planB.activatedAt && (
+                <div style={{ fontSize: '7px', color: '#64748b', fontFamily: 'var(--font-mono)', marginTop: '2px' }}>
+                  Activated: {new Date(planB.activatedAt).toLocaleTimeString()}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Emergency Facilities — Hospitals, Safe Houses, Helipads */}
+          {planB.emergencyFacilities.length > 0 && (
+            <div style={{ marginBottom: '8px' }}>
+              <div style={{ fontSize: '8px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px' }}>
+                Emergency Facilities Along Route
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                {planB.emergencyFacilities.map((f, i) => {
+                  const typeConfig = {
+                    hospital: { icon: <HeartPulse size={10} />, color: '#dc2626', bg: 'rgba(220,38,38,0.08)' },
+                    safe_house: { icon: <Home size={10} />, color: '#2563eb', bg: 'rgba(37,99,235,0.08)' },
+                    helipad: { icon: <Plane size={10} />, color: '#16a34a', bg: 'rgba(22,163,98,0.08)' },
+                  }[f.type] || { icon: <Building2 size={10} />, color: '#64748b', bg: '#1e293b' };
+                  return (
+                    <div key={i} style={{
+                      display: 'flex', alignItems: 'center', gap: '8px',
+                      padding: '5px 8px', borderRadius: '6px',
+                      backgroundColor: typeConfig.bg, border: `1px solid ${typeConfig.color}22`,
+                    }}>
+                      <div style={{ color: typeConfig.color }}>{typeConfig.icon}</div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: '8px', fontWeight: 700, color: '#e2e8f0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{f.name}</div>
+                        <div style={{ fontSize: '7px', color: '#64748b', textTransform: 'capitalize' }}>{f.type.replace('_', ' ')}</div>
+                      </div>
+                      <div style={{ textAlign: 'right' }}>
+                        <div style={{ fontSize: '9px', fontWeight: 800, fontFamily: 'var(--font-mono)', color: typeConfig.color }}>{f.distance_km} km</div>
+                        <div style={{ fontSize: '7px', color: '#475569' }}>ETA {f.eta_min}m</div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Alternate Routes */}
           {alternateRoutes.length > 0 ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <div style={{ fontSize: '8px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '2px' }}>
+                Pre-Computed Alternate Routes
+              </div>
               {alternateRoutes.map((route, i) => (
                 <div key={i} style={{
                   padding: '8px 12px', borderRadius: '8px',
@@ -535,7 +785,7 @@ const SecurityDossierPanel = ({ visible, onClose, vvipClass = 'Z+' }) => {
               ))}
             </div>
           ) : (
-            <div style={{ fontSize: '10px', color: '#64748b', fontStyle: 'italic', padding: '8px 0' }}>
+            <div style={{ fontSize: '10px', color: '#64748b', fontStyle: 'italic', padding: '4px 0' }}>
               {planResult ? 'No alternate routes computed for this corridor' : 'Deploy a movement to generate contingency routes'}
             </div>
           )}
@@ -616,7 +866,124 @@ const SecurityDossierPanel = ({ visible, onClose, vvipClass = 'Z+' }) => {
           )}
         </div>
 
-        {/* ═══ SECTION 8: POST-CLEARANCE REPORT ═══ */}
+        {/* ═══ SECTION 8: PROTOCOL COMPLIANCE (Blue Book §7 — 10 Key Rules) ═══ */}
+        <SectionBadge 
+          icon={Lock} 
+          title="Protocol Compliance" 
+          status={`${protocolScore.pct}%`}
+          statusColor={protocolScore.pct >= 80 ? '#16a34a' : protocolScore.pct >= 50 ? '#ea580c' : '#dc2626'}
+        />
+        <div style={{ padding: '0 6px 16px 6px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+            {[
+              { key: 'r1_state_responsibility', rule: 'Rule 1', label: 'State Govt bears primary responsibility for VVIP security' },
+              { key: 'r2_police_arrangements', rule: 'Rule 2', label: 'Local police arrangements cleared by SSP/DM' },
+              { key: 'r3_no_stop_rule', rule: 'Rule 3', label: 'No unscheduled stops — zero deviation from route' },
+              { key: 'r4_dgp_chief_sec', rule: 'Rule 4', label: 'DGP + Chief Secretary personally supervise' },
+              { key: 'r5_contingency_rehearsed', rule: 'Rule 5', label: 'Contingency Plan B rehearsed & drill-tested' },
+              { key: 'r6_same_make_vehicles', rule: 'Rule 6', label: 'All convoy vehicles same make/colour to prevent identification' },
+              { key: 'r7_spg_director_clearance', rule: 'Rule 7', label: 'SPG Director grants final clearance before transit' },
+              { key: 'r8_realtime_updates', rule: 'Rule 8', label: 'Real-time threat intel updates to convoy lead' },
+              { key: 'r9_security_faces_crowd', rule: 'Rule 9', label: 'Security personnel face crowd, not protectee' },
+              { key: 'r10_incidents_logged', rule: 'Rule 10', label: 'All incidents logged — post-clearance report filed' },
+            ].map(item => (
+              <div key={item.key} style={{
+                display: 'flex', alignItems: 'flex-start', gap: '8px',
+                padding: '6px 10px', borderRadius: '6px',
+                backgroundColor: protocolCompliance[item.key] ? 'rgba(22,163,74,0.05)' : '#1e293b',
+                border: `1px solid ${protocolCompliance[item.key] ? 'rgba(22,163,74,0.2)' : '#334155'}`,
+              }}>
+                {protocolCompliance[item.key] 
+                  ? <CheckSquare size={11} color="#16a34a" style={{ flexShrink: 0, marginTop: '1px' }} />
+                  : <Square size={11} color="#475569" style={{ flexShrink: 0, marginTop: '1px' }} />
+                }
+                <div>
+                  <span style={{ fontSize: '8px', fontWeight: 800, color: '#ea580c', fontFamily: 'var(--font-mono)', marginRight: '4px' }}>{item.rule}</span>
+                  <span style={{ fontSize: '9px', fontWeight: 600, color: protocolCompliance[item.key] ? '#86efac' : '#cbd5e1' }}>{item.label}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* ═══ SECTION 9: ANTI-SABOTAGE & TRANSIT (Blue Book §6 & §3.3) ═══ */}
+        <SectionBadge 
+          icon={Crosshair} 
+          title="Anti-Sabotage & Transit" 
+          status={
+            Object.values(antiSabotage).every(Boolean) && Object.values(transitStatus).every(Boolean) 
+              ? 'ALL CLEAR' 
+              : 'PENDING'
+          }
+          statusColor={
+            Object.values(antiSabotage).every(Boolean) && Object.values(transitStatus).every(Boolean) 
+              ? '#16a34a' 
+              : '#ea580c'
+          }
+        />
+        <div style={{ padding: '0 6px 16px 6px' }}>
+          {/* Anti-Sabotage 3-Method Framework */}
+          <div style={{ fontSize: '9px', fontWeight: 700, color: '#94a3b8', marginBottom: '6px', letterSpacing: '0.08em' }}>
+            ANTI-SABOTAGE — 3 METHOD FRAMEWORK (§6)
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '6px', marginBottom: '12px' }}>
+            {[
+              { key: 'physical_search', label: 'Physical Search', desc: 'Manual sweep of route, camp, vehicles, venues', icon: Eye },
+              { key: 'technical_gadgets', label: 'Technical Gadgets', desc: 'DFMD, HHMD, mine sweepers, bomb detectors', icon: Wifi },
+              { key: 'sniffer_dogs', label: 'Sniffer Dog Squad', desc: 'K9 explosive detection teams', icon: Target },
+            ].map(m => {
+              const I = m.icon;
+              return (
+                <div key={m.key} style={{
+                  padding: '10px 8px', borderRadius: '8px', textAlign: 'center',
+                  backgroundColor: antiSabotage[m.key] ? 'rgba(22,163,74,0.06)' : '#1e293b',
+                  border: `1px solid ${antiSabotage[m.key] ? 'rgba(22,163,74,0.25)' : '#334155'}`,
+                }}>
+                  <I size={16} color={antiSabotage[m.key] ? '#22c55e' : '#475569'} style={{ margin: '0 auto 6px' }} />
+                  <div style={{ fontSize: '9px', fontWeight: 700, color: antiSabotage[m.key] ? '#4ade80' : '#e2e8f0' }}>{m.label}</div>
+                  <div style={{ fontSize: '7px', color: '#64748b', marginTop: '2px' }}>{m.desc}</div>
+                  <div style={{
+                    marginTop: '6px', fontSize: '7px', fontWeight: 800, letterSpacing: '0.06em',
+                    color: antiSabotage[m.key] ? '#22c55e' : '#dc2626',
+                  }}>
+                    {antiSabotage[m.key] ? '✓ CLEARED' : '✗ PENDING'}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Transit Status */}
+          <div style={{ fontSize: '9px', fontWeight: 700, color: '#94a3b8', marginBottom: '6px', letterSpacing: '0.08em' }}>
+            TRANSIT READINESS (§3.3)
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px' }}>
+            {[
+              { key: 'ecm_active', label: 'ECM Jamming Active', desc: 'IED signal blocking', color: '#818cf8' },
+              { key: 'spg_clearance', label: 'SPG Director Clearance', desc: 'Final go-signal received', color: '#f472b6' },
+              { key: 'route_sanitised', label: 'Route Sanitised', desc: 'Full corridor sweep complete', color: '#34d399' },
+              { key: 'formation_intact', label: 'Formation Integrity', desc: 'Convoy box holding position', color: '#fbbf24' },
+            ].map(t => (
+              <div key={t.key} style={{
+                display: 'flex', alignItems: 'center', gap: '8px',
+                padding: '7px 10px', borderRadius: '6px',
+                backgroundColor: transitStatus[t.key] ? `${t.color}08` : '#1e293b',
+                border: `1px solid ${transitStatus[t.key] ? `${t.color}30` : '#334155'}`,
+              }}>
+                {transitStatus[t.key] 
+                  ? <CheckCircle size={12} color={t.color} />
+                  : <XCircle size={12} color="#475569" />
+                }
+                <div>
+                  <div style={{ fontSize: '9px', fontWeight: 700, color: transitStatus[t.key] ? t.color : '#e2e8f0' }}>{t.label}</div>
+                  <div style={{ fontSize: '7px', color: '#64748b' }}>{t.desc}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* ═══ SECTION 10: POST-CLEARANCE REPORT ═══ */}
         {clearResult && (
           <>
             <SectionBadge icon={CheckCircle} title="Post-Clearance Report" status="RECOVERED" statusColor="#7c3aed" />
@@ -646,6 +1013,125 @@ const SecurityDossierPanel = ({ visible, onClose, vvipClass = 'Z+' }) => {
           </>
         )}
 
+        {/* ═══ SECTION 11: MULTI-AGENCY COMMAND HIERARCHY (Blue Book §5) ═══ */}
+        <SectionBadge 
+          icon={Radio} 
+          title="Command Hierarchy" 
+          status={lifecycle === 'active' ? 'LINKED' : 'STANDBY'}
+          statusColor={lifecycle === 'active' ? '#16a34a' : '#64748b'}
+        />
+        <div style={{ padding: '0 6px 16px 6px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+            {[
+              { rank: 1, agency: 'SPG', role: 'Proximate Security — Final Authority', color: '#dc2626', duty: 'Leads ASL, 40-60 officers, convoy clearance' },
+              { rank: 2, agency: 'IB', role: 'Threat Intelligence & Alert Feed', color: '#ea580c', duty: 'Actionable intel, state-level coordination' },
+              { rank: 3, agency: 'State Police', role: 'Area Security & Route Clearance', color: '#2563eb', duty: 'DGP present, sector deployment, sniper positions' },
+              { rank: 4, agency: 'DM', role: 'Civilian & Admin Coordination', color: '#7c3aed', duty: 'Traffic diversions, public notification, ASL member' },
+              { rank: 5, agency: 'NSG/ITBP', role: 'Counter-Assault & Perimeter', color: '#16a34a', duty: 'Armed response, venue perimeter, access control' },
+            ].map((cmd, i) => (
+              <div key={cmd.agency} style={{
+                display: 'flex', alignItems: 'center', gap: '8px',
+                padding: '6px 8px', borderRadius: '6px',
+                backgroundColor: '#0f172a', 
+                border: `1px solid ${cmd.color}20`,
+                borderLeft: `3px solid ${cmd.color}`,
+              }}>
+                <div style={{
+                  width: '18px', height: '18px', borderRadius: '50%',
+                  background: `${cmd.color}18`, border: `1px solid ${cmd.color}40`,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: '8px', fontWeight: 800, color: cmd.color,
+                }}>{cmd.rank}</div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ fontSize: '9px', fontWeight: 800, color: cmd.color }}>{cmd.agency}</span>
+                    <span style={{ fontSize: '8px', color: '#94a3b8' }}>· {cmd.role}</span>
+                  </div>
+                  <div style={{ fontSize: '7px', color: '#475569', marginTop: '1px' }}>{cmd.duty}</div>
+                </div>
+                <div style={{
+                  width: '6px', height: '6px', borderRadius: '50%',
+                  backgroundColor: lifecycle === 'active' ? cmd.color : '#334155',
+                  boxShadow: lifecycle === 'active' ? `0 0 4px ${cmd.color}60` : 'none',
+                }} />
+              </div>
+            ))}
+          </div>
+          <div style={{ 
+            marginTop: '6px', padding: '5px 8px', borderRadius: '6px',
+            backgroundColor: '#1e293b', border: '1px solid #334155',
+            fontSize: '7px', color: '#64748b', fontStyle: 'italic',
+          }}>
+            Blue Book §5.2: All agencies operate on secure, dedicated comm channel. Incidents logged for institutional memory.
+          </div>
+        </div>
+
+        {/* ═══ SECTION 12: OPERATIONAL TIMELINE (Blue Book §9) ═══ */}
+        <SectionBadge 
+          icon={Clock} 
+          title="Ops Timeline" 
+          status={lifecycle === 'complete' ? 'COMPLETE' : lifecycle === 'active' ? 'TRANSIT' : lifecycle === 'planned' ? 'PLANNED' : 'PRE-VISIT'}
+          statusColor={lifecycle === 'complete' ? '#7c3aed' : lifecycle === 'active' ? '#16a34a' : lifecycle === 'planned' ? '#2563eb' : '#64748b'}
+        />
+        <div style={{ padding: '0 6px 16px 6px' }}>
+          {(() => {
+            const phaseStep = lifecycle === 'complete' ? 5 : lifecycle === 'active' ? 3 : lifecycle === 'planned' ? 2 : 0;
+            const phases = [
+              { label: 'ASL Meeting', detail: 'Route survey, threat assessment, agency coordination', agency: 'SPG + IB + DGP', step: 0 },
+              { label: 'Contingency Rehearsal', detail: 'Route sanitisation, Plan B trial run, VP mapping', agency: 'State Police + SPG', step: 1 },
+              { label: 'Route Clearance', detail: 'Sniper deploy, traffic diversion, anti-sab sweep', agency: 'State Police (SP)', step: 2 },
+              { label: 'Transit', detail: 'Proximate security, ECM active, IB threat feed live', agency: 'SPG + State Police', step: 3 },
+              { label: 'Arrival / Venue', detail: 'Venue anti-sab, crowd mgmt, plainclothes deployed', agency: 'State Police + SPG', step: 4 },
+              { label: 'Debrief', detail: 'Incident log, institutional memory, lessons learned', agency: 'SPG Nodal Officer', step: 5 },
+            ];
+            return (
+              <div style={{ position: 'relative' }}>
+                {/* Vertical line */}
+                <div style={{
+                  position: 'absolute', left: '9px', top: '8px', bottom: '8px', width: '2px',
+                  background: 'linear-gradient(to bottom, #334155, #1e293b)',
+                }} />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  {phases.map((ph) => {
+                    const isActive = ph.step === phaseStep;
+                    const isDone = ph.step < phaseStep;
+                    const color = isActive ? '#ea580c' : isDone ? '#16a34a' : '#334155';
+                    return (
+                      <div key={ph.label} style={{
+                        display: 'flex', alignItems: 'flex-start', gap: '10px',
+                        padding: '5px 8px 5px 0', 
+                      }}>
+                        <div style={{
+                          width: '20px', height: '20px', borderRadius: '50%', flexShrink: 0,
+                          background: isActive ? `${color}25` : isDone ? `${color}15` : '#0f172a',
+                          border: `2px solid ${color}`,
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          zIndex: 1, position: 'relative',
+                        }}>
+                          {isDone ? (
+                            <CheckCircle size={10} color={color} />
+                          ) : isActive ? (
+                            <div style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: color, animation: 'pulse 2s infinite' }} />
+                          ) : (
+                            <div style={{ width: '4px', height: '4px', borderRadius: '50%', backgroundColor: '#475569' }} />
+                          )}
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: '9px', fontWeight: isActive ? 800 : 600, color: isActive ? '#f1f5f9' : isDone ? '#94a3b8' : '#475569' }}>
+                            {ph.label}
+                          </div>
+                          <div style={{ fontSize: '7px', color: isActive ? '#94a3b8' : '#475569', marginTop: '1px' }}>{ph.detail}</div>
+                          <div style={{ fontSize: '7px', color: color, fontWeight: 600, marginTop: '1px' }}>{ph.agency}</div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })()}
+        </div>
+
       </div>
 
       {/* ── Footer status ── */}
@@ -663,7 +1149,7 @@ const SecurityDossierPanel = ({ visible, onClose, vvipClass = 'Z+' }) => {
             animation: lifecycle === 'active' ? 'pulse 2s ease-in-out infinite' : 'none',
           }} />
           <span style={{ fontSize: '9px', fontWeight: 600, color: '#94a3b8', fontFamily: 'var(--font-mono)' }}>
-            DOSSIER v1 · {new Date().toLocaleTimeString('en-IN', { hour12: false })} IST
+            DOSSIER v2 · {new Date().toLocaleTimeString('en-IN', { hour12: false })} IST
           </span>
         </div>
         <span style={{ fontSize: '8px', color: '#475569', fontStyle: 'italic' }}>

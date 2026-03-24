@@ -60,6 +60,7 @@ class OllamaBridge:
         system_prompt: str,
         user_prompt: str,
         json_mode: bool = True,
+        suppress_thinking: bool = True,
     ) -> str:
         """Generate a response from Qwen via Ollama.
 
@@ -70,6 +71,8 @@ class OllamaBridge:
             system_prompt: Agent's system instructions
             user_prompt: The specific query/task
             json_mode: If True, request JSON-formatted output
+            suppress_thinking: If True, append /no_think and set think=False.
+                Set to False for reasoning endpoints that need deep CoT output.
 
         Returns:
             Raw response text from the LLM
@@ -82,13 +85,23 @@ class OllamaBridge:
                 model=self._model,
                 system_len=len(system_prompt),
                 user_len=len(user_prompt),
+                suppress_thinking=suppress_thinking,
             )
+
+            if suppress_thinking:
+                # Append /no_think token to enforce no-think mode at content level
+                # (belt-and-suspenders with the think=False API parameter)
+                enforced_prompt = user_prompt.rstrip() + " /no_think"
+            else:
+                # Skip /no_think token so model produces detailed content output.
+                # Still keep think=False for VRAM safety (no thinking block allocation).
+                enforced_prompt = user_prompt
 
             response = await self._client.chat(
                 model=self._model,
                 messages=[
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
+                    {"role": "user", "content": enforced_prompt},
                 ],
                 options={
                     "num_ctx": MAX_CONTEXT_TOKENS,
@@ -96,7 +109,7 @@ class OllamaBridge:
                     "temperature": TEMPERATURE,
                 },
                 format="json" if json_mode else "",
-                think=False,  # Disable Qwen 3.5 thinking mode — all output goes to content field
+                think=False,  # Always False — VRAM cannot support thinking blocks
             )
 
             content = response["message"]["content"]
