@@ -42,7 +42,9 @@
 
 <br/>
 
-<img width="3199" height="1788" alt="Screenshot 2026-03-19 233116" src="https://github.com/user-attachments/assets/0195417e-fe92-40b1-a7cc-9f06bec067b1" />
+<img width="3199" height="1999" alt="Screenshot 2026-03-25 001931" src="https://github.com/user-attachments/assets/c2e1672d-ecf1-4b88-b237-ae755144aa76" />
+
+<img width="3199" height="1999" alt="Screenshot 2026-03-25 002241" src="https://github.com/user-attachments/assets/947ca499-6ecb-4be6-bca4-bbf1e9f55854" />
 
 ## 🔴 The Problem
 
@@ -82,6 +84,9 @@ The result? **Traffic disruption reduced by up to 6×**, convoy security maintai
 
 <br/>
 <img width="580" height="1499" alt="Screenshot 2026-03-19 232948" src="https://github.com/user-attachments/assets/176bb2f1-3cfe-4900-a492-2f09a61731a8" />
+<img width="807" height="1571" alt="Screenshot 2026-03-25 002025" src="https://github.com/user-attachments/assets/29c13f59-4869-4a3c-ad67-61b369e06bf1" />
+<img width="810" height="1282" alt="Screenshot 2026-03-25 002046" src="https://github.com/user-attachments/assets/768a422d-31a7-4c8d-952d-29fefb7a4a65" />
+<img width="804" height="1458" alt="Screenshot 2026-03-25 002039" src="https://github.com/user-attachments/assets/c83c7af7-1921-4b74-80ed-bf0a9537606b" />
 
 ## 🎯 How It Works
 
@@ -149,7 +154,9 @@ Most convoy systems stop at escort completion. This platform goes further:
 ---
 
 <br/>
-<img width="591" height="1451" alt="Screenshot 2026-03-19 233020" src="https://github.com/user-attachments/assets/9bff891d-6037-488e-a0b3-c53466fbfda4" />  <img width="595" height="1691" alt="Screenshot 2026-03-19 233049" src="https://github.com/user-attachments/assets/9346d54b-5a1b-46c3-83d6-17641a170448" />
+<img width="592" height="1703" alt="Screenshot 2026-03-25 001949" src="https://github.com/user-attachments/assets/aef30a9f-81d6-43eb-89e9-6df0029d2e9b" />
+<img width="596" height="1891" alt="Screenshot 2026-03-25 002007" src="https://github.com/user-attachments/assets/3c388b16-a7be-49d1-9c29-b52e0ca61729" />
+
 
 
 ## 🏗️ Key Capabilities
@@ -252,7 +259,9 @@ This isn't a demo that needs a server farm. It's a **field-deployable system** t
 ---
 
 <br/>
-<img width="736" height="1795" alt="Screenshot 2026-03-19 233122" src="https://github.com/user-attachments/assets/5b701079-1464-49f8-bebd-41e1e3e8b5e1" />
+<img width="731" height="1999" alt="Screenshot 2026-03-25 002203" src="https://github.com/user-attachments/assets/e735c1f5-1909-4973-a13d-dfc8707e7f83" />
+<img width="731" height="1999" alt="Screenshot 2026-03-25 002210" src="https://github.com/user-attachments/assets/0726185e-0beb-4eab-9839-86aed24377a5" />
+
 
 ## 🔧 System Architecture
 
@@ -395,7 +404,8 @@ VVIP/
 
 <br/>
 
-<img width="3199" height="1785" alt="Screenshot 2026-03-19 232907" src="https://github.com/user-attachments/assets/b26f7c21-45cf-46b4-a886-8d71dccc3007" />
+<img width="3199" height="1999" alt="Screenshot 2026-03-25 002241" src="https://github.com/user-attachments/assets/9abe5241-7397-4a9c-979d-d89ed330399a" />
+
 
 ## 🚀 Getting Started
 
@@ -445,6 +455,12 @@ Navigate to `http://localhost:5173` — the VVIP Convoy Command dashboard is rea
 ---
 
 <br/>
+
+<img width="807" height="1668" alt="Screenshot 2026-03-25 002119" src="https://github.com/user-attachments/assets/97976ae5-8b5d-4cd7-aa5b-d1000bf22558" />
+
+<img width="810" height="1604" alt="Screenshot 2026-03-25 002057" src="https://github.com/user-attachments/assets/41bd18b8-b5fb-4e11-9cd7-767687beade5" />
+<img width="804" height="1999" alt="Screenshot 2026-03-25 002109" src="https://github.com/user-attachments/assets/2101990e-93f9-41c9-94c0-7193af2f1369" />
+
 
 ## 📚 Technical Documentation
 
