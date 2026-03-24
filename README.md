@@ -404,8 +404,7 @@ VVIP/
 
 <br/>
 
-<img width="3199" height="1999" alt="Screenshot 2026-03-25 002241" src="https://github.com/user-attachments/assets/9abe5241-7397-4a9c-979d-d89ed330399a" />
-
+<img width="3199" height="1999" alt="Screenshot 2026-03-25 001851" src="https://github.com/user-attachments/assets/76163c5a-1ada-473e-88c2-339b2e114987" />
 
 ## 🚀 Getting Started
 
