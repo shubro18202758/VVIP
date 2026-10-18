@@ -1,9 +1,9 @@
-"""Traffic Analyst Agent — LLM-driven real-time traffic situation assessment.
+"""Traffic Analyst Agent — Gemma 4 12B tactical tier.
 
 Monitors live traffic conditions across the corridor and provides
-natural-language situational awareness to the command center.
-Identifies anomalies, incidents, and unusual patterns that may
-impact planned or active convoy movements.
+situational awareness to the command center. Data gathering is deterministic
+(MCP tools); Gemma synthesizes the situation report under a JSON schema,
+with a deterministic heuristic fallback when the tactical tier is down.
 """
 
 from __future__ import annotations
@@ -12,14 +12,17 @@ import json
 
 import structlog
 
+from convoy_brain.agents.base import AgentSpec, structured_agent_call
+from convoy_brain.llm.heuristics import heuristic_traffic_assessment
+from convoy_brain.llm.llama_bridge import LlamaBridge
 from convoy_brain.mcp.server import ToolExecutor
-from convoy_brain.ollama_bridge import OllamaBridge
 
 logger = structlog.get_logger(__name__)
 
 TRAFFIC_ANALYST_SYSTEM_PROMPT = """\
-You are the Traffic Analyst agent for the VVIP Convoy Orchestration Platform.
-Your role is to continuously assess corridor traffic conditions and flag risks.
+You are the Traffic Analyst agent for the Corridor Event Orchestration Platform.
+Your role is to continuously assess corridor traffic conditions and flag risks
+for the active corridor event (protected movement or public event).
 
 You have access to:
 - get_live_traffic: Real-time speed and congestion for segments
@@ -31,9 +34,12 @@ Your responsibilities:
 1. MONITOR: Identify congestion spikes, incidents, and anomalies
 2. FORECAST: Assess whether conditions are improving or deteriorating
 3. ALERT: Flag segments where current conditions deviate significantly from forecast
-4. ADVISE: Recommend timing adjustments for planned movements
+4. ADVISE: Recommend timing adjustments for planned events and phase windows
 
 Always quantify your assessments (congestion index, queue lengths, ETAs).
+Base every number on the tool data provided in the prompt — never invent
+segment IDs, speeds, or congestion values.
+
 Respond with structured JSON:
 {
   "overall_status": "green|amber|red",
@@ -45,14 +51,19 @@ Respond with structured JSON:
 }
 """
 
+SPEC = AgentSpec(
+    name="traffic_analyst",
+    system_prompt=TRAFFIC_ANALYST_SYSTEM_PROMPT,
+    schema_name="traffic_analyst",
+)
+
 
 class TrafficAnalystAgent:
-    """LLM agent for real-time corridor traffic situation assessment."""
+    """Tactical agent for real-time corridor traffic situation assessment."""
 
-    def __init__(self, bridge: OllamaBridge, executor: ToolExecutor) -> None:
+    def __init__(self, bridge: LlamaBridge, executor: ToolExecutor) -> None:
         self._bridge = bridge
         self._executor = executor
-        self._system_prompt = TRAFFIC_ANALYST_SYSTEM_PROMPT
         logger.info("traffic_analyst_agent.init")
 
     async def assess_corridor(
@@ -60,7 +71,8 @@ class TrafficAnalystAgent:
     ) -> dict:
         """Assess current traffic conditions across the corridor.
 
-        Returns structured situation report with risk flags.
+        Returns structured situation report with risk flags. Falls back to
+        the deterministic assessment when the tactical tier is unavailable.
         """
         logger.info("traffic_analyst_agent.assess", bbox=corridor_bbox)
 
@@ -71,26 +83,12 @@ class TrafficAnalystAgent:
             "max_lon": corridor_bbox[2],
             "max_lat": corridor_bbox[3],
         })
-        segments = (
-            segments_result.get("segments", [])
-            if isinstance(segments_result, dict)
-            else segments_result if isinstance(segments_result, list) else []
-        )
+        segments = _coerce_segment_list(segments_result)
 
         if not segments:
-            return {
-                "overall_status": "red",
-                "congestion_summary": {"avg_congestion_idx": 0, "peak_congestion_idx": 0},
-                "risk_segments": [],
-                "trend": "stable",
-                "recommendation": "No segments found in corridor bounding box.",
-                "confidence": "low",
-            }
+            return heuristic_traffic_assessment(None)
 
-        segment_ids = [
-            s["segment_id"] if isinstance(s, dict) else s
-            for s in segments[:200]  # Cap at 200 for inference budget
-        ]
+        segment_ids = [s for s in segments[:200]]  # Cap at 200 for context budget
 
         # 2. Fetch live traffic data
         live_data = await self._executor.execute("get_live_traffic", {
@@ -103,7 +101,7 @@ class TrafficAnalystAgent:
             "horizons_min": [15],
         })
 
-        # 4. Ask LLM to synthesize the situation report
+        # 4. Ask Gemma to synthesize the situation report (heuristic floor)
         user_prompt = json.dumps({
             "task": "assess_corridor_conditions",
             "corridor_bbox": list(corridor_bbox),
@@ -112,24 +110,15 @@ class TrafficAnalystAgent:
             "forecast_t15": forecast_data,
         }, default=str)
 
-        response = await self._bridge.generate(
-            system_prompt=self._system_prompt,
-            user_prompt=user_prompt,
+        result, tier = await structured_agent_call(
+            self._bridge,
+            SPEC,
+            user_prompt,
+            lambda: heuristic_traffic_assessment(live_data, forecast_data),
+            repair_hint="keys: overall_status, congestion_summary{{avg_congestion_idx, peak_congestion_idx}}, risk_segments[], trend, recommendation, confidence",
         )
-
-        try:
-            return json.loads(response)
-        except json.JSONDecodeError:
-            logger.warning("traffic_analyst.parse_failed", raw_len=len(response))
-            return {
-                "overall_status": "amber",
-                "congestion_summary": {"avg_congestion_idx": 0, "peak_congestion_idx": 0},
-                "risk_segments": [],
-                "trend": "stable",
-                "recommendation": "Assessment produced unparseable response.",
-                "confidence": "low",
-                "raw_response": response[:500],
-            }
+        result["_tier"] = tier
+        return result
 
     async def check_movement_feasibility(
         self,
@@ -137,10 +126,7 @@ class TrafficAnalystAgent:
         planned_departure: str,
         route_segment_ids: list[int] | None = None,
     ) -> dict:
-        """Evaluate whether current conditions support a planned departure time.
-
-        Returns go/no-go recommendation with reasoning.
-        """
+        """Evaluate whether current conditions support a planned departure time."""
         logger.info(
             "traffic_analyst_agent.feasibility",
             movement_id=movement_id,
@@ -148,8 +134,8 @@ class TrafficAnalystAgent:
         )
 
         tool_data: dict = {"movement_id": movement_id, "departure": planned_departure}
+        forecast = None
 
-        # Fetch predictions for route segments if provided
         if route_segment_ids:
             forecast = await self._executor.execute("predict_traffic_flow", {
                 "segment_ids": route_segment_ids,
@@ -161,21 +147,42 @@ class TrafficAnalystAgent:
             tool_data["forecast"] = forecast
             tool_data["live_traffic"] = live
 
+        def heuristic() -> dict:
+            assessment = heuristic_traffic_assessment(
+                tool_data.get("live_traffic"), forecast
+            )
+            red = assessment["overall_status"] == "red"
+            return {
+                "go": not red,
+                "reasoning": assessment["recommendation"],
+                "confidence": assessment["confidence"],
+            }
+
         user_prompt = json.dumps({
             "task": "check_movement_feasibility",
             **tool_data,
         }, default=str)
 
-        response = await self._bridge.generate(
-            system_prompt=self._system_prompt,
-            user_prompt=user_prompt,
+        result, tier = await structured_agent_call(
+            self._bridge,
+            SPEC,
+            user_prompt,
+            heuristic,
+            repair_hint='keys: go (boolean), reasoning (string), confidence ("high"|"medium"|"low")',
         )
+        result["_tier"] = tier
+        return result
 
-        try:
-            return json.loads(response)
-        except json.JSONDecodeError:
-            return {
-                "go": False,
-                "reasoning": "Feasibility check produced unparseable response.",
-                "confidence": "low",
-            }
+
+def _coerce_segment_list(result: dict | list) -> list:
+    if isinstance(result, dict):
+        result = result.get("segments", [])
+    if not isinstance(result, list):
+        return []
+    out = []
+    for item in result:
+        if isinstance(item, dict) and item.get("segment_id") is not None:
+            out.append(item["segment_id"])
+        elif isinstance(item, int):
+            out.append(item)
+    return out

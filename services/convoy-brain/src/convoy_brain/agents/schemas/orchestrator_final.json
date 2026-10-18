@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "OrchestratorFinalAnswer",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "action",
+    "reasoning",
+    "tool_calls_made",
+    "confidence",
+    "data",
+    "protocol_assessment"
+  ],
+  "properties": {
+    "action": { "type": "string" },
+    "reasoning": { "type": "string" },
+    "tool_calls_made": { "type": "array", "items": { "type": "string" } },
+    "confidence": { "type": "string", "enum": ["high", "medium", "low"] },
+    "data": { "type": "object" },
+    "protocol_assessment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "asl_status",
+        "protocol_violations",
+        "threat_level",
+        "plan_b_ready"
+      ],
+      "properties": {
+        "asl_status": {
+          "type": "string",
+          "enum": ["complete", "incomplete", "not_assessed"]
+        },
+        "protocol_violations": { "type": "array", "items": { "type": "string" } },
+        "threat_level": {
+          "type": "string",
+          "enum": ["nominal", "guarded", "moderate", "elevated", "critical"]
+        },
+        "plan_b_ready": { "type": "boolean" }
+      }
+    }
+  }
+}

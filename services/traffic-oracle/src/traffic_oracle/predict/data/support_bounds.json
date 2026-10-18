@@ -1,0 +1,9 @@
+{
+  "schema": 1,
+  "recorded_from": "feature-space-defaults",
+  "features": {
+    "speed_norm": [0.05, 1.25],
+    "congestion_idx": [0.0, 1.0],
+    "neighbor_ratio": [0.25, 4.0]
+  }
+}

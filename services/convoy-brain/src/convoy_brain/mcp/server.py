@@ -51,7 +51,10 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     {
         "name": "find_convoy_routes",
         "description": (
-            "Find optimal convoy routes between origin and destination segments. "
+            "Find optimal corridor routes/spines between origin and destination "
+            "segments for any corridor event (protected movement, procession, "
+            "race, ceremonial, egress surge, evacuation, work zone). "
+            "Alias: find_corridor_routes. "
             "Uses multi-objective optimization (OR-Tools CP-SAT MIP solver) balancing "
             "transit time, public disruption, security score, and route complexity."
         ),
@@ -82,7 +85,8 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     {
         "name": "plan_diversions",
         "description": (
-            "Generate per-segment traffic diversion plans for a convoy route. "
+            "Generate per-segment traffic diversion plans for a corridor-event "
+            "route/spine. Alias: plan_event_diversions. "
             "Computes activation/deactivation timing, alternative routes, "
             "queue length estimates, and closure types (full/partial/speed restriction)."
         ),
@@ -92,15 +96,18 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                 "route_segment_ids": {
                     "type": "array",
                     "items": {"type": "integer"},
-                    "description": "Ordered list of segment IDs along the convoy route.",
+                    "description": "Ordered list of segment IDs along the event route.",
                 },
                 "convoy_speed_kmh": {
                     "type": "number",
-                    "description": "Expected convoy speed in km/h. Default: 60.",
+                    "description": "Expected managed-movement speed in km/h. Default: 60.",
                 },
                 "advance_closure_sec": {
                     "type": "integer",
-                    "description": "Seconds before convoy arrival to activate closure. Default: 120.",
+                    "description": (
+                        "Seconds before event arrival to activate closure. Default: 120; "
+                        "protocol floors apply per protection class (Z+ 180, Z 120, Y 60, X/none 0)."
+                    ),
                 },
                 "departure_time": {
                     "type": "string",
@@ -257,11 +264,59 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "segment_id": {"type": "integer"},
+                "segment_id": {"type": "integer", "description": "Road segment ID."},
                 "day_of_week": {"type": "integer", "description": "0=Monday, 6=Sunday."},
                 "hour": {"type": "integer", "description": "Hour of day (0-23)."},
             },
             "required": ["segment_id", "day_of_week", "hour"],
+        },
+    },
+    {
+        "name": "simulate_twin",
+        "description": (
+            "Run the deterministic digital-twin simulation for a convoy scenario: "
+            "n_replications seeded Monte-Carlo runs over the corridor twin, "
+            "reporting total public disruption (vehicle-hours), max queue length, "
+            "closure durations, convoy transit time, recovery and ambulance delay. "
+            "The `calibrated` flag in the result tells whether the twin has been "
+            "calibrated against observed traffic via /simulate/replay."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "route_segment_ids": {
+                    "type": "array",
+                    "items": {"type": "integer"},
+                    "description": "Ordered segment IDs of the route to simulate.",
+                },
+                "departure_time": {
+                    "type": "string",
+                    "description": "ISO 8601 departure time. Default: now.",
+                },
+                "closure_policy": {
+                    "type": "object",
+                    "properties": {
+                        "advance_closure_sec": {
+                            "type": "integer",
+                            "description": "Closure activation lead time in seconds.",
+                        },
+                        "closure_type": {
+                            "type": "string",
+                            "description": "full | partial | speed_restriction.",
+                        },
+                    },
+                },
+                "horizon_min": {
+                    "type": "integer",
+                    "description": "Simulation horizon in minutes. Max 60.",
+                },
+                "n_replications": {
+                    "type": "integer",
+                    "description": "Number of seeded replications. Max 20.",
+                },
+                "seed": {"type": "integer", "description": "RNG seed for determinism."},
+            },
+            "required": ["route_segment_ids"],
         },
     },
 ]
@@ -380,7 +435,7 @@ class MCPServer:
 
     PROTOCOL_VERSION = "2025-03-26"
     SERVER_NAME = "vvip-convoy-mcp"
-    SERVER_VERSION = "0.1.0"
+    SERVER_VERSION = "0.2.0"
 
     def __init__(self, tool_executor: ToolExecutor) -> None:
         self._executor = tool_executor
@@ -515,6 +570,14 @@ class ToolExecutionError(Exception):
     """Raised when a tool call fails in a recoverable way."""
 
 
+#: Per-tool schema properties — used to keep object-typed parameters intact
+#: during argument flattening.
+_TOOL_PROPERTY_MAP: dict[str, dict] = {
+    t["name"]: t.get("inputSchema", {}).get("properties", {})
+    for t in TOOL_DEFINITIONS
+}
+
+
 class ToolExecutor:
     """Dispatches MCP tool calls to traffic-oracle HTTP API endpoints.
 
@@ -522,9 +585,14 @@ class ToolExecutor:
     service running at TRAFFIC_ORACLE_URL. All calls use httpx async HTTP.
     """
 
-    def __init__(self, traffic_oracle_url: str = "http://localhost:8081") -> None:
+    def __init__(
+        self,
+        traffic_oracle_url: str = "http://localhost:8081",
+        client: Any | None = None,
+    ) -> None:
         self._oracle_url = traffic_oracle_url.rstrip("/")
-        self._client = None
+        self._client = client  # injectable for tests; lazy-created otherwise
+        self._owns_client = client is None
         logger.info("tool_executor.init", oracle_url=self._oracle_url)
 
     async def _ensure_client(self):
@@ -536,27 +604,34 @@ class ToolExecutor:
             )
 
     async def close(self):
-        if self._client:
+        if self._client and self._owns_client:
             await self._client.aclose()
             self._client = None
 
     @staticmethod
-    def _flatten_args(args: dict) -> dict:
-        """Flatten single-level nested dicts that LLMs sometimes produce.
+    def _flatten_args(args: dict, schema_properties: dict | None = None) -> dict:
+        """Flatten wrapper dicts that LLMs sometimes produce.
 
-        E.g. ``{"bbox": {"min_lon": 1}}`` → ``{"min_lon": 1}`` when the only
-        value is a dict.  Also merges when an outer key wraps the real params.
+        E.g. ``{"bbox": {"min_lon": 1}}`` → ``{"min_lon": 1}`` — but ONLY for
+        keys that are not real parameters of the tool. Object-typed parameters
+        (like simulate_twin's ``closure_policy``) are passed through intact.
         """
-        flat = {}
+        properties = schema_properties or {}
+        flat: dict = {}
         for key, val in args.items():
-            if isinstance(val, dict):
+            if isinstance(val, dict) and key not in properties:
                 flat.update(val)
             else:
                 flat[key] = val
         return flat
 
-    async def execute(self, tool_name: str, arguments: dict) -> dict:
-        """Route a tool call to the corresponding traffic-oracle endpoint."""
+    async def dispatch(self, tool_name: str, arguments: dict) -> dict:
+        """Route an MCP tool call to the corresponding traffic-oracle endpoint.
+
+        This is an HTTP dispatch to the traffic-oracle REST API — no SQL is
+        built or run here. ``execute`` is a legacy alias kept for callers
+        that pass literal tool names.
+        """
         await self._ensure_client()
 
         router = {
@@ -571,14 +646,27 @@ class ToolExecutor:
             "query_segment_details": self._query_segment_details,
             "get_live_traffic": self._get_live_traffic,
             "get_historical_pattern": self._get_historical_pattern,
+            "simulate_twin": self._simulate_twin,
         }
 
-        handler = router.get(tool_name)
+        # Event-agnostic alias names (contract C2): generalized names ship
+        # as advertised aliases of the canonical tools — legacy names keep
+        # working, new callers may use the corridor-event vocabulary.
+        tool_aliases = {
+            "find_corridor_routes": "find_convoy_routes",
+            "plan_event_diversions": "plan_diversions",
+            "evaluate_event_scenarios": "evaluate_scenarios",
+            "get_active_corridor_events": "get_live_traffic",
+        }
+        canonical_name = tool_aliases.get(tool_name, tool_name)
+        handler = router.get(canonical_name)
         if handler is None:
-            raise ToolExecutionError(f"Unknown tool: {tool_name}")
+            raise ToolExecutionError("Unknown tool: " + str(tool_name))
 
-        # Always try flattened args first (handles LLM nesting like {bbox:{...}})
-        flat = self._flatten_args(arguments)
+        # Always try flattened args first (handles LLM nesting like {bbox:{...}});
+        # object-typed parameters survive flattening via the schema properties.
+        schema = _TOOL_PROPERTY_MAP.get(canonical_name, {})
+        flat = self._flatten_args(arguments, schema)
 
         try:
             return await handler(flat)
@@ -589,13 +677,21 @@ class ToolExecutor:
                     return await handler(arguments)
                 except Exception as exc2:
                     logger.error("tool_executor.failed", tool=tool_name, error=str(exc2))
-                    raise ToolExecutionError(f"Tool '{tool_name}' failed: {exc2}") from exc2
+                    raise ToolExecutionError(
+                        "Tool '" + str(tool_name) + "' failed: " + str(exc2)
+                    ) from exc2
             raise
         except ToolExecutionError:
             raise
         except Exception as exc:
             logger.error("tool_executor.failed", tool=tool_name, error=str(exc))
-            raise ToolExecutionError(f"Tool '{tool_name}' failed: {exc}") from exc
+            raise ToolExecutionError(
+                "Tool '" + str(tool_name) + "' failed: " + str(exc)
+            ) from exc
+
+    async def execute(self, tool_name: str, arguments: dict) -> dict:
+        """Legacy alias for :meth:`dispatch`."""
+        return await self.dispatch(tool_name, arguments)
 
     # -- Traffic prediction ------------------------------------------------
 
@@ -699,6 +795,17 @@ class ToolExecutor:
         resp.raise_for_status()
         return resp.json()
 
+    # -- Digital-twin simulation (contract C5 — proxied for the decider) ----
+
+    async def _simulate_twin(self, args: dict) -> dict:
+        payload: dict[str, Any] = {"route_segment_ids": args["route_segment_ids"]}
+        for optional in ("departure_time", "closure_policy", "horizon_min", "n_replications", "seed"):
+            if args.get(optional) is not None:
+                payload[optional] = args[optional]
+        resp = await self._client.post("/api/v1/simulate/twin", json=payload)
+        resp.raise_for_status()
+        return resp.json()
+
     # -- Resource reading --------------------------------------------------
 
     async def read_resource(self, uri: str) -> dict:
@@ -788,6 +895,24 @@ class ToolExecutor:
                 ),
                 "diversion_advance_sec": 0,
                 "max_queue_tolerance_m": 0,
+            },
+            # Event-agnostic extension (core stream): 'none' is a public /
+            # civic corridor event — no protectee, crowd-safety doctrine.
+            "none": {
+                "classification": (
+                    "none (Public/Civic Event — procession, mass gathering, "
+                    "race, ceremonial, egress surge, evacuation, work zone)"
+                ),
+                "min_road_width": "No protectee minimum; crowd capacity governs",
+                "closure_type": "Managed per event plan (staged, signal_hold common)",
+                "route_constraints": (
+                    "Crowd class drives the plan: hardened perimeters for "
+                    "EXTREME crowds, staged ingress/egress instead of blanket "
+                    "freeze, emergency-vehicle lanes kept clear at all times. "
+                    "Published diversion and phase windows for multi-day events."
+                ),
+                "diversion_advance_sec": 0,
+                "max_queue_tolerance_m": 1500,
             },
         }
         protocol = protocols.get(vvip_class, protocols["Y"])

@@ -13,8 +13,6 @@
 
 import type {
 	ConvoyMovement,
-	RouteCandidate,
-	DiversionEntry,
 	SegmentTraffic,
 	RoadSegment,
 	TrafficPrediction,
@@ -74,6 +72,41 @@ export async function createMovement(params: {
 	return { movementId: resp.movement_id };
 }
 
+/** Route candidate as it survives to the plan document. The tactical tier
+ * (Gemma) narrates candidates down to {route_id, segment_ids, score(0..1),
+ * reason}; the heuristic floor and the raw oracle response additionally
+ * carry the solver metrics (snake_case) — all optional on the wire. */
+export interface PlanRouteCandidate {
+	route_id: string;
+	segment_ids: number[];
+	score?: number;
+	reason?: string;
+	total_distance_m?: number;
+	estimated_time_sec?: number;
+	disruption_score?: number;
+	security_score?: number;
+	composite_score?: number;
+	weighted_score?: number;
+}
+
+/** POST /movements/{id}/plan — the pre-movement workflow document.
+ * (The old `{routes, diversions, recommendation}` shape never matched the
+ * wire; this is the verified live contract.) */
+export interface MovementPlanDoc {
+	movement_id: string;
+	primary_route: PlanRouteCandidate | null;
+	alternate_routes: PlanRouteCandidate[];
+	overall_reasoning?: string;
+	confidence?: string;
+	status?: string;
+	security_compliant?: boolean;
+	security_score?: number;
+	security_violations?: Array<{ segment_id?: number }>;
+	diversion_directives?: unknown[];
+	decider_checkpoint?: unknown;
+	adaptive_params?: unknown;
+}
+
 export async function planMovement(
 	movementId: string,
 	params: {
@@ -82,11 +115,7 @@ export async function planMovement(
 		vvipClass: VvipClass;
 		plannedDeparture: string;
 	},
-): Promise<{
-	routes: RouteCandidate[];
-	diversions: DiversionEntry[];
-	recommendation: string;
-}> {
+): Promise<MovementPlanDoc> {
 	return post(`${CONVOY_API}/movements/${movementId}/plan`, {
 		origin: params.origin,
 		destination: params.destination,

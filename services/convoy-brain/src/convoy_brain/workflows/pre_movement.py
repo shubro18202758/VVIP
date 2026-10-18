@@ -1,34 +1,40 @@
-"""Pre-Movement Planning Workflow — multi-agent planning pipeline.
+"""Pre-Event Planning Workflow — multi-agent planning pipeline.
 
-Orchestrates the full planning sequence before a VVIP convoy moves:
+Orchestrates the full planning sequence before a corridor event goes live
+(a protected movement, procession, race, ceremonial, egress surge,
+evacuation or work zone — the event-agnostic pipeline):
 
-    1. Traffic Analyst assesses current corridor conditions
-    2. Route Planner generates and evaluates route candidates
-    3. Security Liaison validates routes against protocol
-    4. Diversion Coordinator plans segment-level diversions
-    5. Scenario Simulator compares alternatives
-    6. Final recommendation presented to command center
+    1. Adaptive parameters resolve (fail-closed to protocol baselines)
+    2. Decider pre-movement checkpoint (strategic tier, <=1500-token state)
+    3. Traffic Analyst assesses current corridor conditions   (Gemma tier)
+    4. Route Planner generates and evaluates route candidates  (Gemma tier;
+       adaptive scoring_weights applied brain-side)
+    5. Security Liaison validates routes against protocol      (Gemma tier)
+    6. Diversion Coordinator plans segment-level diversions    (Gemma tier;
+       protocol-floored advance_closure_sec threaded into plan_diversions)
+    7. Scenario Simulator compares alternatives                (numeric tier)
+    8. Final recommendation presented to the command center
 
-This is a LangGraph StateGraph where each node is an agent invocation
-and edges represent the planning sequence with conditional branching.
+Implemented as a plain async pipeline (the node structure and conditional
+security-retry loop of the previous graph, without the graph dependency).
 """
 
 from __future__ import annotations
 
 import time
-from typing import Any, TypedDict
+from typing import Any
 
 import structlog
-from langchain_core.runnables import RunnableConfig
-from langgraph.graph import END, StateGraph
 
+from convoy_brain.adaptive_params import AdaptiveParamsClient
 from convoy_brain.agents.diversion_coordinator import DiversionCoordinatorAgent
 from convoy_brain.agents.route_planner import RoutePlannerAgent
 from convoy_brain.agents.security_liaison import SecurityLiaisonAgent
 from convoy_brain.agents.traffic_analyst import TrafficAnalystAgent
+from convoy_brain.decider import DeciderBrain
+from convoy_brain.llm.llama_bridge import LlamaBridge
 from convoy_brain.mcp.server import ToolExecutor
 from convoy_brain.memory.convoy_context import ConvoyContext, ConvoyContextStore
-from convoy_brain.ollama_bridge import OllamaBridge
 
 logger = structlog.get_logger(__name__)
 
@@ -39,184 +45,191 @@ MAX_SECURITY_RETRIES = 2
 CORRIDOR_PAD_DEG = 0.02
 
 
-class PreMovementState(TypedDict, total=False):
-    """State schema for the pre-movement planning workflow."""
-    movement_id: str
-    origin: tuple[float, float]
-    destination: tuple[float, float]
-    vvip_class: str
-    planned_departure: str
-    avoid_segments: list[int] | None
-    security_retries: int
-    corridor_assessment: dict[str, Any]
-    route_candidates: dict[str, Any]
-    security_validation: dict[str, Any]
-    diversion_plans: dict[str, Any]
-    scenario_result: dict[str, Any]
-    final_recommendation: dict[str, Any]
+async def run_pre_movement_workflow(
+    movement_id: str,
+    origin: tuple[float, float],
+    destination: tuple[float, float],
+    vvip_class: str,
+    planned_departure: str,
+    *,
+    bridge: LlamaBridge | None = None,
+    executor: ToolExecutor | None = None,
+    context_store: ConvoyContextStore | None = None,
+    decider_brain: DeciderBrain | None = None,
+    adaptive_client: AdaptiveParamsClient | None = None,
+) -> dict:
+    """Execute the full pre-movement planning workflow.
 
+    Args:
+        movement_id: UUID of the planned movement
+        origin: (lon, lat) corridor origin
+        destination: (lon, lat) corridor destination
+        vvip_class: Z+, Z, Y, or X
+        planned_departure: ISO 8601 datetime string
+        bridge: LlamaBridge instance (required)
+        executor: ToolExecutor instance (required)
+        context_store: ConvoyContextStore instance (required)
+        decider_brain: strategic tier (optional; skipped when absent)
+        adaptive_client: adaptive-parameter client (optional; fail-closed)
 
-# ---------------------------------------------------------------------------
-# Node functions
-# ---------------------------------------------------------------------------
+    Returns:
+        Complete movement plan with route, diversions, timing, and risk assessment
+    """
+    if bridge is None or executor is None or context_store is None:
+        raise ValueError(
+            "bridge, executor, and context_store are required. "
+            "Pass them as keyword arguments."
+        )
 
-async def _assess_corridor(state: dict, config: RunnableConfig) -> dict:
-    """Node: Traffic Analyst assesses corridor conditions."""
-    agents = config["configurable"]["agents"]
-    analyst: TrafficAnalystAgent = agents["traffic_analyst"]
+    logger.info(
+        "pre_movement_workflow.start",
+        movement_id=movement_id,
+        vvip_class=vvip_class,
+        departure=planned_departure,
+    )
 
-    origin = state["origin"]
-    destination = state["destination"]
+    # -- 1. Adaptive parameters (fail-closed; floors applied on use) ---------
+    adaptive = None
+    if adaptive_client is not None:
+        adaptive = await adaptive_client.fetch(movement_id=movement_id, vvip_class=vvip_class)
+        logger.info(
+            "pre_movement.adaptive_params",
+            movement_id=movement_id,
+            source=adaptive.source,
+            shadow_eval=adaptive.shadow_eval,
+            situation_class=adaptive.situation_class,
+        )
 
+    traffic_analyst = TrafficAnalystAgent(bridge, executor)
+    route_planner = RoutePlannerAgent(bridge, executor, adaptive=adaptive)
+    security_liaison = SecurityLiaisonAgent(bridge, executor)
+    diversion_coordinator = DiversionCoordinatorAgent(
+        bridge, executor, context_store, adaptive=adaptive
+    )
+
+    state: dict[str, Any] = {
+        "movement_id": movement_id,
+        "origin": origin,
+        "destination": destination,
+        "vvip_class": vvip_class,
+        "planned_departure": planned_departure,
+        "avoid_segments": None,
+        "security_retries": 0,
+        "decider_checkpoint": None,
+        "adaptive": adaptive,
+    }
+
+    # -- 2. Strategic tier: pre-movement decider checkpoint -------------------
+    if decider_brain is not None:
+        state_doc = DeciderBrain.build_state_doc(
+            trigger="pre_movement",
+            summary=(
+                f"Pre-event planning. Protection class {vvip_class}, departure "
+                f"{planned_departure}, origin {origin}, destination {destination}."
+            ),
+            context={"phase": "pre_movement"},
+            pre_movement=True,
+        )
+        questions = DeciderBrain.pre_movement_questions(
+            ["primary", "alternate", "delay_departure"]
+        )
+        checkpoint = await decider_brain.checkpoint(
+            movement_id=movement_id,
+            trigger="pre_movement",
+            state_doc=state_doc,
+            questions=questions,
+            force=True,
+        )
+        state["decider_checkpoint"] = checkpoint.audit
+        for alert in checkpoint.operator_alerts:
+            await context_store.append_decision(
+                movement_id, dict(alert, phase="pre_movement_alert")
+            )
+
+    # -- 3. Corridor assessment ------------------------------------------------
     bbox = (
         min(origin[0], destination[0]) - CORRIDOR_PAD_DEG,
         min(origin[1], destination[1]) - CORRIDOR_PAD_DEG,
         max(origin[0], destination[0]) + CORRIDOR_PAD_DEG,
         max(origin[1], destination[1]) + CORRIDOR_PAD_DEG,
     )
-
-    assessment = await analyst.assess_corridor(bbox)
+    state["corridor_assessment"] = await traffic_analyst.assess_corridor(bbox)
     logger.info(
         "pre_movement.corridor_assessed",
-        movement_id=state["movement_id"],
-        status=assessment.get("overall_status"),
+        movement_id=movement_id,
+        status=state["corridor_assessment"].get("overall_status"),
     )
-    return {"corridor_assessment": assessment}
 
-
-async def _plan_routes(state: dict, config: RunnableConfig) -> dict:
-    """Node: Route Planner generates and ranks route candidates."""
-    agents = config["configurable"]["agents"]
-    planner: RoutePlannerAgent = agents["route_planner"]
-
-    result = await planner.analyze_routes(
-        movement_id=state["movement_id"],
-        origin=state["origin"],
-        destination=state["destination"],
-        vvip_class=state["vvip_class"],
-        avoid_segments=state.get("avoid_segments"),
-    )
-    logger.info(
-        "pre_movement.routes_planned",
-        movement_id=state["movement_id"],
-        primary=result.get("primary_route") is not None,
-        alternates=len(result.get("alternate_routes", [])),
-    )
-    return {"route_candidates": result}
-
-
-async def _validate_security(state: dict, config: RunnableConfig) -> dict:
-    """Node: Security Liaison validates the primary route against protocol."""
-    agents = config["configurable"]["agents"]
-    liaison: SecurityLiaisonAgent = agents["security_liaison"]
-
-    routes = state.get("route_candidates", {})
-    primary = routes.get("primary_route")
-
-    if primary is None:
-        return {
-            "security_validation": {
-                "compliant": False,
-                "violations": [],
-                "warnings": [],
-                "recommendations": ["No primary route to validate."],
-                "security_score": 0.0,
-                "confidence": "low",
-            },
-        }
-
-    segment_ids = primary.get("segment_ids", [])
-    result = await liaison.validate_route(segment_ids, state["vvip_class"])
-
-    logger.info(
-        "pre_movement.security_validated",
-        movement_id=state["movement_id"],
-        compliant=result.get("compliant"),
-        violations=len(result.get("violations", [])),
-    )
-    return {
-        "security_validation": result,
-        "security_retries": state.get("security_retries", 0),
-    }
-
-
-def _security_router(state: dict) -> str:
-    """Conditional edge: route back to planner if non-compliant."""
-    validation = state.get("security_validation", {})
-    retries = state.get("security_retries", 0)
-
-    if validation.get("compliant", False):
-        return "plan_diversions"
-
-    if retries >= MAX_SECURITY_RETRIES:
-        logger.warning(
-            "pre_movement.security_max_retries",
-            movement_id=state.get("movement_id"),
-            retries=retries,
+    # -- 4/5. Route planning with conditional security-retry loop ---------------
+    for _ in range(MAX_SECURITY_RETRIES + 1):
+        state["route_candidates"] = await route_planner.analyze_routes(
+            movement_id=movement_id,
+            origin=origin,
+            destination=destination,
+            vvip_class=vvip_class,
+            avoid_segments=state.get("avoid_segments"),
         )
-        return "plan_diversions"  # Proceed with warnings
+        logger.info(
+            "pre_movement.routes_planned",
+            movement_id=movement_id,
+            primary=state["route_candidates"].get("primary_route") is not None,
+            alternates=len(state["route_candidates"].get("alternate_routes", [])),
+        )
 
-    return "reroute"
+        state["security_validation"] = await _validate_security(
+            security_liaison, state
+        )
+        logger.info(
+            "pre_movement.security_validated",
+            movement_id=movement_id,
+            compliant=state["security_validation"].get("compliant"),
+            violations=len(state["security_validation"].get("violations", [])),
+        )
 
+        if state["security_validation"].get("compliant", False):
+            break
 
-async def _reroute_with_constraints(state: dict, config: RunnableConfig) -> dict:
-    """Node: Feed security violations back to Route Planner as avoid list."""
-    validation = state.get("security_validation", {})
-    violations = validation.get("violations", [])
+        if state["security_retries"] >= MAX_SECURITY_RETRIES:
+            logger.warning(
+                "pre_movement.security_max_retries",
+                movement_id=movement_id,
+                retries=state["security_retries"],
+            )
+            break  # Proceed with warnings
 
-    current_avoid = list(state.get("avoid_segments") or [])
-    for v in violations:
-        seg_id = v.get("segment_id")
-        if seg_id is not None and seg_id not in current_avoid:
-            current_avoid.append(seg_id)
+        # Feed violations back to the planner as an avoid list
+        current_avoid = list(state.get("avoid_segments") or [])
+        for v in state["security_validation"].get("violations", []):
+            seg_id = v.get("segment_id")
+            if seg_id is not None and seg_id not in current_avoid:
+                current_avoid.append(seg_id)
+        state["avoid_segments"] = current_avoid
+        state["security_retries"] += 1
+        logger.info(
+            "pre_movement.reroute",
+            movement_id=movement_id,
+            avoid_count=len(current_avoid),
+            retry=state["security_retries"],
+        )
 
-    retries = state.get("security_retries", 0) + 1
-    logger.info(
-        "pre_movement.reroute",
-        movement_id=state["movement_id"],
-        avoid_count=len(current_avoid),
-        retry=retries,
-    )
-    return {
-        "avoid_segments": current_avoid,
-        "security_retries": retries,
-    }
-
-
-async def _plan_diversions(state: dict, config: RunnableConfig) -> dict:
-    """Node: Diversion Coordinator plans diversions for the selected route."""
-    agents = config["configurable"]["agents"]
-    coordinator: DiversionCoordinatorAgent = agents["diversion_coordinator"]
-
-    routes = state.get("route_candidates", {})
-    primary = routes.get("primary_route")
-
+    # -- 6. Diversion planning (advance_closure_sec protocol-floored) ----------
+    primary = state["route_candidates"].get("primary_route")
     if primary is None:
-        return {"diversion_plans": {"directives": [], "overall_status": "no_route"}}
+        state["diversion_plans"] = {"directives": [], "overall_status": "no_route"}
+    else:
+        state["diversion_plans"] = await diversion_coordinator.activate_diversions(
+            movement_id=movement_id,
+            segment_ids=primary.get("segment_ids", []),
+            vvip_class=vvip_class,
+        )
+        logger.info(
+            "pre_movement.diversions_planned",
+            movement_id=movement_id,
+            directives=len(state["diversion_plans"].get("directives", [])),
+        )
 
-    segment_ids = primary.get("segment_ids", [])
-    result = await coordinator.activate_diversions(
-        movement_id=state["movement_id"],
-        segment_ids=segment_ids,
-    )
-
-    logger.info(
-        "pre_movement.diversions_planned",
-        movement_id=state["movement_id"],
-        directives=len(result.get("directives", [])),
-    )
-    return {"diversion_plans": result}
-
-
-async def _evaluate_scenarios(state: dict, config: RunnableConfig) -> dict:
-    """Node: Scenario evaluation via ToolExecutor (traffic-oracle backend)."""
-    agents = config["configurable"]["agents"]
-    executor: ToolExecutor = agents["executor"]
-
-    routes = state.get("route_candidates", {})
-    primary = routes.get("primary_route")
-    alternates = routes.get("alternate_routes", [])
-
+    # -- 7. Scenario evaluation (numeric tier) ----------------------------------
+    alternates = state["route_candidates"].get("alternate_routes", [])
     scenarios = []
     for route in [primary, *alternates]:
         if route is None:
@@ -224,32 +237,56 @@ async def _evaluate_scenarios(state: dict, config: RunnableConfig) -> dict:
         scenarios.append({
             "route_id": route.get("route_id", "unknown"),
             "segment_ids": route.get("segment_ids", []),
-            "departure_time": state.get("planned_departure"),
+            "departure_time": planned_departure,
         })
 
     if not scenarios:
-        return {"scenario_result": {"scenarios": [], "best": None}}
+        state["scenario_result"] = {"scenarios": [], "best": None}
+    else:
+        state["scenario_result"] = await executor.execute(
+            "evaluate_scenarios", {"scenarios": scenarios}
+        )
+        logger.info(
+            "pre_movement.scenarios_evaluated",
+            movement_id=movement_id,
+            count=len(scenarios),
+        )
 
-    result = await executor.execute("evaluate_scenarios", {"scenarios": scenarios})
-
+    # -- 8. Finalize ---------------------------------------------------------------
+    recommendation = await _finalize(state, context_store)
     logger.info(
-        "pre_movement.scenarios_evaluated",
-        movement_id=state["movement_id"],
-        count=len(scenarios),
+        "pre_movement_workflow.complete",
+        movement_id=movement_id,
+        status=recommendation["status"],
     )
-    return {"scenario_result": result}
+    return recommendation
 
 
-async def _finalize(state: dict, config: RunnableConfig) -> dict:
-    """Node: Compose final recommendation and persist to context store."""
-    ctx_store: ConvoyContextStore = config["configurable"]["context_store"]
+async def _validate_security(
+    liaison: SecurityLiaisonAgent, state: dict
+) -> dict:
+    primary = state.get("route_candidates", {}).get("primary_route")
+    if primary is None:
+        return {
+            "compliant": False,
+            "violations": [],
+            "warnings": [],
+            "recommendations": ["No primary route to validate."],
+            "security_score": 0.0,
+            "confidence": "low",
+        }
+    return await liaison.validate_route(primary.get("segment_ids", []), state["vvip_class"])
 
+
+async def _finalize(state: dict, ctx_store: ConvoyContextStore) -> dict:
+    """Compose the final recommendation and persist it to the context store."""
     routes = state.get("route_candidates", {})
     primary = routes.get("primary_route")
     security = state.get("security_validation", {})
     diversions = state.get("diversion_plans", {})
     scenario = state.get("scenario_result", {})
     corridor = state.get("corridor_assessment", {})
+    adaptive = state.get("adaptive")
 
     recommendation = {
         "movement_id": state["movement_id"],
@@ -271,16 +308,24 @@ async def _finalize(state: dict, config: RunnableConfig) -> dict:
             security.get("confidence"),
             diversions.get("confidence"),
         ),
+        "adaptive_params": {
+            "source": adaptive.source,
+            "shadow_eval": adaptive.shadow_eval,
+            "situation_class": adaptive.situation_class,
+            "advance_closure_sec": (
+                adaptive.floored_advance_closure_sec(state["vvip_class"])
+                if adaptive else None
+            ),
+        } if adaptive else None,
+        "decider_checkpoint": state.get("decider_checkpoint"),
     }
 
-    # Persist approved plan to convoy context
     ctx = await ctx_store.get(state["movement_id"])
     if ctx is None:
-        ctx = ConvoyContext(
-            movement_id=state["movement_id"],
-            vvip_class=state["vvip_class"],
-        )
+        ctx = ConvoyContext(movement_id=state["movement_id"], vvip_class=state["vvip_class"])
     ctx.status = recommendation["status"]
+    if adaptive is not None:
+        ctx.situation_class = adaptive.situation_class
     if primary:
         ctx.selected_route_id = primary.get("route_id")
     ctx.decisions_log.append({
@@ -290,135 +335,7 @@ async def _finalize(state: dict, config: RunnableConfig) -> dict:
         "timestamp": time.time(),
     })
     await ctx_store.put(ctx)
-
-    logger.info(
-        "pre_movement.finalized",
-        movement_id=state["movement_id"],
-        status=recommendation["status"],
-    )
-    return {"final_recommendation": recommendation}
-
-
-# ---------------------------------------------------------------------------
-# Graph construction
-# ---------------------------------------------------------------------------
-
-def build_pre_movement_graph() -> StateGraph:
-    """Construct the LangGraph StateGraph for pre-movement planning."""
-    graph = StateGraph(PreMovementState)
-
-    graph.add_node("assess_corridor", _assess_corridor)
-    graph.add_node("plan_routes", _plan_routes)
-    graph.add_node("validate_security", _validate_security)
-    graph.add_node("reroute", _reroute_with_constraints)
-    graph.add_node("plan_diversions", _plan_diversions)
-    graph.add_node("evaluate_scenarios", _evaluate_scenarios)
-    graph.add_node("finalize", _finalize)
-
-    # Linear pipeline with conditional security loop
-    graph.set_entry_point("assess_corridor")
-    graph.add_edge("assess_corridor", "plan_routes")
-    graph.add_edge("plan_routes", "validate_security")
-
-    graph.add_conditional_edges(
-        "validate_security",
-        _security_router,
-        {
-            "plan_diversions": "plan_diversions",
-            "reroute": "reroute",
-        },
-    )
-    graph.add_edge("reroute", "plan_routes")
-    graph.add_edge("plan_diversions", "evaluate_scenarios")
-    graph.add_edge("evaluate_scenarios", "finalize")
-    graph.add_edge("finalize", END)
-
-    return graph
-
-
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
-
-async def run_pre_movement_workflow(
-    movement_id: str,
-    origin: tuple[float, float],
-    destination: tuple[float, float],
-    vvip_class: str,
-    planned_departure: str,
-    *,
-    bridge: OllamaBridge | None = None,
-    executor: ToolExecutor | None = None,
-    context_store: ConvoyContextStore | None = None,
-) -> dict:
-    """Execute the full pre-movement planning workflow.
-
-    Args:
-        movement_id: UUID of the planned movement
-        origin: (lon, lat) convoy origin
-        destination: (lon, lat) convoy destination
-        vvip_class: Z+, Z, Y, or X
-        planned_departure: ISO 8601 datetime string
-        bridge: OllamaBridge instance (required)
-        executor: ToolExecutor instance (required)
-        context_store: ConvoyContextStore instance (required)
-
-    Returns:
-        Complete movement plan with route, diversions, timing, and risk assessment
-    """
-    if bridge is None or executor is None or context_store is None:
-        raise ValueError(
-            "bridge, executor, and context_store are required. "
-            "Pass them as keyword arguments."
-        )
-
-    logger.info(
-        "pre_movement_workflow.start",
-        movement_id=movement_id,
-        vvip_class=vvip_class,
-        departure=planned_departure,
-    )
-
-    traffic_analyst = TrafficAnalystAgent(bridge, executor)
-    route_planner = RoutePlannerAgent(bridge, executor)
-    security_liaison = SecurityLiaisonAgent(bridge, executor)
-    diversion_coordinator = DiversionCoordinatorAgent(bridge, executor, context_store)
-
-    graph = build_pre_movement_graph()
-    app = graph.compile()
-
-    initial_state = {
-        "movement_id": movement_id,
-        "origin": origin,
-        "destination": destination,
-        "vvip_class": vvip_class,
-        "planned_departure": planned_departure,
-        "avoid_segments": None,
-        "security_retries": 0,
-    }
-
-    config = {
-        "configurable": {
-            "agents": {
-                "traffic_analyst": traffic_analyst,
-                "route_planner": route_planner,
-                "security_liaison": security_liaison,
-                "diversion_coordinator": diversion_coordinator,
-                "executor": executor,
-            },
-            "context_store": context_store,
-            "thread_id": f"pre_movement_{movement_id}",
-        },
-    }
-
-    result = await app.ainvoke(initial_state, config=config)
-
-    logger.info(
-        "pre_movement_workflow.complete",
-        movement_id=movement_id,
-        status=result.get("final_recommendation", {}).get("status"),
-    )
-    return result.get("final_recommendation", {"status": "error", "error": "No recommendation produced"})
+    return recommendation
 
 
 def _aggregate_confidence(*levels: str | None) -> str:

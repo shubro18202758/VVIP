@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TrafficAnalystAssessment",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "overall_status",
+    "congestion_summary",
+    "risk_segments",
+    "trend",
+    "recommendation",
+    "confidence"
+  ],
+  "properties": {
+    "overall_status": { "type": "string", "enum": ["green", "amber", "red"] },
+    "congestion_summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["avg_congestion_idx", "peak_congestion_idx"],
+      "properties": {
+        "avg_congestion_idx": { "type": "number" },
+        "peak_congestion_idx": { "type": "number" }
+      }
+    },
+    "risk_segments": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["segment_id", "issue", "severity"],
+        "properties": {
+          "segment_id": { "type": "integer" },
+          "issue": { "type": "string" },
+          "severity": { "type": "string", "enum": ["low", "medium", "high", "critical"] }
+        }
+      }
+    },
+    "trend": { "type": "string", "enum": ["improving", "stable", "deteriorating"] },
+    "recommendation": { "type": "string" },
+    "confidence": { "type": "string", "enum": ["high", "medium", "low"] }
+  }
+}

@@ -1,0 +1,93 @@
+{
+ "vehicle_id": "9a030e3e-8429-4444-8a7d-534267345748",
+ "plate": "GJ27EM9001",
+ "sightings": {
+  "stolen_total": 76,
+  "stolen_this_run": 4,
+  "cameras": [
+   "EM-CAM-01",
+   "EM-CAM-02",
+   "EM-CAM-03",
+   "EM-CAM-04"
+  ],
+  "speeds_kmh": [
+   105.0,
+   112.0,
+   114.0,
+   106.0
+  ],
+  "source": "emulated_anpr"
+ },
+ "recommendation": {
+  "fired_rules": [
+   "R_SPD_SEGMENT",
+   "R_SIGNAL_VIOLATION",
+   "R_SPD_SEGMENT",
+   "R_SPD_SEGMENT",
+   "R_SIGNAL_VIOLATION"
+  ],
+  "created": 5,
+  "eval_errors": [],
+  "chosen": {
+   "id": "8698a70e-8d4c-4e82-bc84-c825319c3b17",
+   "rule_id": "R_SPD_SEGMENT",
+   "text": "e-challan recommended: GJ27EM9001 read at 114 km/h in a 50 km/h segment"
+  }
+ },
+ "approval": {
+  "status": "approved",
+  "officer": "Duty Officer R. Mehta (God's Eye Morning)",
+  "audit_tail_last": {
+   "actor": "Duty Officer R. Mehta (God's Eye Morning)",
+   "action": "decision:approved",
+   "at": "2026-10-13T18:07:25.482158+00:00",
+   "note": "e-challan approved per FIR 4401/2026, Kalupur PS \u2014 speed evidence reviewed"
+  }
+ },
+ "pursuit_event": {
+  "event_id": "a6827de9-a95a-40ca-958f-202a0e5a8e0b",
+  "kind": "vehicle_pursuit",
+  "status": "planning",
+  "metadata": {
+   "fir": "FIR 4401/2026, Kalupur PS",
+   "opened_by": "Duty Officer R. Mehta (God's Eye Morning)",
+   "vehicle_id": "9a030e3e-8429-4444-8a7d-534267345748",
+   "recommendation_id": "8698a70e-8d4c-4e82-bc84-c825319c3b17"
+  },
+  "title": "PURSUIT \u2014 stolen GJ27EM9001 (FIR 4401/2026, Kalupur PS)",
+  "metadata_source": "events.corridor_events (persisted row merged; the POST response echoes metadata as {})"
+ },
+ "interception": {
+  "n_junctions": 9,
+  "top": {
+   "junction_id": 3,
+   "junction_type": "signal",
+   "signal_control": true,
+   "position": [
+    72.5798,
+    23.0254
+   ],
+   "graph_cost_sec": 0.0,
+   "choke_weight": 0.9,
+   "score": 0.9
+  },
+  "latest_sighting": {
+   "sighting_id": "c329a0c8-53a3-56d6-a3f5-1a31ecba759b",
+   "plate": "GJ27EM9001",
+   "t": "2026-10-13T18:49:04.346294+00:00",
+   "position": [
+    72.580722,
+    23.026239
+   ],
+   "speed_kmh": 105.0,
+   "heading": 78.0,
+   "source": "emulated_anpr"
+  }
+ },
+ "trace": {
+  "points": 76,
+  "source": "emulated_anpr",
+  "first": "2026-10-13T02:15:48.317965+00:00",
+  "last": "2026-10-13T18:49:04.346294+00:00"
+ }
+}

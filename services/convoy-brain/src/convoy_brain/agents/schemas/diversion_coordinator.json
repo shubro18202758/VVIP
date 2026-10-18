@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DiversionCoordinatorDirectives",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["directives", "queue_alerts", "overall_status", "confidence"],
+  "properties": {
+    "directives": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["segment_id", "action", "agency", "timing_sec", "detail"],
+        "properties": {
+          "segment_id": { "type": "integer" },
+          "action": { "type": "string", "enum": ["activate", "hold", "deactivate"] },
+          "agency": {
+            "type": "string",
+            "enum": ["traffic_police", "transport", "security"]
+          },
+          "timing_sec": { "type": "integer" },
+          "detail": { "type": "string" }
+        }
+      }
+    },
+    "queue_alerts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["segment_id", "estimated_queue_m", "action"],
+        "properties": {
+          "segment_id": { "type": "integer" },
+          "estimated_queue_m": { "type": "number" },
+          "action": { "type": "string" }
+        }
+      }
+    },
+    "overall_status": { "type": "string" },
+    "confidence": { "type": "string", "enum": ["high", "medium", "low"] }
+  }
+}

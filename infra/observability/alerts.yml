@@ -1,8 +1,16 @@
 # VVIP Platform — Prometheus Alert Rules
-# Monitors VRAM, LLM performance, MCP tools, API latency, spatial DB
+# Monitors the GB10 unified-memory model stack, LLM performance, MCP tools,
+# API latency, spatial DB. Retuned for the models-stack topology (C10):
+# decider :8083 / Gemma llama-server :8084 / embeddings :8085 all on the host;
+# the retired Ollama/VRAM serialization regime is gone. Budget reference:
+# VVIP/models/MEMORY_BUDGET.md.
 
 groups:
-  # ─── GPU / VRAM Alerts ──────────────────────────────────────────
+  # ─── GPU / Unified Memory Alerts ─────────────────────────────────
+  # NOTE (GB10): nvidia-smi reports memory.total as N/A on this SoC — the
+  # unified pool is read from /proc/meminfo (121.44 GiB). The nvidia_gpu_*
+  # rules below stay for portability to discrete-GPU nodes; on GB10 they are
+  # inactive unless the exporter provides the metrics.
   - name: gpu_vram
     interval: 5s
     rules:
@@ -12,8 +20,8 @@ groups:
         labels:
           severity: critical
         annotations:
-          summary: "GPU VRAM usage exceeds 92%"
-          description: "VRAM at {{ $value | humanizePercentage }} — risk of OOM cascade. Ollama budget: 5632MB, ONNX: 409MB."
+          summary: "GPU memory usage exceeds 92% (discrete-GPU nodes)"
+          description: "Memory at {{ $value | humanizePercentage }} — risk of OOM cascade. GB10 note: unified pool budget lives in VVIP/models/MEMORY_BUDGET.md."
 
       - alert: VRAMUsageHigh
         expr: nvidia_gpu_memory_used_bytes / nvidia_gpu_memory_total_bytes > 0.80
@@ -21,8 +29,8 @@ groups:
         labels:
           severity: warning
         annotations:
-          summary: "GPU VRAM usage above 80%"
-          description: "VRAM at {{ $value | humanizePercentage }}. Headroom shrinking below 1844MB budget."
+          summary: "GPU memory usage above 80% (discrete-GPU nodes)"
+          description: "Memory at {{ $value | humanizePercentage }}."
 
       - alert: GPUTemperatureHigh
         expr: nvidia_gpu_temperature_celsius > 85
@@ -32,7 +40,7 @@ groups:
         annotations:
           summary: "GPU temperature {{ $value }}°C — thermal throttling imminent"
 
-  # ─── LLM / Ollama Alerts ────────────────────────────────────────
+  # ─── Model Stack / LLM Alerts (models stream) ────────────────────
   - name: llm_performance
     interval: 10s
     rules:
@@ -42,8 +50,8 @@ groups:
         labels:
           severity: warning
         annotations:
-          summary: "Qwen token generation below 5 tok/sec"
-          description: "Current rate: {{ $value }} tok/sec. May indicate VRAM contention or model degradation."
+          summary: "Gemma token generation below 5 tok/sec"
+          description: "Current rate: {{ $value }} tok/sec (llama-server :8084, aditi-ps18-v7h). May indicate unified-memory bandwidth contention with the 27B decider."
 
       - alert: LLMInferenceLatencyHigh
         expr: histogram_quantile(0.99, rate(vvip_llm_inference_duration_seconds_bucket[5m])) > 30
@@ -53,13 +61,41 @@ groups:
         annotations:
           summary: "LLM p99 inference latency exceeds 30s"
 
-      - alert: OllamaUnreachable
-        expr: vvip_ollama_health_up == 0
+      - alert: ModelHostUnreachable
+        expr: up{job="model-host"} == 0 or model_host_loaded == 0
         for: 30s
         labels:
           severity: critical
         annotations:
-          summary: "Ollama API unreachable — convoy-brain degraded"
+          summary: "model-host (:8083, pplx-decider-v1-27b) unreachable or unloaded"
+          description: "Strategic tier down — brain must fall back to Gemma-only tactical mode (C1 degradation) and alert the operator."
+
+      - alert: DeciderP95LatencyHigh
+        expr: model_host_decide_latency_p95_ms > 3000
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Decider p95 decide latency above the 3 s degradation threshold"
+          description: "p95 = {{ $value }} ms. Above 3 s, convoy-brain switches to Gemma-only tactical fallback and pre-movement checkpoints must shrink state (risk register item #1)."
+
+      - alert: LlamaServerUnreachable
+        expr: up{job="llama-server"} == 0
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: "llama-server (:8084, Gemma 4 12B) unreachable"
+          description: "Tactical tier down — agents, tool-arg drafting and all prose generation are unavailable. Restart: ./infra/scripts/serve_models.sh start"
+
+      - alert: EmbeddingServiceUnreachable
+        expr: up{job="embedding-service"} == 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "embedding-service (:8085) unreachable"
+          description: "Memory tier (T1) retrieval degraded; incident/AAR recall and adaptive similarity unavailable until restart."
 
   # ─── MCP Tool Execution Alerts ──────────────────────────────────
   - name: mcp_tools

@@ -1,0 +1,11 @@
+{
+  "round": 2,
+  "decisionTokSec": 455.78,
+  "gemmaTokSec": 20.09,
+  "embedMs": 92.7,
+  "decisionP99Ms": 1106.8,
+  "memGB": 62.73,
+  "scenarioScore": 100.0,
+  "scenariosPassed": 19,
+  "scenariosTotal": 19
+}

@@ -1,0 +1,1752 @@
+{
+  "format": "veer/scenario-library/1",
+  "generator": "traffic_oracle.simulation.scenarios.export_library",
+  "n_scenarios": 22,
+  "scenarios": [
+    {
+      "scenario_id": "baseline_weekday_midday",
+      "name": "Baseline Weekday Midday",
+      "description": "Z-class movement up the Ashram Road spine on a quiet Tuesday early afternoon \u2014 the reference case: default event rates, no weather, standard 120 s rolling closure.",
+      "category": "baseline",
+      "route_segment_ids": [
+        1001,
+        1002,
+        1009
+      ],
+      "departure_time": "2026-10-13T13:40:00+05:30",
+      "vvip_class": "Z",
+      "closure_policy": {
+        "advance_closure_sec": 120,
+        "closure_type": "full_closure"
+      },
+      "horizon_min": 45,
+      "n_replications": 8,
+      "seed": 20261013,
+      "convoy_speed_kmh": 60.0,
+      "weather": {},
+      "event_overrides": {},
+      "forced_events": [],
+      "expected_features": [
+        "moderate_demand",
+        "rolling_closure",
+        "reference_case"
+      ],
+      "event_kind": "protected_movement",
+      "crowd_class": "LOW",
+      "duration_class": "minutes"
+    },
+    {
+      "scenario_id": "monsoon_evening_peak",
+      "name": "Monsoon Evening Peak",
+      "description": "MANDATED ANCHOR \u2014 monsoon evening. Z+ airport arrival into the city at 18:30 in active monsoon (18 mm/h rain). The Gandhinagar Highway approach (1024) runs through the low-lying Kalupur underpass \u2014 its scheduled waterlogging plus evening-peak demand and weather-damped free-flow make this the worst single-weather case.",
+      "category": "weather",
+      "route_segment_ids": [
+        1028,
+        1027,
+        1024,
+        1014
+      ],
+      "departure_time": "2026-07-21T18:30:00+05:30",
+      "vvip_class": "Z+",
+      "closure_policy": {
+        "advance_closure_sec": 180,
+        "closure_type": "full_closure"
+      },
+      "horizon_min": 60,
+      "n_replications": 10,
+      "seed": 20260721,
+      "convoy_speed_kmh": 50.0,
+      "weather": {
+        "monsoon": true,
+        "rain_intensity_mm_h": 18.0
+      },
+      "event_overrides": {
+        "waterlogging": 2.5,
+        "breakdown": 1.4
+      },
+      "forced_events": [
+        {
+          "type": "waterlogging",
+          "segment_id": 1024,
+          "start_sec": 300.0,
+          "duration_sec": 2700.0,
+          "severity": 0.7,
+          "label": "Kalupur underpass waterlogged \u2014 45 min pump-out"
+        }
+      ],
+      "expected_features": [
+        "monsoon",
+        "evening_peak",
+        "waterlogging_prone",
+        "low_visibility_speed"
+      ],
+      "event_kind": "protected_movement",
+      "crowd_class": "LOW",
+      "duration_class": "minutes"
+    },
+    {
+      "scenario_id": "multi_event_collision_kalupur",
+      "name": "Multi-Event Collision at Kalupur",
+      "description": "MANDATED ANCHOR \u2014 multi-event collision. A Z movement through the Kalupur junction complex (J8) at 17:50 Friday while a double-lane breakdown blocks Station Road, a signal fault collapses the J8 greens, and a monsoon shower waterlogs the Gandhinagar Highway approach \u2014 three simultaneous capacity hits on one junction.",
+      "category": "multi_event",
+      "route_segment_ids": [
+        1030,
+        1014,
+        1024
+      ],
+      "departure_time": "2026-08-14T17:50:00+05:30",
+      "vvip_class": "Z",
+      "closure_policy": {
+        "advance_closure_sec": 150,
+        "closure_type": "full_closure"
+      },
+      "horizon_min": 60,
+      "n_replications": 12,
+      "seed": 20260814,
+      "convoy_speed_kmh": 60.0,
+      "weather": {
+        "monsoon": true,
+        "rain_intensity_mm_h": 9.0
+      },
+      "event_overrides": {
+        "waterlogging": 1.5,
+        "signal_fault": 1.2
+      },
+      "forced_events": [
+        {
+          "type": "vehicle_breakdown",
+          "segment_id": 1014,
+          "start_sec": 240.0,
+          "duration_sec": 2100.0,
+          "severity": 0.85,
+          "label": "truck breakdown blocking 2 lanes at Kalupur approach"
+        },
+        {
+          "type": "signal_fault",
+          "segment_id": 1014,
+          "start_sec": 480.0,
+          "duration_sec": 1500.0,
+          "severity": 0.8,
+          "label": "J8 signal controller fault \u2014 flashing amber"
+        },
+        {
+          "type": "waterlogging",
+          "segment_id": 1024,
+          "start_sec": 900.0,
+          "duration_sec": 2400.0,
+          "severity": 0.65,
+          "label": "waterlogged underpass on GN Highway approach"
+        }
+      ],
+      "expected_features": [
+        "multi_event",
+        "simultaneous_capacity_loss",
+        "friday_peak",
+        "long_recovery"
+      ],
+      "event_kind": "protected_movement",
+      "crowd_class": "LOW",
+      "duration_class": "minutes"
+    },
+    {
+      "scenario_id": "zplus_airport_morning_peak",
+      "name": "Z+ Airport Run at Morning Peak",
+      "description": "MANDATED ANCHOR \u2014 Z+ at peak. Head-of-state class run city \u2192 airport at 08:45 Monday: maximum protocol closure (180 s advance), full closure type, morning-peak demand on the Gandhinagar Highway corridor, plus the Monday commute peak in full swing.",
+      "category": "baseline",
+      "route_segment_ids": [
+        1014,
+        1024,
+        1027,
+        1028
+      ],
+      "departure_time": "2026-10-12T08:45:00+05:30",
+      "vvip_class": "Z+",
+      "closure_policy": {
+        "advance_closure_sec": 180,
+        "closure_type": "full_closure"
+      },
+      "horizon_min": 45,
+      "n_replications": 10,
+      "seed": 20261012,
+      "convoy_speed_kmh": 60.0,
+      "weather": {},
+      "event_overrides": {},
+      "forced_events": [],
+      "expected_features": [
+        "zplus_protocol",
+        "morning_peak",
+        "full_closure"
+      ],
+      "event_kind": "protected_movement",
+      "crowd_class": "LOW",
+      "duration_class": "minutes"
+    },
+    {
+      "scenario_id": "sunday_market_spillover",
+      "name": "Sunday Market Spillover (Old City)",
+      "description": "Y-class run through the Lal Darwaja bazaar cluster at 11:00 Sunday: market spillover demand saturates Relief/Gandhi/Tilak Roads while Sunday shoppers queue at the J3/J5 signals.",
+      "category": "event",
+      "route_segment_ids": [
+        1015,
+        1005,
+        1013
+      ],
+      "departure_time": "2026-10-18T11:00:00+05:30",
+      "vvip_class": "Y",
+      "closure_policy": {
+        "advance_closure_sec": 90,
+        "closure_type": "partial_closure"
+      },
+      "horizon_min": 45,
+      "n_replications": 8,
+      "seed": 20261018,
+      "convoy_speed_kmh": 60.0,
+      "weather": {},
+      "event_overrides": {
+        "market": 2.2
+      },
+      "forced_events": [],
+      "expected_features": [
+        "market_spillover",
+        "sunday_demand",
+        "narrow_roads"
+      ],
+      "event_kind": "protected_movement",
+      "crowd_class": "LOW",
+      "duration_class": "minutes"
+    },
+    {
+      "scenario_id": "rally_saturday_evening",
+      "name": "Political Rally Spillover, Saturday Evening",
+      "description": "A scheduled rally on the Ashram Road riverfront at 17:00 Saturday pours 900 veh/h of extra arrivals onto the corridor while a Z-class movement runs the spine in the opposite shoulder of the evening peak.",
+      "category": "event",
+      "route_segment_ids": [
+        1009,
+        1002,
+        1001
+      ],
+      "departure_time": "2026-10-17T17:00:00+05:30",
+      "vvip_class": "Z",
+      "closure_policy": {
+        "advance_closure_sec": 120,
+        "closure_type": "full_closure"
+      },
+      "horizon_min": 60,
+      "n_replications": 10,
+      "seed": 20261017,
+      "convoy_speed_kmh": 60.0,
+      "weather": {},
+      "event_overrides": {},
+      "forced_events": [
+        {
+          "type": "rally_spillover",
+          "segment_id": 1006,
+          "start_sec": 0.0,
+          "duration_sec": 5400.0,
+          "severity": 0.8,
+          "extra_demand_veh_h": 900.0,
+          "label": "riverfront rally \u2014 15k attendees, parking spillover"
+        },
+        {
+          "type": "rally_spillover",
+          "segment_id": 1001,
+          "start_sec": 600.0,
+          "duration_sec": 4800.0,
+          "severity": 0.6,
+          "extra_demand_veh_h": 500.0,
+          "label": "rally dispersal onto Ashram Road southbound"
+        }
+      ],
+      "expected_features": [
+        "scheduled_rally",
+        "saturday_evening",
+        "demand_surge"
+      ],
+      "event_kind": "protected_movement",
+      "crowd_class": "LOW",
+      "duration_class": "minutes"
+    },
+    {
+      "scenario_id": "signal_fault_friday_peak",
+      "name": "Signal Faults at Friday Peak",
+      "description": "Signal-controller faults at J1 and J8 during the Friday 18:00 peak while an X-class medical convoy crosses the city \u2014 tests green-ratio collapse under saturated demand without any physical blockage.",
+      "category": "ops",
+      "route_segment_ids": [
+        1003,
+        1004,
+        1001
+      ],
+      "departure_time": "2026-10-16T18:00:00+05:30",
+      "vvip_class": "X",
+      "closure_policy": {
+        "advance_closure_sec": 60,
+        "closure_type": "signal_hold"
+      },
+      "horizon_min": 45,
+      "n_replications": 8,
+      "seed": 20261016,
+      "convoy_speed_kmh": 60.0,
+      "weather": {},
+      "event_overrides": {
+        "signal_fault": 3.0
+      },
+      "forced_events": [
+        {
+          "type": "signal_fault",
+          "segment_id": 1001,
+          "start_sec": 300.0,
+          "duration_sec": 1800.0,
+          "severity": 0.75,
+          "label": "J1 controller fault \u2014 flashing red"
+        },
+        {
+          "type": "signal_fault",
+          "segment_id": 1014,
+          "start_sec": 900.0,
+          "duration_sec": 1500.0,
+          "severity": 0.6,
+          "label": "J8 detector fault \u2014 stuck green one side"
+        }
+      ],
+      "expected_features": [
+        "signal_fault",
+        "friday_peak",
+        "capacity_loss_without_blockage"
+      ],
+      "event_kind": "protected_movement",
+      "crowd_class": "LOW",
+      "duration_class": "minutes"
+    },
+    {
+      "scenario_id": "night_owl_low_demand",
+      "name": "Night Owl \u2014 Low Demand",
+      "description": "X-class run at 02:30 Wednesday night: near-empty roads, minimal disruption, quick recovery \u2014 the floor case that calibrates how much of peak-hour delay is demand-driven rather than closure-driven.",
+      "category": "baseline",
+      "route_segment_ids": [
+        1001,
+        1002,
+        1009
+      ],
+      "departure_time": "2026-10-14T02:30:00+05:30",
+      "vvip_class": "X",
+      "closure_policy": {
+        "advance_closure_sec": 60,
+        "closure_type": "full_closure"
+      },
+      "horizon_min": 30,
+      "n_replications": 6,
+      "seed": 20261014,
+      "convoy_speed_kmh": 60.0,
+      "weather": {},
+      "event_overrides": {},
+      "forced_events": [],
+      "expected_features": [
+        "low_demand",
+        "fast_recovery",
+        "floor_case"
+      ],
+      "event_kind": "protected_movement",
+      "crowd_class": "LOW",
+      "duration_class": "minutes"
+    },
+    {
+      "scenario_id": "monsoon_morning_commute",
+      "name": "Monsoon Morning Commute (SG Highway)",
+      "description": "Y-class run west on SG Highway at 09:00 in moderate monsoon rain (8 mm/h) \u2014 morning-peak demand on the motorway with weather-damped free-flow and elevated breakdown rates.",
+      "category": "weather",
+      "route_segment_ids": [
+        1018,
+        1017,
+        1016
+      ],
+      "departure_time": "2026-08-11T09:00:00+05:30",
+      "vvip_class": "Y",
+      "closure_policy": {
+        "advance_closure_sec": 90,
+        "closure_type": "partial_closure"
+      },
+      "horizon_min": 45,
+      "n_replications": 8,
+      "seed": 20260811,
+      "convoy_speed_kmh": 60.0,
+      "weather": {
+        "monsoon": true,
+        "rain_intensity_mm_h": 8.0
+      },
+      "event_overrides": {
+        "breakdown": 1.6,
+        "waterlogging": 1.2
+      },
+      "forced_events": [],
+      "expected_features": [
+        "monsoon",
+        "morning_peak",
+        "motorway_demand"
+      ],
+      "event_kind": "protected_movement",
+      "crowd_class": "LOW",
+      "duration_class": "minutes"
+    },
+    {
+      "scenario_id": "breakdown_ring_road",
+      "name": "Multi-Lane Breakdown on SP Ring Road",
+      "description": "Z-class run on the eastern ring road when a container truck loses two of eight lanes for 35 minutes mid-route \u2014 tests partial-capacity closures interacting with a rolling convoy window.",
+      "category": "event",
+      "route_segment_ids": [
+        1022,
+        1008
+      ],
+      "departure_time": "2026-10-15T16:30:00+05:30",
+      "vvip_class": "Z",
+      "closure_policy": {
+        "advance_closure_sec": 120,
+        "closure_type": "full_closure"
+      },
+      "horizon_min": 45,
+      "n_replications": 8,
+      "seed": 20261015,
+      "convoy_speed_kmh": 60.0,
+      "weather": {},
+      "event_overrides": {},
+      "forced_events": [
+        {
+          "type": "vehicle_breakdown",
+          "segment_id": 1008,
+          "start_sec": 420.0,
+          "duration_sec": 2100.0,
+          "severity": 0.9,
+          "label": "container truck jackknifed \u2014 2 lanes blocked"
+        }
+      ],
+      "expected_features": [
+        "forced_breakdown",
+        "partial_capacity",
+        "ring_road_speed"
+      ],
+      "event_kind": "protected_movement",
+      "crowd_class": "LOW",
+      "duration_class": "minutes"
+    },
+    {
+      "scenario_id": "stadium_match_evening",
+      "name": "Match Night at Motera",
+      "description": "T20 match dispersal at Motera stadium: scheduled spillover of 1100 veh/h onto the stadium road and its neighbours at 20:15 while a Z-class movement brings the dignitary out through the same corridor.",
+      "category": "event",
+      "route_segment_ids": [
+        1009,
+        1032
+      ],
+      "departure_time": "2026-10-19T20:15:00+05:30",
+      "vvip_class": "Z",
+      "closure_policy": {
+        "advance_closure_sec": 120,
+        "closure_type": "full_closure"
+      },
+      "horizon_min": 60,
+      "n_replications": 10,
+      "seed": 20261019,
+      "convoy_speed_kmh": 60.0,
+      "weather": {},
+      "event_overrides": {},
+      "forced_events": [
+        {
+          "type": "rally_spillover",
+          "segment_id": 1032,
+          "start_sec": 0.0,
+          "duration_sec": 3600.0,
+          "severity": 0.85,
+          "extra_demand_veh_h": 1100.0,
+          "label": "post-match dispersal surge"
+        }
+      ],
+      "expected_features": [
+        "scheduled_surge",
+        "stadium_adjacency",
+        "night_peak"
+      ],
+      "event_kind": "protected_movement",
+      "crowd_class": "LOW",
+      "duration_class": "minutes"
+    },
+    {
+      "scenario_id": "fog_winter_morning",
+      "name": "Winter Fog Morning",
+      "description": "X-class run at 07:30 in late-December fog: visibility caps urban free-flow at ~55% and shifts the morning peak later; tests weather speed caps without rain or events.",
+      "category": "weather",
+      "route_segment_ids": [
+        1003,
+        1004
+      ],
+      "departure_time": "2026-12-22T07:30:00+05:30",
+      "vvip_class": "X",
+      "closure_policy": {
+        "advance_closure_sec": 60,
+        "closure_type": "partial_closure"
+      },
+      "horizon_min": 45,
+      "n_replications": 8,
+      "seed": 20261222,
+      "convoy_speed_kmh": 60.0,
+      "weather": {
+        "monsoon": false,
+        "fog": true
+      },
+      "event_overrides": {},
+      "forced_events": [],
+      "expected_features": [
+        "fog_speed_cap",
+        "winter_morning",
+        "weather_only"
+      ],
+      "event_kind": "protected_movement",
+      "crowd_class": "LOW",
+      "duration_class": "minutes"
+    },
+    {
+      "scenario_id": "friday_market_evening",
+      "name": "Friday Market Evening (CG Road)",
+      "description": "Friday 19:00 run along CG Road: late-shopping market spillover on the adjacent Relief Road cluster combines with the extended Friday evening peak; the signal_hold policy variant shows the lighter-touch closure option under sustained demand.",
+      "category": "event",
+      "route_segment_ids": [
+        1003,
+        1004
+      ],
+      "departure_time": "2026-10-16T19:00:00+05:30",
+      "vvip_class": "Y",
+      "closure_policy": {
+        "advance_closure_sec": 90,
+        "closure_type": "signal_hold"
+      },
+      "horizon_min": 45,
+      "n_replications": 8,
+      "seed": 20261016,
+      "convoy_speed_kmh": 60.0,
+      "weather": {},
+      "event_overrides": {
+        "market": 1.8
+      },
+      "forced_events": [
+        {
+          "type": "market_spillover",
+          "segment_id": 1005,
+          "start_sec": 0.0,
+          "duration_sec": 3000.0,
+          "severity": 0.6,
+          "label": "Friday bazaar spillover from Relief Road"
+        }
+      ],
+      "expected_features": [
+        "friday_late_peak",
+        "market_spillover",
+        "signal_hold_policy"
+      ],
+      "event_kind": "protected_movement",
+      "crowd_class": "LOW",
+      "duration_class": "minutes"
+    },
+    {
+      "scenario_id": "republic_day_parade_morning",
+      "name": "Republic Day Parade Morning",
+      "description": "Jan 26 morning: a scheduled parade on the Gandhinagar Highway strip (staged, 09:00\u201310:30) plus holiday-morning demand shape; a Z-class movement runs the airport corridor through the tail of the parade window.",
+      "category": "event",
+      "route_segment_ids": [
+        1028,
+        1027,
+        1024,
+        1025
+      ],
+      "departure_time": "2027-01-26T09:15:00+05:30",
+      "vvip_class": "Z",
+      "closure_policy": {
+        "advance_closure_sec": 150,
+        "closure_type": "full_closure"
+      },
+      "horizon_min": 60,
+      "n_replications": 10,
+      "seed": 20270126,
+      "convoy_speed_kmh": 60.0,
+      "weather": {},
+      "event_overrides": {},
+      "forced_events": [
+        {
+          "type": "rally_spillover",
+          "segment_id": 1025,
+          "start_sec": 0.0,
+          "duration_sec": 4500.0,
+          "severity": 0.75,
+          "extra_demand_veh_h": 700.0,
+          "label": "Republic Day parade \u2014 spectators and parking"
+        }
+      ],
+      "expected_features": [
+        "holiday_demand",
+        "scheduled_parade",
+        "morning_peak_tail"
+      ],
+      "event_kind": "protected_movement",
+      "crowd_class": "LOW",
+      "duration_class": "minutes"
+    },
+    {
+      "scenario_id": "vvip_convoy_base",
+      "name": "VVIP Convoy \u2014 Base Case (Z+ state-capital run)",
+      "description": "BASE CASE. Z+ protected movement from Gandhinagar into the city core on a Monday mid-morning: the GN Highway spine (1026-1025-1024) down through Kalupur (1014) onto Naroda Road (1030). Maximum-protocol closure (180 s advance, full closure), default event rates, no weather \u2014 the reference movement every other use case is a generalization of.",
+      "category": "baseline",
+      "route_segment_ids": [
+        1026,
+        1025,
+        1024,
+        1014,
+        1030
+      ],
+      "departure_time": "2026-11-02T10:10:00+05:30",
+      "vvip_class": "Z+",
+      "closure_policy": {
+        "advance_closure_sec": 180,
+        "closure_type": "full_closure"
+      },
+      "horizon_min": 45,
+      "n_replications": 10,
+      "seed": 20261102,
+      "convoy_speed_kmh": 60.0,
+      "weather": {},
+      "event_overrides": {},
+      "forced_events": [],
+      "expected_features": [
+        "zplus_protocol",
+        "capital_to_city",
+        "reference_case"
+      ],
+      "event_kind": "protected_movement",
+      "crowd_class": "LOW",
+      "duration_class": "minutes"
+    },
+    {
+      "scenario_id": "rath_yatra_ahmedabad",
+      "name": "Jagannath Rath Yatra \u2014 Old-City Procession",
+      "description": "148th Ahmedabad Rath Yatra (27 Jun 2025): three chariots step off at 07:00 from the ~400-year-old Jamalpur temple and crawl the old-city bazaar belt \u2014 Gandhi Road, Nehru Bridge, Relief Road, Tilak Road \u2014 the ~14 km route of India's second-largest Rath Yatra. Modeled as an X-class managed movement (the procession itself, not a protected person) at chariot pace (8 km/h, the engine floor) with full street closure rolling ahead of it and lakhs-strong crowd load on every segment.",
+      "category": "event",
+      "route_segment_ids": [
+        1012,
+        1015,
+        1005,
+        1013
+      ],
+      "departure_time": "2025-06-27T07:00:00+05:30",
+      "vvip_class": "X",
+      "closure_policy": {
+        "advance_closure_sec": 120,
+        "closure_type": "full_closure"
+      },
+      "horizon_min": 60,
+      "n_replications": 12,
+      "seed": 20250627,
+      "convoy_speed_kmh": 8.0,
+      "weather": {},
+      "event_overrides": {
+        "market": 2.5
+      },
+      "forced_events": [
+        {
+          "type": "rally_spillover",
+          "segment_id": 1012,
+          "start_sec": 0.0,
+          "duration_sec": 14400.0,
+          "severity": 0.9,
+          "extra_demand_veh_h": 950.0,
+          "label": "three chariots + lakhs of devotees on Gandhi Road \u2014 yatra out-leg"
+        },
+        {
+          "type": "rally_spillover",
+          "segment_id": 1005,
+          "start_sec": 1200.0,
+          "duration_sec": 13200.0,
+          "severity": 0.85,
+          "extra_demand_veh_h": 850.0,
+          "label": "chariot crawl on Relief Road \u2014 old-city bazaar belt closed"
+        },
+        {
+          "type": "market_spillover",
+          "segment_id": 1013,
+          "start_sec": 0.0,
+          "duration_sec": 10800.0,
+          "severity": 0.75,
+          "label": "Tilak Road bazaar crowd pinned behind barricades"
+        }
+      ],
+      "expected_features": [
+        "public_procession",
+        "extreme_crowd",
+        "narrow_old_city_roads",
+        "slow_rolling_closure"
+      ],
+      "event_kind": "procession",
+      "crowd_class": "EXTREME",
+      "duration_class": "hours"
+    },
+    {
+      "scenario_id": "kumbh_scale_gathering",
+      "name": "Kumbh-Class Mass Gathering \u2014 Perimeter Zone",
+      "description": "A Kumbh-class bathing-day window (the Maha Kumbh 2025 class: ~660 million visits over the mela, largest gathering on earth). The corridor problem inverts: the zone interior is car-free and frozen; what the engine manages is the perimeter ring and the ingress surges. Modeled on the seed network's riverfront cluster \u2014 Ashram Road south (1001) onto Riverfront West (1006) toward Usmanpura (1010) \u2014 with an X-class supply/medical shuttle entering the zone at 04:30 pre-dawn under signal_hold (signals keep cycling: staged ingress, not blanket freeze).",
+      "category": "event",
+      "route_segment_ids": [
+        1001,
+        1006,
+        1010
+      ],
+      "departure_time": "2025-01-29T04:30:00+05:30",
+      "vvip_class": "X",
+      "closure_policy": {
+        "advance_closure_sec": 90,
+        "closure_type": "signal_hold"
+      },
+      "horizon_min": 60,
+      "n_replications": 12,
+      "seed": 20250129,
+      "convoy_speed_kmh": 40.0,
+      "weather": {},
+      "event_overrides": {},
+      "forced_events": [
+        {
+          "type": "rally_spillover",
+          "segment_id": 1006,
+          "start_sec": 0.0,
+          "duration_sec": 21600.0,
+          "severity": 0.95,
+          "extra_demand_veh_h": 1400.0,
+          "label": "riverfront zone core \u2014 bathing-day ingress surge (Kumbh-class footfall)"
+        },
+        {
+          "type": "rally_spillover",
+          "segment_id": 1007,
+          "start_sec": 3600.0,
+          "duration_sec": 18000.0,
+          "severity": 0.9,
+          "extra_demand_veh_h": 1100.0,
+          "label": "east-bank queueing corridors at capacity"
+        },
+        {
+          "type": "rally_spillover",
+          "segment_id": 1001,
+          "start_sec": 0.0,
+          "duration_sec": 21600.0,
+          "severity": 0.8,
+          "extra_demand_veh_h": 900.0,
+          "label": "Ashram Road approach saturated by pilgrim arrivals"
+        }
+      ],
+      "expected_features": [
+        "mass_gathering",
+        "zone_perimeter",
+        "staged_ingress",
+        "extreme_crowd"
+      ],
+      "event_kind": "mass_gathering",
+      "crowd_class": "EXTREME",
+      "duration_class": "multi_day"
+    },
+    {
+      "scenario_id": "riverfront_marathon",
+      "name": "City Marathon \u2014 Sabarmati Riverfront Race Corridor",
+      "description": "Adani Ahmedabad Marathon class (9th edition: 24,000+ runners on the Sabarmati Riverfront, 24 Nov 2024; World Athletics calendar). A 05:45 gun start means the race corridor (Riverfront East 1007 - Ashram South 1001 - Riverfront West 1006 - Usmanpura 1010) is closed to vehicles in the dark and reopens in stages behind the sweep. Modeled as an X-class pace/sweep convoy at 12 km/h under full closure with spectator spillover forced on the two approach segments.",
+      "category": "event",
+      "route_segment_ids": [
+        1007,
+        1001,
+        1006,
+        1010
+      ],
+      "departure_time": "2024-11-24T05:45:00+05:30",
+      "vvip_class": "X",
+      "closure_policy": {
+        "advance_closure_sec": 60,
+        "closure_type": "full_closure"
+      },
+      "horizon_min": 60,
+      "n_replications": 10,
+      "seed": 20241124,
+      "convoy_speed_kmh": 12.0,
+      "weather": {},
+      "event_overrides": {},
+      "forced_events": [
+        {
+          "type": "rally_spillover",
+          "segment_id": 1006,
+          "start_sec": 0.0,
+          "duration_sec": 14400.0,
+          "severity": 0.85,
+          "extra_demand_veh_h": 800.0,
+          "label": "24,000+ runners + spectator vehicles pressing the riverfront road"
+        },
+        {
+          "type": "rally_spillover",
+          "segment_id": 1001,
+          "start_sec": 3600.0,
+          "duration_sec": 10800.0,
+          "severity": 0.7,
+          "extra_demand_veh_h": 600.0,
+          "label": "spectator spillover onto Ashram Road south"
+        }
+      ],
+      "expected_features": [
+        "road_race",
+        "dawn_start",
+        "rolling_reopen",
+        "spectator_spillover"
+      ],
+      "event_kind": "race",
+      "crowd_class": "HIGH",
+      "duration_class": "hours"
+    },
+    {
+      "scenario_id": "national_day_parade",
+      "name": "Republic Day / Independence Day \u2014 Ceremonial Parade Corridor",
+      "description": "The two fixed ceremonial days every year. At the 76th Republic Day (26 Jan 2025) the Governor hoisted the flag and took the parade salute with the CM present (Gujarat CMO) \u2014 a Z-class protected movement to the venue up the GN Highway strip. Modeled: dignitary runs airport (1028-1027) onto the GN Highway parade strip (1024-1025) at 08:35, arriving before the 09:00 flag, while spectator and parking load saturates the strip itself. Independence Day (15 Aug) is the calendar mirror.",
+      "category": "event",
+      "route_segment_ids": [
+        1028,
+        1027,
+        1024,
+        1025
+      ],
+      "departure_time": "2027-01-26T08:35:00+05:30",
+      "vvip_class": "Z",
+      "closure_policy": {
+        "advance_closure_sec": 150,
+        "closure_type": "full_closure"
+      },
+      "horizon_min": 60,
+      "n_replications": 10,
+      "seed": 20270126,
+      "convoy_speed_kmh": 60.0,
+      "weather": {},
+      "event_overrides": {},
+      "forced_events": [
+        {
+          "type": "rally_spillover",
+          "segment_id": 1025,
+          "start_sec": 0.0,
+          "duration_sec": 5400.0,
+          "severity": 0.75,
+          "extra_demand_veh_h": 700.0,
+          "label": "Republic Day parade \u2014 grandstand spectators and parking on the GN Highway strip"
+        },
+        {
+          "type": "rally_spillover",
+          "segment_id": 1024,
+          "start_sec": 0.0,
+          "duration_sec": 5400.0,
+          "severity": 0.6,
+          "extra_demand_veh_h": 500.0,
+          "label": "spectator approach traffic on GN Highway south"
+        }
+      ],
+      "expected_features": [
+        "national_day",
+        "ceremonial_strip",
+        "morning_protocol",
+        "holiday_demand"
+      ],
+      "event_kind": "ceremonial",
+      "crowd_class": "HIGH",
+      "duration_class": "minutes"
+    },
+    {
+      "scenario_id": "motera_stadium_egress",
+      "name": "Stadium Egress \u2014 Narendra Modi Stadium Match Night",
+      "description": "Narendra Modi Stadium (Motera): ~132,000 seats, the world's largest cricket ground; ~130,000 in the house for the IPL 2026 final and ~3,000 police + ~1,000 home guards with published traffic advisories and diversions for the T20 World Cup 2026 final. The corridor event is the 90-120 min egress surge \u2014 modeled at 20:05, just after a final ball: an X-class ambulance with a green-corridor request fights the dispersal wave from Motera Stadium Road (1032) down the Ashram spine (1002-1001) under signal_hold, with the surge and one stalled car forced on the egress segments.",
+      "category": "event",
+      "route_segment_ids": [
+        1032,
+        1002,
+        1001
+      ],
+      "departure_time": "2026-03-08T20:05:00+05:30",
+      "vvip_class": "X",
+      "closure_policy": {
+        "advance_closure_sec": 60,
+        "closure_type": "signal_hold"
+      },
+      "horizon_min": 60,
+      "n_replications": 12,
+      "seed": 20260308,
+      "convoy_speed_kmh": 50.0,
+      "weather": {},
+      "event_overrides": {},
+      "forced_events": [
+        {
+          "type": "rally_spillover",
+          "segment_id": 1032,
+          "start_sec": 0.0,
+          "duration_sec": 5400.0,
+          "severity": 0.95,
+          "extra_demand_veh_h": 1500.0,
+          "label": "~130k spectators dispersing from Narendra Modi Stadium"
+        },
+        {
+          "type": "rally_spillover",
+          "segment_id": 1002,
+          "start_sec": 600.0,
+          "duration_sec": 4800.0,
+          "severity": 0.8,
+          "extra_demand_veh_h": 1000.0,
+          "label": "egress wave onto Ashram Road north"
+        },
+        {
+          "type": "vehicle_breakdown",
+          "segment_id": 1002,
+          "start_sec": 1200.0,
+          "duration_sec": 1500.0,
+          "severity": 0.7,
+          "label": "stalled car blocking one dispersal lane"
+        },
+        {
+          "type": "emergency_vehicle",
+          "segment_id": 1032,
+          "start_sec": 300.0,
+          "duration_sec": 900.0,
+          "severity": 0.9,
+          "label": "green-corridor ambulance crossing the dispersal wave"
+        }
+      ],
+      "expected_features": [
+        "stadium_egress",
+        "night_surge",
+        "mass_dispersal",
+        "ambulance_through_crowd"
+      ],
+      "event_kind": "egress_surge",
+      "crowd_class": "EXTREME",
+      "duration_class": "hours"
+    },
+    {
+      "scenario_id": "flood_evacuation_corridor",
+      "name": "Monsoon Flood \u2014 Evacuation and Relief Corridor",
+      "description": "Gujarat floods, 27 Aug 2024 class: ~280 mm of rain in 24 h, 28+ dead, 24,000+ relocated statewide, NDRF and Army columns running boat rescues as low-lying city cores went under. Modeled on the seed network: the low-lying river spine (1001/1006/1015) waterlogs while an X-class relief column runs the reverse-flow evacuation spine \u2014 Sarkhej (1040) onto SP Ring Road (1021-1022-1008), the high-ground detour \u2014 at 11:20 in 22 mm/h rain under signal_hold, with evacuee traffic surging onto the ring road behind it.",
+      "category": "weather",
+      "route_segment_ids": [
+        1040,
+        1021,
+        1022,
+        1008
+      ],
+      "departure_time": "2024-08-27T11:20:00+05:30",
+      "vvip_class": "X",
+      "closure_policy": {
+        "advance_closure_sec": 60,
+        "closure_type": "signal_hold"
+      },
+      "horizon_min": 60,
+      "n_replications": 10,
+      "seed": 20240827,
+      "convoy_speed_kmh": 40.0,
+      "weather": {
+        "monsoon": true,
+        "rain_intensity_mm_h": 22
+      },
+      "event_overrides": {
+        "breakdown": 1.8,
+        "waterlogging": 3
+      },
+      "forced_events": [
+        {
+          "type": "waterlogging",
+          "segment_id": 1001,
+          "start_sec": 0.0,
+          "duration_sec": 10800.0,
+          "severity": 0.8,
+          "label": "Ashram Road south under water \u2014 low-lying spine flooded"
+        },
+        {
+          "type": "waterlogging",
+          "segment_id": 1006,
+          "start_sec": 1200.0,
+          "duration_sec": 9000.0,
+          "severity": 0.75,
+          "label": "riverfront west carriageway submerged"
+        },
+        {
+          "type": "waterlogging",
+          "segment_id": 1015,
+          "start_sec": 600.0,
+          "duration_sec": 9600.0,
+          "severity": 0.7,
+          "label": "Nehru Bridge approach pumping"
+        },
+        {
+          "type": "rally_spillover",
+          "segment_id": 1021,
+          "start_sec": 0.0,
+          "duration_sec": 10800.0,
+          "severity": 0.85,
+          "extra_demand_veh_h": 1200.0,
+          "label": "evacuee traffic surging onto SP Ring Road"
+        },
+        {
+          "type": "vehicle_breakdown",
+          "segment_id": 1022,
+          "start_sec": 3000.0,
+          "duration_sec": 1800.0,
+          "severity": 0.7,
+          "label": "abandoned vehicle on the flooded ring-road shoulder"
+        }
+      ],
+      "expected_features": [
+        "flood_response",
+        "reverse_flow_spine",
+        "low_lying_closures",
+        "relief_priority"
+      ],
+      "event_kind": "emergency_evacuation",
+      "crowd_class": "MEDIUM",
+      "duration_class": "hours"
+    },
+    {
+      "scenario_id": "metro_work_zone",
+      "name": "Planned Infrastructure Work Zone \u2014 Metro/Bullet-Train Works",
+      "description": "The most predictable corridor event: months-long lane loss published in advance. Ahmedabad Metro Phase 2 (Motera to Gandhinagar's Mahatma Mandir, built since Feb 2021; 77.63 km network approved) put Kankaria Road under a published 3 Jul - 30 Sep closure with diversions, and ~100 m at Kalupur Bridge shut for bullet-train pillar work. Modeled: an X-class inspection convoy at 09:15 runs CTM Road (1031) through the Kalupur pinch (1014) onto GN Highway south (1024) while both work zones hold two barricaded lanes (long-duration forced lane-loss) and diverted bazaar traffic squeezes Kankaria Road (1038).",
+      "category": "ops",
+      "route_segment_ids": [
+        1031,
+        1014,
+        1024
+      ],
+      "departure_time": "2025-08-14T09:15:00+05:30",
+      "vvip_class": "X",
+      "closure_policy": {
+        "advance_closure_sec": 60,
+        "closure_type": "partial_closure"
+      },
+      "horizon_min": 60,
+      "n_replications": 8,
+      "seed": 20250814,
+      "convoy_speed_kmh": 40.0,
+      "weather": {},
+      "event_overrides": {
+        "market": 1.5
+      },
+      "forced_events": [
+        {
+          "type": "vehicle_breakdown",
+          "segment_id": 1038,
+          "start_sec": 0.0,
+          "duration_sec": 39600.0,
+          "severity": 0.9,
+          "label": "Kankaria Road metro works \u2014 two lanes barricaded (published 3 Jul-30 Sep closure)"
+        },
+        {
+          "type": "vehicle_breakdown",
+          "segment_id": 1014,
+          "start_sec": 0.0,
+          "duration_sec": 39600.0,
+          "severity": 0.85,
+          "label": "Kalupur Bridge bullet-train pillar works \u2014 standing lane loss on Station Road"
+        },
+        {
+          "type": "market_spillover",
+          "segment_id": 1038,
+          "start_sec": 0.0,
+          "duration_sec": 10800.0,
+          "severity": 0.7,
+          "label": "diverted bazaar traffic squeezing Kankaria Road"
+        }
+      ],
+      "expected_features": [
+        "planned_work_zone",
+        "months_long_lane_loss",
+        "published_diversion",
+        "peak_hour_pinch"
+      ],
+      "event_kind": "work_zone",
+      "crowd_class": "LOW",
+      "duration_class": "multi_week"
+    }
+  ],
+  "network": {
+    "n_segments": 40,
+    "n_signalized_junctions": 11,
+    "total_km": 90.1,
+    "segments": [
+      {
+        "segment_id": 1001,
+        "road_name": "Ashram Road (South)",
+        "road_class": "trunk",
+        "lanes": 6,
+        "speed_limit_kmh": 60,
+        "oneway": false,
+        "length_m": 1545.3,
+        "signalized": true,
+        "green_ratio": 0.45,
+        "cycle_sec": 100,
+        "base_peak_demand_veh_h": 4020.0,
+        "capacity_veh_h": 4860.0,
+        "market_adjacent": false,
+        "low_lying": true,
+        "stadium_adjacent": false
+      },
+      {
+        "segment_id": 1002,
+        "road_name": "Ashram Road (North)",
+        "road_class": "trunk",
+        "lanes": 6,
+        "speed_limit_kmh": 60,
+        "oneway": false,
+        "length_m": 2872.8,
+        "signalized": true,
+        "green_ratio": 0.45,
+        "cycle_sec": 100,
+        "base_peak_demand_veh_h": 4020.0,
+        "capacity_veh_h": 4860.0,
+        "market_adjacent": false,
+        "low_lying": true,
+        "stadium_adjacent": false
+      },
+      {
+        "segment_id": 1003,
+        "road_name": "CG Road (West)",
+        "road_class": "primary",
+        "lanes": 4,
+        "speed_limit_kmh": 50,
+        "oneway": false,
+        "length_m": 1228.0,
+        "signalized": false,
+        "green_ratio": 1.0,
+        "cycle_sec": 0,
+        "base_peak_demand_veh_h": 2480.0,
+        "capacity_veh_h": 7200.0,
+        "market_adjacent": false,
+        "low_lying": false,
+        "stadium_adjacent": false
+      },
+      {
+        "segment_id": 1004,
+        "road_name": "CG Road (East)",
+        "road_class": "primary",
+        "lanes": 4,
+        "speed_limit_kmh": 50,
+        "oneway": false,
+        "length_m": 1641.1,
+        "signalized": false,
+        "green_ratio": 1.0,
+        "cycle_sec": 0,
+        "base_peak_demand_veh_h": 2480.0,
+        "capacity_veh_h": 7200.0,
+        "market_adjacent": false,
+        "low_lying": false,
+        "stadium_adjacent": false
+      },
+      {
+        "segment_id": 1005,
+        "road_name": "Relief Road",
+        "road_class": "primary",
+        "lanes": 4,
+        "speed_limit_kmh": 40,
+        "oneway": false,
+        "length_m": 1360.3,
+        "signalized": true,
+        "green_ratio": 0.42,
+        "cycle_sec": 110,
+        "base_peak_demand_veh_h": 2480.0,
+        "capacity_veh_h": 3024.0,
+        "market_adjacent": true,
+        "low_lying": false,
+        "stadium_adjacent": false
+      },
+      {
+        "segment_id": 1006,
+        "road_name": "Riverfront Road (West)",
+        "road_class": "trunk",
+        "lanes": 6,
+        "speed_limit_kmh": 60,
+        "oneway": false,
+        "length_m": 1536.5,
+        "signalized": true,
+        "green_ratio": 0.45,
+        "cycle_sec": 100,
+        "base_peak_demand_veh_h": 4020.0,
+        "capacity_veh_h": 4860.0,
+        "market_adjacent": false,
+        "low_lying": true,
+        "stadium_adjacent": false
+      },
+      {
+        "segment_id": 1007,
+        "road_name": "Riverfront Road (East)",
+        "road_class": "trunk",
+        "lanes": 6,
+        "speed_limit_kmh": 60,
+        "oneway": false,
+        "length_m": 1517.6,
+        "signalized": true,
+        "green_ratio": 0.45,
+        "cycle_sec": 100,
+        "base_peak_demand_veh_h": 4020.0,
+        "capacity_veh_h": 4860.0,
+        "market_adjacent": false,
+        "low_lying": true,
+        "stadium_adjacent": false
+      },
+      {
+        "segment_id": 1008,
+        "road_name": "SP Ring Road (East)",
+        "road_class": "motorway",
+        "lanes": 8,
+        "speed_limit_kmh": 80,
+        "oneway": false,
+        "length_m": 4896.2,
+        "signalized": true,
+        "green_ratio": 0.48,
+        "cycle_sec": 90,
+        "base_peak_demand_veh_h": 5680.0,
+        "capacity_veh_h": 6912.0,
+        "market_adjacent": false,
+        "low_lying": false,
+        "stadium_adjacent": false
+      },
+      {
+        "segment_id": 1009,
+        "road_name": "Sabarmati Ashram Road",
+        "road_class": "secondary",
+        "lanes": 4,
+        "speed_limit_kmh": 40,
+        "oneway": false,
+        "length_m": 1086.1,
+        "signalized": true,
+        "green_ratio": 0.4,
+        "cycle_sec": 120,
+        "base_peak_demand_veh_h": 2360.0,
+        "capacity_veh_h": 2880.0,
+        "market_adjacent": false,
+        "low_lying": false,
+        "stadium_adjacent": false
+      },
+      {
+        "segment_id": 1010,
+        "road_name": "Usmanpura Overbridge Road",
+        "road_class": "secondary",
+        "lanes": 4,
+        "speed_limit_kmh": 40,
+        "oneway": false,
+        "length_m": 1270.2,
+        "signalized": false,
+        "green_ratio": 1.0,
+        "cycle_sec": 0,
+        "base_peak_demand_veh_h": 2360.0,
+        "capacity_veh_h": 7200.0,
+        "market_adjacent": false,
+        "low_lying": false,
+        "stadium_adjacent": false
+      },
+      {
+        "segment_id": 1011,
+        "road_name": "Drive-In Road",
+        "road_class": "primary",
+        "lanes": 4,
+        "speed_limit_kmh": 50,
+        "oneway": false,
+        "length_m": 1414.4,
+        "signalized": false,
+        "green_ratio": 1.0,
+        "cycle_sec": 0,
+        "base_peak_demand_veh_h": 2480.0,
+        "capacity_veh_h": 7200.0,
+        "market_adjacent": false,
+        "low_lying": false,
+        "stadium_adjacent": false
+      },
+      {
+        "segment_id": 1012,
+        "road_name": "Gandhi Road",
+        "road_class": "trunk",
+        "lanes": 6,
+        "speed_limit_kmh": 40,
+        "oneway": false,
+        "length_m": 705.5,
+        "signalized": true,
+        "green_ratio": 0.45,
+        "cycle_sec": 100,
+        "base_peak_demand_veh_h": 4020.0,
+        "capacity_veh_h": 4860.0,
+        "market_adjacent": true,
+        "low_lying": false,
+        "stadium_adjacent": false
+      },
+      {
+        "segment_id": 1013,
+        "road_name": "Tilak Road",
+        "road_class": "primary",
+        "lanes": 4,
+        "speed_limit_kmh": 50,
+        "oneway": false,
+        "length_m": 1364.2,
+        "signalized": true,
+        "green_ratio": 0.42,
+        "cycle_sec": 110,
+        "base_peak_demand_veh_h": 2480.0,
+        "capacity_veh_h": 3024.0,
+        "market_adjacent": true,
+        "low_lying": false,
+        "stadium_adjacent": false
+      },
+      {
+        "segment_id": 1014,
+        "road_name": "Station Road (Kalupur)",
+        "road_class": "primary",
+        "lanes": 4,
+        "speed_limit_kmh": 50,
+        "oneway": false,
+        "length_m": 1111.7,
+        "signalized": true,
+        "green_ratio": 0.42,
+        "cycle_sec": 110,
+        "base_peak_demand_veh_h": 2480.0,
+        "capacity_veh_h": 3024.0,
+        "market_adjacent": false,
+        "low_lying": false,
+        "stadium_adjacent": false
+      },
+      {
+        "segment_id": 1015,
+        "road_name": "Nehru Bridge Road",
+        "road_class": "trunk",
+        "lanes": 6,
+        "speed_limit_kmh": 60,
+        "oneway": false,
+        "length_m": 954.8,
+        "signalized": true,
+        "green_ratio": 0.45,
+        "cycle_sec": 100,
+        "base_peak_demand_veh_h": 4020.0,
+        "capacity_veh_h": 4860.0,
+        "market_adjacent": false,
+        "low_lying": true,
+        "stadium_adjacent": false
+      },
+      {
+        "segment_id": 1016,
+        "road_name": "SG Highway (Vastrapur)",
+        "road_class": "motorway",
+        "lanes": 8,
+        "speed_limit_kmh": 80,
+        "oneway": false,
+        "length_m": 1560.4,
+        "signalized": true,
+        "green_ratio": 0.48,
+        "cycle_sec": 90,
+        "base_peak_demand_veh_h": 5680.0,
+        "capacity_veh_h": 6912.0,
+        "market_adjacent": false,
+        "low_lying": false,
+        "stadium_adjacent": false
+      },
+      {
+        "segment_id": 1017,
+        "road_name": "SG Highway (Bodakdev)",
+        "road_class": "motorway",
+        "lanes": 8,
+        "speed_limit_kmh": 80,
+        "oneway": false,
+        "length_m": 1634.0,
+        "signalized": false,
+        "green_ratio": 1.0,
+        "cycle_sec": 0,
+        "base_peak_demand_veh_h": 5680.0,
+        "capacity_veh_h": 14400.0,
+        "market_adjacent": false,
+        "low_lying": false,
+        "stadium_adjacent": false
+      },
+      {
+        "segment_id": 1018,
+        "road_name": "SG Highway (Thaltej)",
+        "road_class": "motorway",
+        "lanes": 8,
+        "speed_limit_kmh": 80,
+        "oneway": false,
+        "length_m": 1168.7,
+        "signalized": false,
+        "green_ratio": 1.0,
+        "cycle_sec": 0,
+        "base_peak_demand_veh_h": 5680.0,
+        "capacity_veh_h": 14400.0,
+        "market_adjacent": false,
+        "low_lying": false,
+        "stadium_adjacent": false
+      },
+      {
+        "segment_id": 1019,
+        "road_name": "Satellite Road",
+        "road_class": "secondary",
+        "lanes": 4,
+        "speed_limit_kmh": 40,
+        "oneway": false,
+        "length_m": 1168.8,
+        "signalized": false,
+        "green_ratio": 1.0,
+        "cycle_sec": 0,
+        "base_peak_demand_veh_h": 2360.0,
+        "capacity_veh_h": 7200.0,
+        "market_adjacent": false,
+        "low_lying": false,
+        "stadium_adjacent": false
+      },
+      {
+        "segment_id": 1020,
+        "road_name": "Prahlad Nagar Road",
+        "road_class": "secondary",
+        "lanes": 4,
+        "speed_limit_kmh": 40,
+        "oneway": false,
+        "length_m": 1110.1,
+        "signalized": false,
+        "green_ratio": 1.0,
+        "cycle_sec": 0,
+        "base_peak_demand_veh_h": 2360.0,
+        "capacity_veh_h": 7200.0,
+        "market_adjacent": false,
+        "low_lying": false,
+        "stadium_adjacent": false
+      },
+      {
+        "segment_id": 1021,
+        "road_name": "SP Ring Road (South)",
+        "road_class": "motorway",
+        "lanes": 8,
+        "speed_limit_kmh": 80,
+        "oneway": false,
+        "length_m": 6241.7,
+        "signalized": true,
+        "green_ratio": 0.48,
+        "cycle_sec": 90,
+        "base_peak_demand_veh_h": 5680.0,
+        "capacity_veh_h": 6912.0,
+        "market_adjacent": false,
+        "low_lying": false,
+        "stadium_adjacent": false
+      },
+      {
+        "segment_id": 1022,
+        "road_name": "SP Ring Road (Southeast)",
+        "road_class": "motorway",
+        "lanes": 8,
+        "speed_limit_kmh": 80,
+        "oneway": false,
+        "length_m": 6241.4,
+        "signalized": true,
+        "green_ratio": 0.48,
+        "cycle_sec": 90,
+        "base_peak_demand_veh_h": 5680.0,
+        "capacity_veh_h": 6912.0,
+        "market_adjacent": false,
+        "low_lying": false,
+        "stadium_adjacent": false
+      },
+      {
+        "segment_id": 1023,
+        "road_name": "Bopal Road",
+        "road_class": "primary",
+        "lanes": 4,
+        "speed_limit_kmh": 50,
+        "oneway": false,
+        "length_m": 1979.8,
+        "signalized": true,
+        "green_ratio": 0.42,
+        "cycle_sec": 110,
+        "base_peak_demand_veh_h": 2480.0,
+        "capacity_veh_h": 3024.0,
+        "market_adjacent": false,
+        "low_lying": false,
+        "stadium_adjacent": false
+      },
+      {
+        "segment_id": 1024,
+        "road_name": "Gandhinagar Highway (South)",
+        "road_class": "motorway",
+        "lanes": 8,
+        "speed_limit_kmh": 100,
+        "oneway": false,
+        "length_m": 2448.0,
+        "signalized": true,
+        "green_ratio": 0.48,
+        "cycle_sec": 90,
+        "base_peak_demand_veh_h": 5680.0,
+        "capacity_veh_h": 6912.0,
+        "market_adjacent": false,
+        "low_lying": true,
+        "stadium_adjacent": false
+      },
+      {
+        "segment_id": 1025,
+        "road_name": "Gandhinagar Highway (Central)",
+        "road_class": "motorway",
+        "lanes": 8,
+        "speed_limit_kmh": 100,
+        "oneway": false,
+        "length_m": 2447.9,
+        "signalized": true,
+        "green_ratio": 0.48,
+        "cycle_sec": 90,
+        "base_peak_demand_veh_h": 5680.0,
+        "capacity_veh_h": 6912.0,
+        "market_adjacent": false,
+        "low_lying": false,
+        "stadium_adjacent": false
+      },
+      {
+        "segment_id": 1026,
+        "road_name": "Gandhinagar Highway (North)",
+        "road_class": "motorway",
+        "lanes": 8,
+        "speed_limit_kmh": 100,
+        "oneway": false,
+        "length_m": 2447.9,
+        "signalized": true,
+        "green_ratio": 0.48,
+        "cycle_sec": 90,
+        "base_peak_demand_veh_h": 5680.0,
+        "capacity_veh_h": 6912.0,
+        "market_adjacent": false,
+        "low_lying": false,
+        "stadium_adjacent": false
+      },
+      {
+        "segment_id": 1027,
+        "road_name": "Airport Road (South)",
+        "road_class": "motorway",
+        "lanes": 8,
+        "speed_limit_kmh": 80,
+        "oneway": false,
+        "length_m": 2328.9,
+        "signalized": true,
+        "green_ratio": 0.48,
+        "cycle_sec": 90,
+        "base_peak_demand_veh_h": 5680.0,
+        "capacity_veh_h": 6912.0,
+        "market_adjacent": false,
+        "low_lying": false,
+        "stadium_adjacent": false
+      },
+      {
+        "segment_id": 1028,
+        "road_name": "Airport Road (North)",
+        "road_class": "motorway",
+        "lanes": 8,
+        "speed_limit_kmh": 80,
+        "oneway": false,
+        "length_m": 2852.0,
+        "signalized": false,
+        "green_ratio": 1.0,
+        "cycle_sec": 0,
+        "base_peak_demand_veh_h": 5680.0,
+        "capacity_veh_h": 14400.0,
+        "market_adjacent": false,
+        "low_lying": false,
+        "stadium_adjacent": false
+      },
+      {
+        "segment_id": 1029,
+        "road_name": "Hansol-Airport Connector",
+        "road_class": "motorway",
+        "lanes": 6,
+        "speed_limit_kmh": 80,
+        "oneway": false,
+        "length_m": 1429.2,
+        "signalized": true,
+        "green_ratio": 0.48,
+        "cycle_sec": 90,
+        "base_peak_demand_veh_h": 4260.0,
+        "capacity_veh_h": 5184.0,
+        "market_adjacent": false,
+        "low_lying": false,
+        "stadium_adjacent": false
+      },
+      {
+        "segment_id": 1030,
+        "road_name": "Naroda Road",
+        "road_class": "trunk",
+        "lanes": 6,
+        "speed_limit_kmh": 60,
+        "oneway": false,
+        "length_m": 3059.9,
+        "signalized": true,
+        "green_ratio": 0.45,
+        "cycle_sec": 100,
+        "base_peak_demand_veh_h": 4020.0,
+        "capacity_veh_h": 4860.0,
+        "market_adjacent": false,
+        "low_lying": false,
+        "stadium_adjacent": false
+      },
+      {
+        "segment_id": 1031,
+        "road_name": "CTM Road",
+        "road_class": "primary",
+        "lanes": 4,
+        "speed_limit_kmh": 50,
+        "oneway": false,
+        "length_m": 2329.1,
+        "signalized": true,
+        "green_ratio": 0.42,
+        "cycle_sec": 110,
+        "base_peak_demand_veh_h": 2480.0,
+        "capacity_veh_h": 3024.0,
+        "market_adjacent": false,
+        "low_lying": false,
+        "stadium_adjacent": false
+      },
+      {
+        "segment_id": 1032,
+        "road_name": "Motera Stadium Road",
+        "road_class": "trunk",
+        "lanes": 6,
+        "speed_limit_kmh": 60,
+        "oneway": false,
+        "length_m": 1419.2,
+        "signalized": false,
+        "green_ratio": 1.0,
+        "cycle_sec": 0,
+        "base_peak_demand_veh_h": 4020.0,
+        "capacity_veh_h": 10800.0,
+        "market_adjacent": false,
+        "low_lying": false,
+        "stadium_adjacent": true
+      },
+      {
+        "segment_id": 1033,
+        "road_name": "SP Ring Road (West)",
+        "road_class": "motorway",
+        "lanes": 8,
+        "speed_limit_kmh": 80,
+        "oneway": false,
+        "length_m": 2448.0,
+        "signalized": false,
+        "green_ratio": 1.0,
+        "cycle_sec": 0,
+        "base_peak_demand_veh_h": 5680.0,
+        "capacity_veh_h": 14400.0,
+        "market_adjacent": false,
+        "low_lying": false,
+        "stadium_adjacent": false
+      },
+      {
+        "segment_id": 1034,
+        "road_name": "SP Ring Road (North)",
+        "road_class": "motorway",
+        "lanes": 8,
+        "speed_limit_kmh": 70,
+        "oneway": false,
+        "length_m": 4239.5,
+        "signalized": false,
+        "green_ratio": 1.0,
+        "cycle_sec": 0,
+        "base_peak_demand_veh_h": 5680.0,
+        "capacity_veh_h": 14400.0,
+        "market_adjacent": false,
+        "low_lying": false,
+        "stadium_adjacent": false
+      },
+      {
+        "segment_id": 1035,
+        "road_name": "SP Ring Road (Northeast)",
+        "road_class": "motorway",
+        "lanes": 6,
+        "speed_limit_kmh": 70,
+        "oneway": false,
+        "length_m": 4239.7,
+        "signalized": false,
+        "green_ratio": 1.0,
+        "cycle_sec": 0,
+        "base_peak_demand_veh_h": 4260.0,
+        "capacity_veh_h": 10800.0,
+        "market_adjacent": false,
+        "low_lying": false,
+        "stadium_adjacent": false
+      },
+      {
+        "segment_id": 1036,
+        "road_name": "Paldi Road",
+        "road_class": "secondary",
+        "lanes": 4,
+        "speed_limit_kmh": 40,
+        "oneway": false,
+        "length_m": 1346.6,
+        "signalized": false,
+        "green_ratio": 1.0,
+        "cycle_sec": 0,
+        "base_peak_demand_veh_h": 2360.0,
+        "capacity_veh_h": 7200.0,
+        "market_adjacent": false,
+        "low_lying": false,
+        "stadium_adjacent": false
+      },
+      {
+        "segment_id": 1037,
+        "road_name": "Science City Road",
+        "road_class": "secondary",
+        "lanes": 4,
+        "speed_limit_kmh": 40,
+        "oneway": false,
+        "length_m": 3306.6,
+        "signalized": false,
+        "green_ratio": 1.0,
+        "cycle_sec": 0,
+        "base_peak_demand_veh_h": 2360.0,
+        "capacity_veh_h": 7200.0,
+        "market_adjacent": false,
+        "low_lying": false,
+        "stadium_adjacent": false
+      },
+      {
+        "segment_id": 1038,
+        "road_name": "Kankaria Road",
+        "road_class": "secondary",
+        "lanes": 4,
+        "speed_limit_kmh": 40,
+        "oneway": false,
+        "length_m": 1637.1,
+        "signalized": true,
+        "green_ratio": 0.4,
+        "cycle_sec": 120,
+        "base_peak_demand_veh_h": 2360.0,
+        "capacity_veh_h": 2880.0,
+        "market_adjacent": true,
+        "low_lying": false,
+        "stadium_adjacent": false
+      },
+      {
+        "segment_id": 1039,
+        "road_name": "Ellis Bridge Road",
+        "road_class": "secondary",
+        "lanes": 4,
+        "speed_limit_kmh": 40,
+        "oneway": false,
+        "length_m": 1284.0,
+        "signalized": false,
+        "green_ratio": 1.0,
+        "cycle_sec": 0,
+        "base_peak_demand_veh_h": 2360.0,
+        "capacity_veh_h": 7200.0,
+        "market_adjacent": false,
+        "low_lying": true,
+        "stadium_adjacent": false
+      },
+      {
+        "segment_id": 1040,
+        "road_name": "Sarkhej Road",
+        "road_class": "primary",
+        "lanes": 4,
+        "speed_limit_kmh": 50,
+        "oneway": false,
+        "length_m": 5228.0,
+        "signalized": true,
+        "green_ratio": 0.42,
+        "cycle_sec": 110,
+        "base_peak_demand_veh_h": 2480.0,
+        "capacity_veh_h": 3024.0,
+        "market_adjacent": false,
+        "low_lying": false,
+        "stadium_adjacent": false
+      }
+    ]
+  }
+}

@@ -1,10 +1,10 @@
 """VVIP Adversarial Test Suite — Stability monitor.
 
 Runs alongside the adversarial tests, continuously sampling system health:
-- GPU VRAM usage
-- Container memory/CPU
-- API endpoint health
-- Ollama responsiveness
+- Unified-memory usage (GB10: /proc/meminfo is the source of truth)
+- API endpoint health (convoy-brain, traffic-oracle)
+- Model-host responsiveness (GET /decider/health on :8083 — the strategic
+  tier; the retired /api/tags poll on the old :11434 host is gone)
 """
 
 from __future__ import annotations
@@ -18,13 +18,32 @@ import structlog
 
 logger = structlog.get_logger(__name__)
 
+#: GB10 unified-memory pool (121.44 GiB from /proc/meminfo MemTotal
+#: 127,533,976 kB). The old 8192 MiB figure was RTX-4070-era fiction.
+UNIFIED_POOL_MIB = 124352
+
+
+def _read_unified_mem_mib() -> tuple[int, int]:
+    """(total_mib, used_mib) from /proc/meminfo; (0, 0) when unavailable."""
+    try:
+        info: dict[str, int] = {}
+        with open("/proc/meminfo", encoding="ascii") as fh:
+            for line in fh:
+                key, _, value = line.partition(":")
+                info[key.strip()] = int(value.strip().split()[0]) // 1024
+        total = info.get("MemTotal", 0)
+        used = total - info.get("MemAvailable", 0) if total else 0
+        return total, used
+    except (OSError, ValueError):
+        return 0, 0
+
 
 @dataclass
 class HealthSample:
     """Single health check sample."""
 
     timestamp: float
-    ollama_up: bool
+    model_host_up: bool
     convoy_brain_up: bool
     traffic_oracle_up: bool
     gpu_vram_used_mb: int = 0
@@ -37,7 +56,7 @@ class StabilityReport:
     """Stability metrics collected across the test run."""
 
     samples: list[HealthSample] = field(default_factory=list)
-    ollama_downtime_sec: float = 0.0
+    model_host_downtime_sec: float = 0.0
     convoy_brain_downtime_sec: float = 0.0
     traffic_oracle_downtime_sec: float = 0.0
     max_vram_used_mb: int = 0
@@ -45,10 +64,10 @@ class StabilityReport:
     total_duration_sec: float = 0.0
 
     @property
-    def ollama_uptime_pct(self) -> float:
+    def model_host_uptime_pct(self) -> float:
         if not self.total_duration_sec:
             return 0.0
-        return max(0, 1 - self.ollama_downtime_sec / self.total_duration_sec) * 100
+        return max(0, 1 - self.model_host_downtime_sec / self.total_duration_sec) * 100
 
     @property
     def vram_headroom_mb(self) -> int:
@@ -65,12 +84,12 @@ class StabilityMonitor:
         self,
         convoy_brain_url: str = "http://localhost:8080",
         traffic_oracle_url: str = "http://localhost:8081",
-        ollama_url: str = "http://localhost:11434",
+        model_host_url: str = "http://localhost:8083",
         sample_interval_sec: float = 5.0,
     ) -> None:
         self.convoy_brain_url = convoy_brain_url
         self.traffic_oracle_url = traffic_oracle_url
-        self.ollama_url = ollama_url
+        self.model_host_url = model_host_url
         self.sample_interval_sec = sample_interval_sec
         self._report = StabilityReport()
         self._task: asyncio.Task | None = None
@@ -91,7 +110,7 @@ class StabilityMonitor:
         logger.info(
             "stability_monitor.stopped",
             samples=len(self._report.samples),
-            ollama_uptime_pct=f"{self._report.ollama_uptime_pct:.1f}%",
+            model_host_uptime_pct=f"{self._report.model_host_uptime_pct:.1f}%",
             max_vram_mb=self._report.max_vram_used_mb,
         )
         return self._report
@@ -108,8 +127,8 @@ class StabilityMonitor:
             # Track downtimes
             if last_sample is not None:
                 delta = self.sample_interval_sec
-                if not sample.ollama_up:
-                    self._report.ollama_downtime_sec += delta
+                if not sample.model_host_up:
+                    self._report.model_host_downtime_sec += delta
                 if not sample.convoy_brain_up:
                     self._report.convoy_brain_downtime_sec += delta
                 if not sample.traffic_oracle_up:
@@ -136,47 +155,56 @@ class StabilityMonitor:
         """Take a single health sample."""
         sample = HealthSample(
             timestamp=time.time(),
-            ollama_up=False,
+            model_host_up=False,
             convoy_brain_up=False,
             traffic_oracle_up=False,
         )
 
+        # Unified memory straight from the kernel (nvidia-smi reports N/A on GB10).
+        total_mib, used_mib = _read_unified_mem_mib()
+        if total_mib:
+            sample.gpu_vram_total_mb = total_mib
+            sample.gpu_vram_used_mb = used_mib
+
         async with httpx.AsyncClient(timeout=5.0) as client:
-            # Check Ollama
+            # Check the strategic tier (model-host decider)
             try:
-                resp = await client.get(f"{self.ollama_url}/api/tags")
-                sample.ollama_up = resp.status_code == 200
+                resp = await client.get(self.model_host_url + "/decider/health")
+                sample.model_host_up = resp.status_code == 200
             except httpx.HTTPError:
                 pass
 
             # Check convoy-brain
             try:
-                resp = await client.get(f"{self.convoy_brain_url}/health")
+                resp = await client.get(self.convoy_brain_url + "/health")
                 sample.convoy_brain_up = resp.status_code == 200
             except httpx.HTTPError:
                 pass
 
             # Check traffic-oracle
             try:
-                resp = await client.get(f"{self.traffic_oracle_url}/health")
+                resp = await client.get(self.traffic_oracle_url + "/health")
                 sample.traffic_oracle_up = resp.status_code == 200
             except httpx.HTTPError:
                 pass
 
-            # Check GPU via nvidia-exporter (if available)
+            # Optional nvidia-exporter temperature (when present)
             try:
                 resp = await client.get("http://localhost:9835/metrics")
                 if resp.status_code == 200:
-                    text = resp.text
-                    for line in text.split("\n"):
-                        if line.startswith("nvidia_gpu_memory_used_bytes"):
-                            val = float(line.split()[-1])
-                            sample.gpu_vram_used_mb = int(val / 1048576)
-                        elif line.startswith("nvidia_gpu_memory_total_bytes"):
-                            val = float(line.split()[-1])
-                            sample.gpu_vram_total_mb = int(val / 1048576)
-                        elif line.startswith("nvidia_gpu_temperature_celsius"):
+                    for line in resp.text.split("\n"):
+                        if line.startswith("nvidia_gpu_temperature_celsius"):
                             sample.gpu_temp_celsius = int(float(line.split()[-1]))
+                        elif (
+                            not total_mib
+                            and line.startswith("nvidia_gpu_memory_used_bytes")
+                        ):
+                            sample.gpu_vram_used_mb = int(float(line.split()[-1]) / 1048576)
+                        elif (
+                            not total_mib
+                            and line.startswith("nvidia_gpu_memory_total_bytes")
+                        ):
+                            sample.gpu_vram_total_mb = int(float(line.split()[-1]) / 1048576)
             except httpx.HTTPError:
                 pass
 

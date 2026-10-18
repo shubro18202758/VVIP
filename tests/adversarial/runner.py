@@ -22,6 +22,7 @@ from .config import (
     AdversarialConfig,
     ROUTING_SCENARIOS,
     STRESS_SCENARIOS,
+    WATCHLIST_SCENARIOS,
 )
 from .evaluator import EvaluationResult, ResponseEvaluator
 from .report import ReportGenerator, TestReport
@@ -60,14 +61,14 @@ class AdversarialRunner:
         self.monitor = StabilityMonitor(
             convoy_brain_url=self.config.convoy_brain_url,
             traffic_oracle_url=self.config.traffic_oracle_url,
-            ollama_url=self.config.ollama_url,
+            model_host_url=self.config.model_host_url,
         )
 
     async def run_all(self, include_stress: bool = False) -> TestReport:
         """Run all adversarial scenarios and generate report."""
         logger.info(
             "adversarial.run_all.start",
-            total_scenarios=len(ROUTING_SCENARIOS),
+            total_scenarios=len(ROUTING_SCENARIOS) + len(WATCHLIST_SCENARIOS),
             concurrency=self.config.concurrency,
             include_stress=include_stress,
         )
@@ -78,6 +79,10 @@ class AdversarialRunner:
         try:
             # Run routing/edge-case/adversarial scenarios
             results = await self._run_scenario_batch(ROUTING_SCENARIOS)
+
+            # Watchlist/ANPR scenarios (watchlist-anpr stream addition —
+            # additive; evaluation thresholds untouched)
+            results.extend(await self._run_scenario_batch(WATCHLIST_SCENARIOS))
 
             # Run stress tests if requested
             if include_stress:
@@ -92,10 +97,14 @@ class AdversarialRunner:
 
         # Inject stability data into report
         report.score_summary["system_stability"] = (
-            stability_report.ollama_uptime_pct / 100
+            stability_report.model_host_uptime_pct / 100
         )
         if stability_report.max_vram_used_mb > 0:
-            vram_usage_pct = stability_report.max_vram_used_mb / 8192
+            # Unified-memory pool on GB10 (121.44 GiB) — the 8192 MiB figure
+            # from the discrete-GPU era is retired.
+            from .stability import UNIFIED_POOL_MIB
+
+            vram_usage_pct = stability_report.max_vram_used_mb / UNIFIED_POOL_MIB
             report.score_summary["vram_safety"] = max(0, 1.0 - max(0, vram_usage_pct - 0.8) * 5)
 
         if stability_report.max_gpu_temp > 85:
@@ -132,7 +141,7 @@ class AdversarialRunner:
                     tools=result.tool_calls_observed,
                     issues=result.issues,
                 )
-                # Cooldown between requests to avoid overwhelming Ollama
+                # Cooldown between requests to avoid overwhelming the decider
                 await asyncio.sleep(self.config.cooldown_between_requests_sec)
                 return result
 
@@ -178,10 +187,18 @@ class AdversarialRunner:
                 )
                 latency = time.monotonic() - start
 
-                # Parse response
+                # Parse response. /chat returns the orchestrator's final
+                # answer as a JSON *object* under "response" — coerce to a
+                # string so downstream slicing/scoring cannot crash with
+                # TypeError: slice(None, 2000, None) on a dict.
                 try:
                     data = resp.json()
-                    response_text = data.get("response", data.get("message", str(data)))
+                    raw_response = data.get("response", data.get("message", str(data)))
+                    response_text = (
+                        json.dumps(raw_response, default=str)
+                        if isinstance(raw_response, (dict, list))
+                        else str(raw_response)
+                    )
                     tool_calls = data.get("tool_calls", [])
                 except (json.JSONDecodeError, ValueError):
                     response_text = resp.text

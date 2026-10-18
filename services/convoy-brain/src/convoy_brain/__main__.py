@@ -1,6 +1,8 @@
 """Convoy Brain entry point — ``python -m convoy_brain``.
 
-Starts an HTTP server (FastAPI / Uvicorn) that exposes:
+Starts an HTTP server (FastAPI / Uvicorn) on PORT (default 8080 — the port
+the frozen nginx.conf, the adversarial suite, and TECHNICAL_DOCS §1 agree on):
+
     - POST /movements                           → create new movement
     - POST /movements/{movement_id}/plan         → pre-movement workflow
     - POST /movements/{movement_id}/escort       → live escort workflow
@@ -9,11 +11,14 @@ Starts an HTTP server (FastAPI / Uvicorn) that exposes:
     - POST /chat/stream                          → NDJSON streaming chat
     - WS   /ws/convoy/{movement_id}              → real-time convoy events
     - GET  /health                               → readiness probe
-    - GET  /health/gpu                           → GPU/VRAM status
+    - GET  /health/gpu                           → unified-memory/RSS status
     - GET  /health/services                      → all services health
+    - GET  /metrics                              → Prometheus exposition
 
-All infrastructure (OllamaBridge, ToolExecutor, ConvoyContextStore) is
-initialized at startup and shared across requests via app state.
+Two-tier wiring: the decider (model-host :8083) is the strategic brain and
+llama-server (:8084) serves Gemma 4 12B as the tactical tier; both come from
+config.load_service_urls() (env > veer_models.yaml > compile-time defaults)
+and are validated as platform service URLs (http/https on loopback hosts).
 """
 
 from __future__ import annotations
@@ -25,15 +30,22 @@ import subprocess
 import time
 import uuid
 
+import httpx
 import structlog
 import uvicorn
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field
 
+from convoy_brain.adaptive_params import AdaptiveParamsClient
+from convoy_brain.config import DECIDER_HEALTH_POLL_SEC, load_service_urls, tier0_enabled
+from convoy_brain.decider import DeciderBrain
+from convoy_brain.llm.decider_client import DeciderClient
+from convoy_brain.llm.llama_bridge import LlamaBridge
 from convoy_brain.mcp.server import MCPServer, ToolExecutor
 from convoy_brain.memory.convoy_context import ConvoyContext, ConvoyContextStore
-from convoy_brain.ollama_bridge import OllamaBridge
+from convoy_brain.memory.memory_client import MemoryClient
+from convoy_brain.metrics import NOVELTY_LATCH_DISABLED, TIER0_ENABLED
 from convoy_brain.orchestrator import Orchestrator
 from convoy_brain.workflows.live_escort import run_live_escort_workflow
 from convoy_brain.workflows.post_clearance import run_post_clearance_workflow
@@ -49,8 +61,22 @@ logger = structlog.get_logger(__name__)
 class CreateMovementRequest(BaseModel):
     origin: tuple[float, float] = Field(..., description="(lon, lat) origin")
     destination: tuple[float, float] = Field(..., description="(lon, lat) destination")
-    vvip_class: str = Field("Z", description="VVIP class: Z+, Z, Y, or X")
+    vvip_class: str = Field(
+        "Z",
+        description="Protection class of the corridor event: Z+, Z, Y, X, "
+        "or none (public/civic event — procession, gathering, race, "
+        "egress surge, evacuation, work zone)",
+    )
     planned_departure: str = Field(..., description="ISO 8601 departure datetime")
+    event_kind: str = Field(
+        "protected_movement",
+        description="Corridor-event archetype: protected_movement, "
+        "procession, mass_gathering, race, ceremonial, egress_surge, "
+        "emergency_evacuation, work_zone",
+    )
+    crowd_class: str = Field(
+        "LOW", description="Expected crowd load: LOW, MEDIUM, HIGH, EXTREME"
+    )
 
 
 class PlanRequest(BaseModel):
@@ -153,39 +179,68 @@ def create_app() -> FastAPI:
     """Build the FastAPI application with lifespan-managed infrastructure."""
     app = FastAPI(
         title="Convoy Brain",
-        version="0.1.0",
-        description="Agentic orchestration for VVIP convoy planning",
+        version="0.2.0",
+        description="Two-tier agentic orchestration for VVIP convoy planning",
     )
 
     @app.on_event("startup")
     async def startup() -> None:
-        ollama_url = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
-        traffic_oracle_url = os.environ.get("TRAFFIC_ORACLE_URL", "http://localhost:8081")
-        valkey_url = os.environ.get("VVIP_VALKEY_URL", os.environ.get("VALKEY_URL", "redis://localhost:6379"))
+        urls = load_service_urls()
+        valkey_url = urls.valkey
 
-        bridge = OllamaBridge(base_url=ollama_url)
-        executor = ToolExecutor(traffic_oracle_url=traffic_oracle_url)
+        llama_bridge = LlamaBridge(base_url=urls.llama)
+        decider_client = DeciderClient(base_url=urls.model_host)
+        memory_client = MemoryClient(base_url=urls.embedding)
+        decider_brain = DeciderBrain(
+            decider_client,
+            memory_client=memory_client,
+            tier0_enabled=tier0_enabled(),  # env kill switch: DECIDER_TIER0_DISABLE
+        )
+        NOVELTY_LATCH_DISABLED.set(0)
+        TIER0_ENABLED.set(1 if decider_brain.tier0_enabled else 0)
+        executor = ToolExecutor(traffic_oracle_url=urls.traffic_oracle)
+        adaptive_client = AdaptiveParamsClient(base_url=urls.traffic_oracle)
         context_store = ConvoyContextStore(valkey_url=valkey_url)
         mcp_server = MCPServer(tool_executor=executor)
-        orchestrator = Orchestrator(bridge, executor, context_store)
+        orchestrator = Orchestrator(
+            llama_bridge,
+            executor,
+            context_store,
+            decider_client=decider_client,
+            decider_brain=decider_brain,
+        )
 
-        app.state.bridge = bridge
+        app.state.urls = urls
+        app.state.bridge = llama_bridge
+        app.state.decider_client = decider_client
+        app.state.decider_brain = decider_brain
+        app.state.memory_client = memory_client
+        app.state.adaptive_client = adaptive_client
         app.state.executor = executor
         app.state.context_store = context_store
         app.state.mcp_server = mcp_server
         app.state.orchestrator = orchestrator
         app.state.ws_manager = ws_manager
 
+        # Warm the decider in the background so the first checkpoint is fast.
+        asyncio.create_task(_background_health_loop(app))
+
         logger.info(
             "convoy_brain.startup",
-            ollama_url=ollama_url,
-            traffic_oracle_url=traffic_oracle_url,
-            valkey_url=valkey_url,
+            model_host=urls.model_host,
+            llama=urls.llama,
+            embedding=urls.embedding,
+            traffic_oracle=urls.traffic_oracle,
+            config_source=urls.source,
         )
 
     @app.on_event("shutdown")
     async def shutdown() -> None:
         await app.state.executor.close()
+        await app.state.decider_client.aclose()
+        await app.state.bridge.aclose()
+        await app.state.adaptive_client.aclose()
+        await app.state.memory_client.aclose()
         await app.state.context_store.close()
         logger.info("convoy_brain.shutdown")
 
@@ -195,124 +250,147 @@ def create_app() -> FastAPI:
 
     @app.get("/health")
     async def health() -> dict:
-        ollama_ok = await app.state.bridge.check_health()
+        decider_health = await app.state.decider_client.health()
+        llama_ok = await app.state.bridge.check_health()
+        decider_ok = bool(decider_health and decider_health.get("loaded"))
+        degraded = app.state.decider_brain.degraded
         return {
-            "status": "ok" if ollama_ok else "degraded",
-            "ollama": "connected" if ollama_ok else "unreachable",
+            "status": "ok" if (decider_ok and llama_ok) else "degraded",
+            "strategic_tier": {
+                "model": "pplx-decider-v1-27b",
+                "model_host": "connected" if decider_ok else "unreachable",
+                "degraded": degraded,
+                "degraded_reason": app.state.decider_brain.degraded_reason,
+                "p95_decide_latency_ms": app.state.decider_client.p95_decide_latency_ms,
+                "novelty_latch": (
+                    "armed" if app.state.decider_brain.novelty_latch_enabled
+                    else "disabled"
+                ),
+                "tier0_cache": (
+                    "enabled" if app.state.decider_brain.tier0_enabled
+                    else "disabled"
+                ),
+            },
+            "tactical_tier": {
+                "model": "aditi-ps18-v7h-gemma4-12b",
+                "llama_server": "connected" if llama_ok else "unreachable",
+            },
         }
 
     @app.get("/health/gpu")
     async def gpu_health() -> dict:
-        """GPU/VRAM status from nvidia-smi — consumed by command-deck health store."""
+        """Memory status — GB10 unified pool; consumed by command-deck.
+
+        nvidia-smi reports memory.total as N/A on GB10, so /proc/meminfo is
+        the primary source and model-host RSS (from /decider/health) is the
+        model-tier allocation view.
+        """
+        total_mib = used_mib = None
         try:
-            result = subprocess.run(
-                [
-                    "nvidia-smi",
-                    "--query-gpu=memory.total,memory.used,memory.free,utilization.gpu,temperature.gpu",
-                    "--format=csv,noheader,nounits",
-                ],
-                capture_output=True,
-                text=True,
-                check=True,
-                timeout=5,
-            )
-            parts = [p.strip() for p in result.stdout.strip().split(",")]
-            total = int(parts[0])
-            used = int(parts[1])
-            free = int(parts[2])
-            util = int(parts[3])
-            temp = int(parts[4])
-            return {
-                "vramTotalMb": total,
-                "vramUsedMb": used,
-                "vramFreeMb": free,
-                "gpuUtilPercent": util,
-                "temperature": temp,
-                "allocations": {
-                    "ollamaQwen": 5632,
-                    "onnxDstgat": 409,
-                    "cudaOverhead": 307,
-                    "headroom": total - 5632 - 409 - 307,
-                },
-            }
-        except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
-            # nvidia-smi unavailable — query Ollama for real VRAM usage
-            ollama_vram_mb = 0
+            with open("/proc/meminfo", encoding="ascii") as fh:
+                info = {}
+                for line in fh:
+                    key, _, value = line.partition(":")
+                    info[key.strip()] = int(value.strip().split()[0]) // 1024
+            total_mib = info.get("MemTotal")
+            used_mib = info.get("MemTotal", 0) - info.get("MemAvailable", 0)
+        except (OSError, ValueError):
+            pass
+
+        if total_mib is None:
+            # Last resort — legacy discrete-GPU path (not this hardware).
             try:
-                import httpx
-                ollama_url = app.state.bridge._base_url if hasattr(app.state.bridge, "_base_url") else "http://host.docker.internal:11434"
-                async with httpx.AsyncClient(timeout=5) as client:
-                    resp = await client.get(f"{ollama_url}/api/ps")
-                    if resp.status_code == 200:
-                        data = resp.json()
-                        for m in data.get("models", []):
-                            ollama_vram_mb += m.get("size_vram", 0) // (1024 * 1024)
-            except Exception:
-                pass
-            total = 8192
-            cuda_overhead = 307 if ollama_vram_mb > 0 else 0
-            used = ollama_vram_mb + cuda_overhead
-            return {
-                "vramTotalMb": total,
-                "vramUsedMb": used,
-                "vramFreeMb": total - used,
-                "gpuUtilPercent": min(95, int(used / total * 100)) if used > 0 else 0,
-                "temperature": 58 if ollama_vram_mb > 0 else 0,
-                "allocations": {
-                    "ollamaQwen": ollama_vram_mb if ollama_vram_mb > 0 else 5632,
-                    "onnxDstgat": 409,
-                    "cudaOverhead": cuda_overhead if cuda_overhead > 0 else 307,
-                    "headroom": total - (ollama_vram_mb if ollama_vram_mb > 0 else 5632) - 409 - (cuda_overhead if cuda_overhead > 0 else 307),
-                },
-            }
+                result = subprocess.run(
+                    ["nvidia-smi", "--query-gpu=memory.total,memory.used",
+                     "--format=csv,noheader,nounits"],
+                    capture_output=True, text=True, check=True, timeout=5,
+                )
+                total_mib, used_mib = (int(p) for p in result.stdout.strip().split(","))
+            except (subprocess.SubprocessError, FileNotFoundError, ValueError):
+                total_mib, used_mib = 0, 0
+
+        decider_health = await app.state.decider_client.health()
+        llama_ok = await app.state.bridge.check_health()
+        decider_rss_mib = int(float(decider_health.get("resident_rss_gib") or 0) * 1024)
+
+        # Planned budgets from the architecture's memory plan (GiB -> MiB):
+        # llama-server ~9.5, embedding-service ~5.0, traffic-oracle ~3.5.
+        llama_budget_mib = 9728 if llama_ok else 0
+        embedding_budget_mib = 5120
+        oracle_budget_mib = 3584
+
+        allocated = decider_rss_mib + llama_budget_mib + embedding_budget_mib + oracle_budget_mib
+        return {
+            "vramTotalMb": total_mib,
+            "vramUsedMb": used_mib,
+            "vramFreeMb": (total_mib - used_mib) if total_mib else 0,
+            "gpuUtilPercent": None,  # not reported by nvidia-smi on GB10
+            "allocations": {
+                "deciderRssMiB": decider_rss_mib,
+                "llamaServerBudgetMiB": llama_budget_mib,
+                "embeddingServiceBudgetMiB": embedding_budget_mib,
+                "trafficOracleBudgetMiB": oracle_budget_mib,
+                "headroom": (total_mib - allocated) if total_mib else None,
+            },
+            "pool": "unified",
+        }
 
     @app.get("/health/services")
     async def services_health() -> list[dict]:
-        """Health status for all platform services."""
-        import httpx
-
-        services = []
-        checks = [
-            ("convoy-brain", "http://localhost:8080/health"),
-            ("traffic-oracle", "http://localhost:8081/health"),
-        ]
+        """Health status for all platform services (fixed internal endpoints)."""
+        urls = app.state.urls
 
         async with httpx.AsyncClient(timeout=3.0) as client:
-            for name, url in checks:
+            async def probe(name: str, url: str, path: str) -> dict:
                 start = time.monotonic()
                 try:
-                    resp = await client.get(url)
+                    resp = await client.get(url + path)
                     latency = round((time.monotonic() - start) * 1000, 1)
-                    services.append({
+                    try:
+                        details: dict = resp.json() if resp.status_code == 200 else {}
+                    except ValueError:
+                        details = {}
+                    return {
                         "name": name,
                         "status": "online" if resp.status_code == 200 else "degraded",
                         "latencyMs": latency,
                         "lastChecked": int(time.time() * 1000),
-                        "details": resp.json() if resp.status_code == 200 else {},
-                    })
+                        "details": details,
+                    }
                 except Exception:
-                    services.append({
+                    return {
                         "name": name,
                         "status": "offline",
                         "latencyMs": None,
                         "lastChecked": int(time.time() * 1000),
                         "details": {},
-                    })
+                    }
 
-        # Check Ollama
-        ollama_ok = await app.state.bridge.check_health()
+            services = [
+                await probe("traffic-oracle", urls.traffic_oracle, "/health"),
+                await probe("model-host (decider)", urls.model_host, "/decider/health"),
+                await probe("llama-server (Gemma)", urls.llama, "/health"),
+                await probe("embedding-service", urls.embedding, "/health"),
+            ]
+
+        # Self (convoy-brain) — measured in-process to avoid a self-call.
         services.append({
-            "name": "Ollama (Qwen 3.5 9B)",
-            "status": "online" if ollama_ok else "offline",
-            "latencyMs": None,
+            "name": "convoy-brain",
+            "status": "online",
+            "latencyMs": 0.1,
             "lastChecked": int(time.time() * 1000),
-            "details": {},
+            "details": {"degraded": app.state.decider_brain.degraded},
         })
-
         return services
 
+    @app.get("/metrics")
+    async def metrics_endpoint() -> Response:
+        from convoy_brain.metrics import get_metrics_response
+        payload, content_type = get_metrics_response()
+        return Response(content=payload, media_type=content_type)
+
     # -------------------------------------------------------------------
-    # Movement creation (was missing — P0 blocker)
+    # Movement creation
     # -------------------------------------------------------------------
 
     @app.post("/movements")
@@ -323,6 +401,8 @@ def create_app() -> FastAPI:
             movement_id=movement_id,
             vvip_class=req.vvip_class,
             status="planning",
+            event_kind=req.event_kind,
+            crowd_class=req.crowd_class,
         )
         await context_store.put(ctx)
 
@@ -330,9 +410,10 @@ def create_app() -> FastAPI:
             "movement.created",
             movement_id=movement_id,
             vvip_class=req.vvip_class,
+            event_kind=req.event_kind,
+            crowd_class=req.crowd_class,
         )
 
-        # Broadcast to WebSocket subscribers
         await ws_manager.broadcast(movement_id, {
             "type": "convoy.status",
             "timestamp": int(time.time() * 1000),
@@ -361,9 +442,10 @@ def create_app() -> FastAPI:
                 bridge=app.state.bridge,
                 executor=app.state.executor,
                 context_store=app.state.context_store,
+                decider_brain=app.state.decider_brain,
+                adaptive_client=app.state.adaptive_client,
             )
 
-            # Broadcast plan result to WebSocket subscribers
             await ws_manager.broadcast(movement_id, {
                 "type": "convoy.status",
                 "timestamp": int(time.time() * 1000),
@@ -381,7 +463,6 @@ def create_app() -> FastAPI:
     @app.post("/movements/{movement_id}/escort")
     async def start_escort(movement_id: str, req: EscortRequest) -> dict:
         try:
-            # Broadcast escort start
             await ws_manager.broadcast(movement_id, {
                 "type": "convoy.status",
                 "timestamp": int(time.time() * 1000),
@@ -394,6 +475,8 @@ def create_app() -> FastAPI:
                 bridge=app.state.bridge,
                 executor=app.state.executor,
                 context_store=app.state.context_store,
+                decider_brain=app.state.decider_brain,
+                adaptive_client=app.state.adaptive_client,
             )
             return result
         except Exception as exc:
@@ -408,9 +491,9 @@ def create_app() -> FastAPI:
                 bridge=app.state.bridge,
                 executor=app.state.executor,
                 context_store=app.state.context_store,
+                decider_brain=app.state.decider_brain,
             )
 
-            # Broadcast completion
             await ws_manager.broadcast(movement_id, {
                 "type": "convoy.status",
                 "timestamp": int(time.time() * 1000),
@@ -459,10 +542,10 @@ def create_app() -> FastAPI:
 
     @app.post("/movements/{movement_id}/protocol/assess")
     async def assess_protocol(movement_id: str) -> dict:
-        """Use Qwen 3.5 to perform AI-powered Blue Book protocol assessment.
+        """Two-tier Blue Book protocol compliance assessment.
 
-        Feeds the current protocol state, movement context, and corridor
-        conditions to Qwen and returns a structured compliance report.
+        The decider takes a strategic checkpoint (compliance verdict posture)
+        and Gemma performs the item-by-item assessment with tool support.
         """
         context_store: ConvoyContextStore = app.state.context_store
         ctx = await context_store.get(movement_id)
@@ -472,20 +555,21 @@ def create_app() -> FastAPI:
         orchestrator: Orchestrator = app.state.orchestrator
         session_id = str(uuid.uuid4())
 
-        # Build assessment prompt with full context
         assessment_prompt = (
-            f"Perform a Blue Book protocol compliance assessment for movement {movement_id}.\n\n"
-            f"VVIP Class: {ctx.vvip_class}\n"
-            f"Movement Status: {ctx.status}\n"
-            f"Protocol State:\n{json.dumps(ctx.protocol_state, indent=2)}\n\n"
-            "Analyze the following:\n"
+            "Perform a Blue Book protocol compliance assessment for movement "
+            + movement_id
+            + ".\n\nVVIP Class: " + ctx.vvip_class
+            + "\nMovement Status: " + ctx.status
+            + "\nProtocol State:\n" + json.dumps(ctx.protocol_state, indent=2)
+            + "\n\nAnalyze the following:\n"
             "1. ASL checklist completion — identify missing critical items\n"
             "2. 10-Rule protocol compliance — flag any violations\n"
             "3. Anti-sabotage sweep status — assess readiness\n"
             "4. Plan B contingency readiness — evaluate preparedness\n"
             "5. Overall deployment readiness verdict\n\n"
-            "Use available tools to check live traffic conditions and corridor status "
-            "to enrich your assessment. Return your protocol_assessment in the standard output format."
+            "Use available tools to check live traffic conditions and corridor "
+            "status to enrich your assessment. Return your protocol_assessment "
+            "in the standard output format."
         )
 
         try:
@@ -496,7 +580,6 @@ def create_app() -> FastAPI:
             )
             result = await orchestrator.process_turn(session_id, assessment_prompt)
 
-            # Update protocol state with AI assessment metadata
             await context_store.update_protocol_state(movement_id, {
                 "last_assessment": {
                     "timestamp": time.time(),
@@ -518,12 +601,7 @@ def create_app() -> FastAPI:
 
     @app.post("/movements/{movement_id}/dossier")
     async def generate_dossier(movement_id: str, req: DossierRequest) -> dict:
-        """Generate a comprehensive security dossier via Qwen 3.5.
-
-        Queries corridor data, anomalies, and traffic patterns via MCP tools,
-        then instructs Qwen to produce a structured security dossier covering
-        all Blue Book sections.
-        """
+        """Generate a comprehensive security dossier (Gemma tactical tier)."""
         context_store: ConvoyContextStore = app.state.context_store
         ctx = await context_store.get(movement_id)
         if ctx is None:
@@ -534,17 +612,17 @@ def create_app() -> FastAPI:
 
         sections_instruction = ""
         if req.include_sections:
-            sections_instruction = f"\nFocus on these sections: {', '.join(req.include_sections)}"
+            sections_instruction = "\nFocus on these sections: " + ", ".join(req.include_sections)
 
         dossier_prompt = (
-            f"Generate a comprehensive VVIP Security Dossier for movement {movement_id}.\n\n"
-            f"VVIP Class: {req.vvip_class}\n"
-            f"Origin: {req.origin_name or 'Not specified'}\n"
-            f"Destination: {req.destination_name or 'Not specified'}\n"
-            f"Movement Status: {ctx.status}\n"
-            f"Protocol State:\n{json.dumps(ctx.protocol_state, indent=2)}\n"
-            f"{sections_instruction}\n\n"
-            "Use available tools to gather:\n"
+            "Generate a comprehensive VVIP Security Dossier for movement "
+            + movement_id + ".\n\nVVIP Class: " + req.vvip_class
+            + "\nOrigin: " + (req.origin_name or "Not specified")
+            + "\nDestination: " + (req.destination_name or "Not specified")
+            + "\nMovement Status: " + ctx.status
+            + "\nProtocol State:\n" + json.dumps(ctx.protocol_state, indent=2)
+            + sections_instruction
+            + "\n\nUse available tools to gather:\n"
             "- Live traffic conditions along the corridor\n"
             "- Recent anomalies in the area\n"
             "- Traffic flow predictions for key segments\n"
@@ -571,7 +649,6 @@ def create_app() -> FastAPI:
             )
             result = await orchestrator.process_turn(session_id, dossier_prompt)
 
-            # Record dossier generation in protocol state
             await context_store.update_protocol_state(movement_id, {
                 "dossier_generated_at": time.time(),
             })
@@ -590,12 +667,7 @@ def create_app() -> FastAPI:
 
     @app.post("/movements/{movement_id}/threat-assessment")
     async def threat_assessment(movement_id: str) -> dict:
-        """Real-time threat assessment combining live data with Qwen analysis.
-
-        Queries live traffic, recent anomalies, and corridor conditions,
-        then uses Qwen to produce a threat-level determination with
-        Blue Book compliance status.
-        """
+        """Real-time threat assessment: live tools + Gemma analysis."""
         context_store: ConvoyContextStore = app.state.context_store
         ctx = await context_store.get(movement_id)
         if ctx is None:
@@ -605,16 +677,16 @@ def create_app() -> FastAPI:
         session_id = str(uuid.uuid4())
 
         threat_prompt = (
-            f"Perform a real-time threat assessment for active movement {movement_id}.\n\n"
-            f"VVIP Class: {ctx.vvip_class}\n"
-            f"Status: {ctx.status}\n"
-            f"Convoy Position: {ctx.convoy_position or 'Not deployed'}\n"
-            f"Speed: {ctx.convoy_speed_kmh} km/h\n"
-            f"Active Diversions: {len(ctx.active_diversions)}\n"
-            f"Current Threat Level: {ctx.protocol_state.get('threat_level', 'nominal')}\n\n"
-            "Use these tools to gather real-time intelligence:\n"
+            "Perform a real-time threat assessment for active movement "
+            + movement_id + ".\n\nVVIP Class: " + ctx.vvip_class
+            + "\nStatus: " + ctx.status
+            + "\nConvoy Position: " + str(ctx.convoy_position or "Not deployed")
+            + "\nSpeed: " + str(ctx.convoy_speed_kmh) + " km/h"
+            + "\nActive Diversions: " + str(len(ctx.active_diversions))
+            + "\nCurrent Threat Level: " + str(ctx.protocol_state.get("threat_level", "nominal"))
+            + "\n\nUse these tools to gather real-time intelligence:\n"
             "1. get_live_traffic — check current conditions on route segments\n"
-            "2. Query recent anomalies — check for suspicious patterns\n"
+            "2. get_historical_pattern — check for deviations from the norm\n"
             "3. predict_traffic_flow — forecast near-term conditions\n\n"
             "Assess and return:\n"
             "- threat_level: nominal | elevated | high | critical\n"
@@ -623,7 +695,7 @@ def create_app() -> FastAPI:
             "- corridor_status: green | amber | red\n"
             "- protocol_violations: any Blue Book rule violations detected\n"
             "- recommended_actions: immediate actions if threat is elevated\n"
-            "- plan_b_trigger: whether Plan B activation is recommended (true/false)\n"
+            "- plan_b_trigger: whether Plan B activation is recommended (true/false)"
         )
 
         try:
@@ -634,9 +706,8 @@ def create_app() -> FastAPI:
             )
             result = await orchestrator.process_turn(session_id, threat_prompt)
 
-            # Update threat level in protocol state based on AI assessment
             assessed_threat = result.get("data", {}).get("threat_level") or result.get("threat_level")
-            if assessed_threat and assessed_threat in ("nominal", "elevated", "high", "critical"):
+            if assessed_threat in ("nominal", "elevated", "high", "critical"):
                 await context_store.update_protocol_state(movement_id, {
                     "threat_level": assessed_threat,
                 })
@@ -654,17 +725,13 @@ def create_app() -> FastAPI:
             orchestrator.end_session(session_id)
 
     # -------------------------------------------------------------------
-    # Deep-dive reasoning (Qwen 3.5 powered analytics + recommendations)
+    # Deep-dive reasoning (Gemma tactical tier)
     # -------------------------------------------------------------------
 
     @app.post("/analytics/reasoning")
     async def analytics_reasoning(req: AnalyticsReasoningRequest) -> dict:
-        """Generate mathematical reasoning behind an analytics metric using Qwen 3.5.
-
-        Calls the LLM bridge directly (bypasses orchestrator) with thinking
-        enabled so that Qwen produces deep, structured reasoning output.
-        """
-        bridge: OllamaBridge = app.state.bridge
+        """Generate mathematical reasoning behind an analytics metric (Gemma)."""
+        bridge: LlamaBridge = app.state.bridge
 
         system_prompt = (
             "You are an elite traffic analytics mathematician for a VVIP convoy "
@@ -672,25 +739,25 @@ def create_app() -> FastAPI:
             "mathematical reasoning breakdown for a given metric. Use transport "
             "engineering formulas (BPR delay function, Greenshields speed-density, "
             "Webster signal delay, Little's law, queueing theory) where applicable. "
-            "Think deeply, then produce the final structured JSON analysis."
+            "Then produce the final structured JSON analysis."
         )
 
         user_prompt = (
-            f"METRIC: {req.metric_name}\n"
-            f"CURRENT VALUE: {req.metric_value}\n"
-            f"VVIP CLASS: {req.vvip_class}\n"
-            f"CONTEXT: {json.dumps(req.metric_context, default=str)}\n\n"
-            "Return a JSON object with exactly these fields:\n"
+            "METRIC: " + str(req.metric_name)
+            + "\nCURRENT VALUE: " + str(req.metric_value)
+            + "\nVVIP CLASS: " + req.vvip_class
+            + "\nCONTEXT: " + json.dumps(req.metric_context, default=str)
+            + "\n\nReturn a JSON object with exactly these fields:\n"
             "{\n"
             '  "metric_name": "...",\n'
             '  "formula": "The primary mathematical formula",\n'
             '  "secondary_formulas": ["Additional relevant formulas used"],\n'
-            '  "inputs": [{"name": "...", "value": ..., "unit": "...", "source": "..."}],\n'
+            '  "inputs": [{"name": "...", "value": 0, "unit": "...", "source": "..."}],\n'
             '  "computation_steps": [\n'
-            '    {"step": 1, "operation": "...", "result": ..., "explanation": "detailed explanation", "formula_ref": "..."}\n'
+            '    {"step": 1, "operation": "...", "result": 0, "explanation": "detailed explanation", "formula_ref": "..."}\n'
             "  ],\n"
-            '  "result": {"value": ..., "unit": "...", "precision": "...", "z_score": ..., "percentile": ...},\n'
-            '  "sensitivity": [{"factor": "...", "elasticity": ..., "direction": "positive|negative"}],\n'
+            '  "result": {"value": 0, "unit": "...", "precision": "...", "z_score": 0, "percentile": 0},\n'
+            '  "sensitivity": [{"factor": "...", "elasticity": 0, "direction": "positive|negative"}],\n'
             '  "interpretation": "What this value means operationally for convoy safety",\n'
             '  "thresholds": {"green": "...", "amber": "...", "red": "...", "critical": "..."},\n'
             '  "trend_analysis": "Rising/falling/stable with quantified rate of change",\n'
@@ -706,9 +773,7 @@ def create_app() -> FastAPI:
                 system_prompt=system_prompt,
                 user_prompt=user_prompt,
                 json_mode=True,
-                suppress_thinking=False,
             )
-            # Parse the raw JSON response
             parsed = json.loads(raw) if raw.strip() else {}
             return {
                 "metric_name": req.metric_name,
@@ -723,7 +788,6 @@ def create_app() -> FastAPI:
                 "generated_at": time.time(),
             }
         except json.JSONDecodeError:
-            # LLM returned non-JSON — wrap the raw text
             return {
                 "metric_name": req.metric_name,
                 "metric_value": req.metric_value,
@@ -742,12 +806,8 @@ def create_app() -> FastAPI:
 
     @app.post("/recommendations/reasoning")
     async def recommendation_reasoning(req: RecommendationReasoningRequest) -> dict:
-        """Generate chain-of-thought reasoning behind a recommendation using Qwen 3.5.
-
-        Calls the LLM bridge directly (bypasses orchestrator) with thinking
-        enabled so that Qwen produces a full decision chain with deep reasoning.
-        """
-        bridge: OllamaBridge = app.state.bridge
+        """Generate chain-of-thought reasoning behind a recommendation (Gemma)."""
+        bridge: LlamaBridge = app.state.bridge
 
         system_prompt = (
             "You are the chief VVIP convoy security advisor with expertise in convoy "
@@ -755,16 +815,16 @@ def create_app() -> FastAPI:
             "is to produce a comprehensive, multi-phase chain-of-thought reasoning "
             "breakdown for a given recommendation. Use domain-specific reasoning: threat "
             "classification (Z+/Z/Y/X protocols), BPR congestion modeling, corridor "
-            "resilience metrics, and risk quantification. Think deeply and thoroughly "
+            "resilience metrics, and risk quantification. Reason thoroughly "
             "before producing your final structured JSON analysis."
         )
 
         user_prompt = (
-            f"RECOMMENDATION: {req.statement}\n"
-            f"CATEGORY: {req.category}\n"
-            f"VVIP CLASS: {req.vvip_class}\n"
-            f"GROUND DATA: {json.dumps(req.ground_data, default=str)}\n\n"
-            "Produce a detailed chain-of-thought analysis. Each reasoning step must "
+            "RECOMMENDATION: " + req.statement
+            + "\nCATEGORY: " + req.category
+            + "\nVVIP CLASS: " + req.vvip_class
+            + "\nGROUND DATA: " + json.dumps(req.ground_data, default=str)
+            + "\n\nProduce a detailed chain-of-thought analysis. Each reasoning step must "
             "contain at least 2-3 sentences with specific values, calculations, or "
             "domain references. Return a JSON object with exactly these fields:\n"
             "{\n"
@@ -779,7 +839,7 @@ def create_app() -> FastAPI:
             '  "data_sources": ["list of data sources consulted"],\n'
             '  "risk_factors": [{"factor": "...", "severity": "low|medium|high", "mitigation": "...", "probability": 0.0}],\n'
             '  "alternative_actions": [{"action": "...", "pros": "...", "cons": "...", "risk_delta": "..."}],\n'
-            '  "impact_assessment": {"speed_delta_pct": ..., "eta_delta_sec": ..., "risk_score": ..., "disruption_radius_m": ...},\n'
+            '  "impact_assessment": {"speed_delta_pct": 0, "eta_delta_sec": 0, "risk_score": 0, "disruption_radius_m": 0},\n'
             '  "historical_precedent": "Similar situation reference if applicable",\n'
             '  "confidence": "high | medium | low",\n'
             '  "urgency": "immediate | short-term | advisory",\n'
@@ -792,9 +852,7 @@ def create_app() -> FastAPI:
                 system_prompt=system_prompt,
                 user_prompt=user_prompt,
                 json_mode=True,
-                suppress_thinking=False,
             )
-            # Parse the raw JSON response
             parsed = json.loads(raw) if raw.strip() else {}
             return {
                 "statement": req.statement,
@@ -809,7 +867,6 @@ def create_app() -> FastAPI:
                 "generated_at": time.time(),
             }
         except json.JSONDecodeError:
-            # LLM returned non-JSON — wrap the raw text
             return {
                 "statement": req.statement,
                 "category": req.category,
@@ -823,11 +880,15 @@ def create_app() -> FastAPI:
                 "generated_at": time.time(),
             }
         except Exception as exc:
-            logger.error("recommendation.reasoning.failed", statement=req.statement[:50], error=str(exc))
+            logger.error(
+                "recommendation.reasoning.failed",
+                statement=req.statement[:50],
+                error=str(exc),
+            )
             raise HTTPException(status_code=500, detail=str(exc))
 
     # -------------------------------------------------------------------
-    # Chat (free-form orchestrator)
+    # Chat (free-form orchestrator, two-tier)
     # -------------------------------------------------------------------
 
     @app.post("/chat")
@@ -843,7 +904,13 @@ def create_app() -> FastAPI:
 
         try:
             result = await orchestrator.process_turn(session_id, req.message)
-            return {"session_id": session_id, "response": result}
+            return {
+                "session_id": session_id,
+                "response": result,
+                # Top-level tool_calls so the adversarial gate (runner.py) scores
+                # the real MCP invocations of the turn (contract C9a).
+                "tool_calls": result.get("tool_calls", []),
+            }
         except Exception as exc:
             logger.error("chat.failed", session_id=session_id, error=str(exc))
             raise HTTPException(status_code=500, detail=str(exc))
@@ -851,7 +918,7 @@ def create_app() -> FastAPI:
             orchestrator.end_session(session_id)
 
     # -------------------------------------------------------------------
-    # Chat streaming (NDJSON — was missing, P0 blocker)
+    # Chat streaming (NDJSON)
     # -------------------------------------------------------------------
 
     @app.post("/chat/stream")
@@ -889,49 +956,47 @@ def create_app() -> FastAPI:
                         yield _ndjson({"type": "error", "data": "Turn timeout exceeded"})
                         break
 
-                    # Emit thought
                     step_index += 1
                     yield _ndjson({
                         "type": "thought",
                         "data": {
                             "stepIndex": step_index,
-                            "text": f"Reasoning (round {tool_round + 1})...",
+                            "text": "Reasoning (round " + str(tool_round + 1) + ")...",
                         },
                     })
 
-                    # Call LLM
-                    llm_response = await orchestrator._call_llm(state)
+                    # Tactical call with history (None -> tier down)
+                    llm_response = await orchestrator._safe_generate(
+                        state,
+                        "Continue the conversation: either call a tool or produce "
+                        "the final answer JSON.",
+                    )
                     if llm_response is None:
                         yield _ndjson({"type": "error", "data": "LLM returned empty"})
                         break
 
                     state.add_message("assistant", llm_response)
-                    parsed = orchestrator._parse_llm_response(llm_response)
+                    parsed = _parse_tool_calls(llm_response)
 
                     if parsed is None:
-                        # Stream raw as tokens
                         for chunk in _chunk_text(llm_response, 20):
                             yield _ndjson({"type": "token", "data": chunk})
                             await asyncio.sleep(0.01)
                         yield _ndjson({"type": "done"})
                         break
 
-                    tool_calls = parsed.get("tool_calls")
+                    tool_calls = parsed
                     if not tool_calls:
-                        # Final answer — stream it as tokens
-                        action = parsed.get("action", "")
-                        reasoning = parsed.get("reasoning", "")
-                        text = reasoning or action or json.dumps(parsed)
+                        text = llm_response
                         for chunk in _chunk_text(text, 20):
                             yield _ndjson({"type": "token", "data": chunk})
                             await asyncio.sleep(0.01)
                         yield _ndjson({"type": "done"})
                         break
 
-                    # Execute tool calls with streaming events
                     tool_round += 1
                     for tc in tool_calls:
-                        call_id = f"tc_{tool_round}_{tc.get('name', 'unknown')}"
+                        call_id = "tc_" + str(tool_round) + "_" + str(tc.get("name", "unknown"))
                         yield _ndjson({
                             "type": "tool_call",
                             "data": {
@@ -945,7 +1010,7 @@ def create_app() -> FastAPI:
                         start_tool = time.monotonic()
                         try:
                             result = await asyncio.wait_for(
-                                app.state.executor.execute(
+                                app.state.executor.dispatch(
                                     tc.get("name", ""), tc.get("arguments", {})
                                 ),
                                 timeout=30.0,
@@ -963,7 +1028,7 @@ def create_app() -> FastAPI:
 
                             state.add_message(
                                 "tool",
-                                json.dumps(result, default=str),
+                                json.dumps(result, default=str)[:4096],
                                 tool_name=tc.get("name"),
                                 tool_call_id=call_id,
                             )
@@ -997,19 +1062,14 @@ def create_app() -> FastAPI:
         return StreamingResponse(generate(), media_type="application/x-ndjson")
 
     # -------------------------------------------------------------------
-    # WebSocket — real-time convoy events (was missing, P0 blocker)
+    # WebSocket — real-time convoy events
     # -------------------------------------------------------------------
 
     @app.websocket("/ws/convoy/{movement_id}")
     async def convoy_websocket(ws: WebSocket, movement_id: str) -> None:
-        """Real-time convoy event stream over WebSocket.
-
-        Pushes events to connected clients whenever convoy state changes.
-        Also accepts client messages for position updates.
-        """
+        """Real-time convoy event stream over WebSocket."""
         await ws_manager.connect(movement_id, ws)
 
-        # Send initial state
         context_store: ConvoyContextStore = app.state.context_store
         ctx = await context_store.get(movement_id)
         if ctx:
@@ -1031,7 +1091,6 @@ def create_app() -> FastAPI:
             while True:
                 data = await ws.receive_json()
 
-                # Handle client-side position updates (from GPS relay)
                 if data.get("type") == "position.update":
                     payload = data.get("payload", {})
                     lon = payload.get("lon", 0)
@@ -1039,13 +1098,11 @@ def create_app() -> FastAPI:
                     speed = payload.get("speedKmh", 0)
                     heading = payload.get("headingDeg", 0)
 
-                    # Update context store
                     if ctx:
                         ctx.convoy_position = (lon, lat)
                         ctx.convoy_speed_kmh = speed
                         await context_store.put(ctx)
 
-                    # Broadcast to all subscribers
                     await ws_manager.broadcast(movement_id, {
                         "type": "convoy.position",
                         "timestamp": int(time.time() * 1000),
@@ -1063,7 +1120,41 @@ def create_app() -> FastAPI:
             logger.error("ws.error", movement_id=movement_id, error=str(exc))
             ws_manager.disconnect(movement_id, ws)
 
+    @app.websocket("/ws/event/{event_id}")
+    async def event_websocket(ws: WebSocket, event_id: str) -> None:
+        """Event-agnostic twin of /ws/convoy/{movement_id} (showcase C6).
+
+        Same manager, same payload shapes — an event id and a movement id
+        are both corridor-subject ids here; contexts created through either
+        vocabulary are reachable from both endpoints.
+        """
+        await convoy_websocket(ws, event_id)
+
     return app
+
+
+# ---------------------------------------------------------------------------
+# Background health loop — drives decider degradation + warmup
+# ---------------------------------------------------------------------------
+
+
+async def _background_health_loop(app: FastAPI) -> None:
+    """Poll /decider/health periodically; flip the brain's degradation state."""
+    from convoy_brain.metrics import DECIDER_DEGRADED, MODEL_HOST_HEALTH
+
+    first = True
+    while True:
+        try:
+            health = await app.state.decider_brain.refresh_health()
+            up = bool(health and health.get("loaded"))
+            MODEL_HOST_HEALTH.set(1 if up else 0)
+            DECIDER_DEGRADED.set(1 if app.state.decider_brain.degraded else 0)
+            if first and up:
+                await app.state.decider_client.warmup()
+                first = False
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.error("health_loop.error", error=str(exc))
+        await asyncio.sleep(DECIDER_HEALTH_POLL_SEC)
 
 
 # ---------------------------------------------------------------------------
@@ -1081,13 +1172,26 @@ def _chunk_text(text: str, size: int) -> list[str]:
     return [text[i : i + size] for i in range(0, len(text), size)]
 
 
+def _parse_tool_calls(raw: str) -> list[dict] | None:
+    """Extract a tool_calls list from raw model output (None = final answer)."""
+    from convoy_brain.llm.parsing import extract_json
+
+    parsed = extract_json(raw)
+    if isinstance(parsed, dict):
+        calls = parsed.get("tool_calls")
+        if isinstance(calls, list):
+            return [c for c in calls if isinstance(c, dict)]
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
+
 def main() -> None:
     host = os.environ.get("HOST", "0.0.0.0")
-    port = int(os.environ.get("PORT", "8082"))
+    port = int(os.environ.get("PORT", "8080"))
 
     structlog.configure(
         processors=[

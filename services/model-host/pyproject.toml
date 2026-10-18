@@ -1,0 +1,31 @@
+[project]
+name = "model-host"
+version = "1.0.0"
+description = "VVIP T5 strategic tier host: pplx-decider-v1-27b typed decision serving"
+requires-python = ">=3.12"
+license = "MIT"
+# Runtime deps are provisioned by infra/scripts/serve_models.sh into
+# VVIP/models/.venvs/model-host from VVIP/models/model-host-requirements.txt
+# (exact pins). Listed here for documentation:
+dependencies = [
+    "torch==2.14.0",
+    "torchvision==0.29.0",
+    "transformers==5.17.0",
+    "accelerate==1.15.0",
+    "huggingface-hub==1.31.0",
+    "pillow==12.3.0",
+    "safetensors==0.8.0",
+    "fastapi>=0.115",
+    "uvicorn>=0.30",
+    "PyYAML>=6.0",
+]
+
+[project.scripts]
+model-host = "model_host.app:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]

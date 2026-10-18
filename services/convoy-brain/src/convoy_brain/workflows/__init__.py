@@ -1,4 +1,4 @@
-"""Workflow sub-package — LangGraph multi-agent workflow definitions."""
+"""Workflow sub-package — the three convoy lifecycle workflows."""
 
 from convoy_brain.workflows.live_escort import run_live_escort_workflow
 from convoy_brain.workflows.post_clearance import run_post_clearance_workflow

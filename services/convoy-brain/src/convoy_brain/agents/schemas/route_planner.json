@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "RoutePlannerRecommendation",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "primary_route",
+    "alternate_routes",
+    "rejected_routes",
+    "overall_reasoning",
+    "confidence"
+  ],
+  "properties": {
+    "primary_route": {
+      "anyOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": true,
+          "required": ["route_id", "segment_ids"],
+          "properties": {
+            "route_id": { "type": ["string", "integer"] },
+            "segment_ids": { "type": "array", "items": { "type": "integer" } },
+            "score": { "type": ["number", "null"] },
+            "reason": { "type": "string" }
+          }
+        }
+      ]
+    },
+    "alternate_routes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["route_id", "segment_ids"],
+        "properties": {
+          "route_id": { "type": ["string", "integer"] },
+          "segment_ids": { "type": "array", "items": { "type": "integer" } },
+          "score": { "type": ["number", "null"] },
+          "reason": { "type": "string" }
+        }
+      }
+    },
+    "rejected_routes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["route_id", "reason"],
+        "properties": {
+          "route_id": { "type": ["string", "integer"] },
+          "reason": { "type": "string" }
+        }
+      }
+    },
+    "overall_reasoning": { "type": "string" },
+    "confidence": { "type": "string", "enum": ["high", "medium", "low"] }
+  }
+}

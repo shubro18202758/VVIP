@@ -14,24 +14,24 @@ export default defineConfig({
       },
       // convoy‑brain REST — strip /api/agent prefix so /api/agent/health → /health
       '/api/agent': {
-        target: 'http://localhost:8082',
+        target: 'http://localhost:8080',
         changeOrigin: true,
         timeout: 300000,
         rewrite: (path) => path.replace(/^\/api\/agent/, ''),
       },
       // convoy‑brain chat streaming
       '/chat': {
-        target: 'http://localhost:8082',
+        target: 'http://localhost:8080',
         changeOrigin: true,
       },
       // convoy‑brain health
       '/health': {
-        target: 'http://localhost:8082',
+        target: 'http://localhost:8080',
         changeOrigin: true,
       },
       // WebSocket convoy tracking
       '/ws': {
-        target: 'ws://localhost:8082',
+        target: 'ws://localhost:8080',
         ws: true,
         changeOrigin: true,
       },

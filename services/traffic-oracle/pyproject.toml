@@ -56,6 +56,16 @@ dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.32",
 
+    # HTTP client — declared per plan C10 (twin/ASGI transport; outbound
+    # hosts are config-fixed, no user-supplied URLs are ever fetched)
+    "httpx>=0.27",
+
+    # RL environment API for the adaptive stream's TwinEnv wrapper (C5/C10)
+    "gymnasium>=1.0",
+
+    # veer_models.yaml reader for the unified-memory budget (gpu_arbiter v2)
+    "pyyaml>=6.0",
+
     # Observability
     "prometheus-client>=0.21",
     "psutil>=6.0",

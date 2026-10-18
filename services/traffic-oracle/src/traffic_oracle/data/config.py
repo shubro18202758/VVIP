@@ -21,6 +21,22 @@ class Settings(BaseSettings):
     # Model paths
     ETA_MODEL_PATH: str = "models/onnx/eta_predictor.onnx"
 
+    # Zero-shot foundation forecaster (t0-alpha ONNX INT8, Apache-2.0):
+    # None keeps the rung dormant. Deliberately a SEPARATE slot from
+    # ONNX_MODEL_PATH (the dormant DSTGAT export) — setting it makes the
+    # foundation rung the preferred model rung in FlowForecaster.predict
+    # (support gate -> foundation -> DSTGAT -> heuristic). The artifact
+    # lives outside git at VVIP/models-local/t0/ (see its NOTICE) — point
+    # this at an absolute path, e.g.
+    # /repo/VVIP/models-local/t0/t0-alpha-grouped-int8.onnx
+    FOUNDATION_MODEL_PATH: str | None = None
+
+    # Out-of-support gate for the flow forecaster: None -> the committed
+    # package default at traffic_oracle/predict/data/support_bounds.json;
+    # an explicit path overrides it (point it at a re-recorded calibration
+    # file once training lands).
+    FORECAST_SUPPORT_BOUNDS_PATH: str | None = None
+
     # RL training limits
     RL_MAX_EPISODES: int = 1000
     RL_MAX_SIGNALS: int = 20

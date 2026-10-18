@@ -1,4 +1,7 @@
 # Build traffic-oracle Python service
+# Dependencies come entirely from services/traffic-oracle/pyproject.toml,
+# including the adaptive-stream additions (httpx, gymnasium, pyyaml —
+# plan C10), so this image rebuild picks them up with no Dockerfile edit.
 FROM python:3.12-slim AS base
 
 # Install uv for fast dependency resolution
@@ -12,6 +15,9 @@ RUN uv pip install --system --no-cache -r pyproject.toml
 
 COPY src/ src/
 
+# veer_models.yaml is models-owned and mounted at runtime; gpu_arbiter
+# reads the unified-memory budget from it when present (env
+# VEER_MODELS_CONFIG overrides the path), else /proc/meminfo.
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONPATH=/app/src
 CMD ["python", "-m", "traffic_oracle"]

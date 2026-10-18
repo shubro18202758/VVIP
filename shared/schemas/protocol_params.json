@@ -1,0 +1,26 @@
+{
+  "format": "veer/protocol-params/1",
+  "description": "Canonical protocol parameters for corridor-event closure policy. SINGLE human-edited source of truth (contract C1). This file is a GENERATOR INPUT ONLY: scripts/export_protocol_params.py writes checked-in protocol_params_gen.py modules inside each service's src/ tree; runtime code imports the generated module and never reads this file.",
+  "baseline": {
+    "advance_closure_sec": 120,
+    "congestion_spike_threshold": 0.8,
+    "gps_poll_interval_sec": 1.0,
+    "scoring_weights": {"time": 0.3, "disruption": 0.4, "security": 0.2, "complexity": 0.1},
+    "robust_routing": {"enabled": true, "quantile": 0.9, "time_weight": 0.3, "disruption_weight": 0.4}
+  },
+  "engineering_bounds": {
+    "gps_poll_min_sec": 1.0,
+    "gps_poll_max_sec": 5.0,
+    "congestion_threshold_min": 0.1,
+    "congestion_threshold_max": 0.8,
+    "robust_quantile_min": 0.5,
+    "robust_quantile_max": 0.99
+  },
+  "protection_classes": {
+    "Z+": {"advance_closure_floor_sec": 180, "security_points": 6, "min_lanes": 6},
+    "Z":  {"advance_closure_floor_sec": 120, "security_points": 4, "min_lanes": 4},
+    "Y":  {"advance_closure_floor_sec": 60,  "security_points": 2, "min_lanes": 2},
+    "X":  {"advance_closure_floor_sec": null, "security_points": 0, "min_lanes": 1},
+    "none": {"advance_closure_floor_sec": null, "security_points": 0, "min_lanes": 0}
+  }
+}

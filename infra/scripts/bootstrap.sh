@@ -24,8 +24,12 @@ check_cmd docker        || MISSING=1
 check_cmd cargo         || MISSING=1
 check_cmd uv            || MISSING=1
 check_cmd bun           || MISSING=1
-check_cmd ollama        || MISSING=1
+check_cmd python3.12    || MISSING=1
 check_cmd nvidia-smi    || MISSING=1
+# ollama is OPTIONAL since the qwen pull orchestration was retired: the
+# tactical tier serves from llama-server :8084 (see serve_models.sh).
+command -v ollama &>/dev/null && echo "  [OK] ollama (optional debug side-load)" \
+    || echo "  [OPTIONAL] ollama not found — debug side-load gemma-vvip unavailable"
 
 if [ "$MISSING" -eq 1 ]; then
     echo ""
@@ -66,16 +70,28 @@ echo "Installing GIS network importer dependencies..."
 echo "Installing frontend dependencies (command-deck)..."
 (cd services/command-deck && bun install)
 
-# ─── Pull Qwen Model ─────────────────────────────────────────────
+# ─── Model Hosts (GB10 unified-memory stack) ──────────────────────
+# Replaces the retired `ollama pull qwen3.5:9b-q4_K_M` orchestration.
+# T5 decider + T4 Gemma are served by models-owned hosts; ollama :11434 is
+# externally active and left untouched (gemma-vvip:12b is an optional debug
+# side-load: ollama create gemma-vvip:12b -f models/Modelfile.gemma_vvip).
 echo ""
-echo "Pulling Qwen 3.5 9B model via Ollama (Q4_K_M quantization)..."
-ollama pull qwen3.5:9b-q4_K_M 2>/dev/null \
-    || echo "  Model pull failed — ensure Ollama is running: ollama serve"
+echo "Building persistent model venvs (torch stack, from pip cache)..."
+./infra/scripts/serve_models.sh build
+
+echo ""
+echo "Applying corridor-store migrations (idempotent, ledgered)..."
+models/.venvs/migrate/bin/python scripts/migrate.py
+
+echo ""
+echo "Starting model hosts (:8083 decider, :8084 Gemma, :8085 embeddings)..."
+./infra/scripts/serve_models.sh start
 
 echo ""
 echo "=== Bootstrap Complete ==="
 echo "Next steps:"
-echo "  1. Start Ollama: ollama serve"
+echo "  1. Model hosts are supervised by serve_models.sh (restart-on-exit)"
 echo "  2. Start all services: docker compose -f infra/compose.yml up -d"
-echo "  3. Start command-deck: cd services/command-deck && bun dev"
-echo "  4. Open dashboard: http://localhost:5173"
+echo "  3. Smoke-test the model stack: ./scripts/smoke_models.sh"
+echo "  4. Start command-deck: cd services/command-deck && bun dev"
+echo "  5. Open dashboard: http://localhost:5173"

@@ -48,9 +48,9 @@ def main() -> None:
         help="traffic-oracle base URL",
     )
     parser.add_argument(
-        "--ollama-url",
-        default="http://localhost:11434",
-        help="Ollama API base URL",
+        "--model-host-url",
+        default="http://localhost:8083",
+        help="model-host base URL (strategic tier /decider endpoints)",
     )
     parser.add_argument(
         "--concurrency",
@@ -92,7 +92,7 @@ def main() -> None:
     config = AdversarialConfig(
         convoy_brain_url=args.convoy_brain_url,
         traffic_oracle_url=args.traffic_oracle_url,
-        ollama_url=args.ollama_url,
+        model_host_url=args.model_host_url,
         concurrency=args.concurrency,
         timeout_per_request_sec=args.timeout,
         sustained_load_duration_sec=args.duration,

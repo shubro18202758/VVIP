@@ -8,6 +8,12 @@ COPY package.json bun.lock* ./
 RUN bun install --frozen-lockfile 2>/dev/null || bun install
 
 COPY . .
+# Vendor the prebuilt Cesium bundle (23 MB) into the SvelteKit static dir —
+# pages load the global `Cesium` from /cesium/Cesium.js and no application
+# code imports the 'cesium' package, so the vite bundle stays lean. The
+# bundle is .dockerignore'd from the context and always taken from this
+# image's own node_modules (cesium pinned in package.json).
+RUN mkdir -p static && cp -r node_modules/cesium/Build/Cesium static/cesium
 # Constrain Node.js heap to 1GB — keeps build within CPU/RAM budget
 ENV NODE_OPTIONS="--max-old-space-size=1024"
 RUN bun run build

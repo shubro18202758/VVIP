@@ -1,0 +1,105 @@
+# VVIP compose override — NVIDIA GB10 (linux/arm64) single-host layout.
+#
+# Deltas vs infra/compose.yml, all driven by facts on this host:
+#
+# 1. postgis
+#    - Built from infra/docker/Dockerfile.postgis.arm64 (the
+#      Dockerfile.migtest recipe: pgvector/pgvector:pg16 + Debian postgis-3
+#      + pgrouting) because postgis/postgis:17-3.5 has no arm64 manifest.
+#    - Host port 55434, NOT 5432: host :5432 is already bound by the
+#      unrelated `osint-db` container (pgvector/pgvector:pg16,
+#      0.0.0.0:5432->5432) which stays untouched.
+#    - The docker-entrypoint-initdb.d mount is DROPPED (volumes !override):
+#      migrations 001-003 use bare CREATE TABLE (not idempotent), and the
+#      platform contract is that schema comes from
+#      VVIP/scripts/migrate.py (idempotent, ledgered) instead. A fresh
+#      postgis_data volume + migrate.py = exactly one application.
+#
+# 2. traffic-oracle / convoy-brain run with network_mode: host
+#    The host model stack binds loopback only (ss: 127.0.0.1:8083 decider,
+#    127.0.0.1:8084 llama-server, 127.0.0.1:8085 embedding-service), so a
+#    bridge network + host-gateway cannot reach them. Host networking makes
+#    127.0.0.1:<port> the correct URL for every peer; convoy-brain then
+#    binds host :8080 itself (the stale host `python -m convoy_brain` that
+#    504'd the adversarial bench is stopped before bring-up).
+#    URLs are fixed internal endpoints (config constants, loopback-only per
+#    convoy_brain.http_guard.assert_platform_service_url) — never
+#    user-supplied.
+#
+# Usage:
+#   docker compose -p vvip -f infra/compose.yml -f infra/compose.gb10-override.yml up -d
+
+services:
+  postgis:
+    build:
+      context: ..
+      dockerfile: infra/docker/Dockerfile.postgis.arm64
+    image: veer-vvip-postgis:arm64
+    ports: !override
+      - "55434:5432"
+    volumes: !override
+      - postgis_data:/var/lib/postgresql/data
+      - ../services/corridor-store/config/postgresql.conf:/etc/postgresql/postgresql.conf
+
+  traffic-oracle:
+    # Repo-tree-mirroring Dockerfile (see header): the service resolves
+    # repo-rooted paths (corridor-store seed) from package depth and dies
+    # at import in a flat /app layout.
+    build:
+      context: ..
+      dockerfile: infra/docker/Dockerfile.traffic-oracle.gb10
+    network_mode: host
+    ports: !override []
+    extra_hosts: !override []
+    environment:
+      VVIP_DATABASE_URL: postgresql://corridor_admin:${POSTGIS_PASSWORD:-dev_changeme}@127.0.0.1:55434/corridor_db
+      VVIP_VALKEY_URL: redis://127.0.0.1:6379
+      VVIP_NATS_URL: nats://127.0.0.1:4222
+      EMBEDDING_SERVICE_URL: http://127.0.0.1:8085
+
+  convoy-brain:
+    # Repo-tree-mirroring Dockerfile (see header): config.py computes
+    # parents[4] for veer_models.yaml discovery and dies at import in a
+    # flat /app layout.
+    build:
+      context: ..
+      dockerfile: infra/docker/Dockerfile.convoy-brain.gb10
+    network_mode: host
+    ports: !override []
+    extra_hosts: !override []
+    environment:
+      VVIP_DATABASE_URL: postgresql://corridor_admin:${POSTGIS_PASSWORD:-dev_changeme}@127.0.0.1:55434/corridor_db
+      VVIP_VALKEY_URL: redis://127.0.0.1:6379
+      VVIP_NATS_URL: nats://127.0.0.1:4222
+      MODEL_HOST_URL: http://127.0.0.1:8083
+      LLAMA_BASE_URL: http://127.0.0.1:8084
+      EMBEDDING_SERVICE_URL: http://127.0.0.1:8085
+      TRAFFIC_ORACLE_URL: http://127.0.0.1:8081
+      PORT: "8080"
+
+  # command-deck — THE ONE DECK (interface-revamp end state, 2026-10-13).
+  # The SvelteKit command-deck (services/command-deck) now IS the fleet's
+  # presentation service on :5173, replacing the retired React+nginx deck
+  # (frontend/, kept in-tree for reference; the two-deck posture with a
+  # gods-eye-deck sibling on :5175 is closed — one product, one port).
+  # Host-networked like its upstreams so the fixed loopback URLs resolve:
+  # src/hooks.server.ts proxies the four /api prefixes to 127.0.0.1
+  # (:8081 oracle, :8080 brain, :8090 emulator). The adapter-node server
+  # cannot upgrade WebSockets, so the /ops audit WS ladder falls back to
+  # its 2 s poll rung on this origin (by design — the ladder exists for
+  # exactly this). VEER_CESIUM_ION_TOKEN is passthrough-only (no literal
+  # anywhere); unset = keyless OSM default.
+  command-deck:
+    build:
+      context: ../services/command-deck
+      # NB: compose resolves `dockerfile` relative to the CONTEXT dir, not
+      # the compose file (services/command-deck/../../infra = the repo's
+      # infra/ — same shape as compose.prod.yml).
+      dockerfile: ../../infra/docker/Dockerfile.command-deck
+    network_mode: host
+    ports: !override []
+    volumes: !override []
+    environment:
+      PORT: "5173"
+      HOST: "0.0.0.0"
+      VEER_CESIUM_ION_TOKEN: ${VEER_CESIUM_ION_TOKEN:-}

@@ -9,6 +9,7 @@ Evaluates orchestrator responses for:
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass, field
 
@@ -49,6 +50,15 @@ class ResponseEvaluator:
         tool_calls: list[dict] | None = None,
     ) -> EvaluationResult:
         """Run all evaluations against a response."""
+        # /chat returns the orchestrator's final answer as a JSON *object*
+        # under "response". Coerce once so every downstream check (slicing,
+        # lower(), regex) sees a string — the thresholds themselves are
+        # unchanged; this only fixes the client-side TypeError crash.
+        if isinstance(response_text, (dict, list)):
+            response_text = json.dumps(response_text, default=str)
+        elif not isinstance(response_text, str):
+            response_text = str(response_text or "")
+
         result = EvaluationResult(
             scenario_id=scenario["id"],
             passed=True,

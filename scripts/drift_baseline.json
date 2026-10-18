@@ -1,0 +1,404 @@
+{
+  "version": 2,
+  "recorded_at": "2026-10-16T22:34:32+00:00",
+  "recorded_by": "VVIP/scripts/model_drift_panel.sh --rebaseline",
+  "policy": {
+    "note": "Probe outputs are NOT byte-compared (generation is sampling-dependent where seeds are unavailable). The drift surface is schema, required fields, sane numeric ranges, semantic anchors, cross-field consistency rules and latency bounds. The baseline must match the panel code exactly \u2014 hand edits exit 2 with 'baseline diverges from panel code'; re-record with --rebaseline.",
+    "latency_rule": "latency_ms_max = max(3 x observed_ms_at_baseline, latency_floor_ms); floors justified per probe under justifications.latency_floor"
+  },
+  "probes": {
+    "decider": {
+      "surface": "pplx-decider-v1-27b /decide (:8083)",
+      "latency_ms_max": 15000.0,
+      "observed_ms_at_baseline": 1333.3,
+      "latency_floor_ms": 15000,
+      "justifications": {
+        "latency_floor": "5 live runs of the frozen checkpoint: warm 1.28-1.34s, first call 2.08s, service self-reports p95 decide 2.08s (/decider/health). Floor 15s ~ 7x p95: a 40x warm regression (51s) breaches; normal GPU contention does not.",
+        "semantic_anchors": "The frozen checkpoint's forward pass returned bit-identical answers across 5 live runs: reroute=ring_road p=0.9803, urgency=0.5000, readiness=1.7966, state_tokens=679. Anchors pin bands around those (value==ring_road, probability>=0.9, urgency in [0.4,0.6], readiness in [1.0,3.0]) so a model swap that moves any of them is flagged for review, not byte-locked."
+      },
+      "calls": {
+        "decide": {
+          "shape": {
+            "type": "object",
+            "keys": {
+              "answers": {
+                "type": "object",
+                "keys": {
+                  "urgency": {
+                    "type": "object",
+                    "keys": {
+                      "value": {
+                        "type": "number",
+                        "min": 0.4,
+                        "max": 0.6
+                      },
+                      "probability": {
+                        "type": "number",
+                        "min": 0.0,
+                        "max": 1.0
+                      },
+                      "distribution": {
+                        "type": "object",
+                        "keys": {
+                          "false": {
+                            "type": "number",
+                            "min": 0.0,
+                            "max": 1.0
+                          },
+                          "true": {
+                            "type": "number",
+                            "min": 0.0,
+                            "max": 1.0
+                          }
+                        }
+                      }
+                    },
+                    "optional_keys": {
+                      "confidence": {
+                        "type": "number",
+                        "min": 0.0,
+                        "max": 1.0
+                      }
+                    }
+                  },
+                  "reroute": {
+                    "type": "object",
+                    "keys": {
+                      "value": {
+                        "type": "str",
+                        "in": [
+                          "ring_road"
+                        ]
+                      },
+                      "probability": {
+                        "type": "number",
+                        "min": 0.9,
+                        "max": 1.0
+                      },
+                      "distribution": {
+                        "type": "object",
+                        "keys": {
+                          "sg_highway": {
+                            "type": "number",
+                            "min": 0.0,
+                            "max": 1.0
+                          },
+                          "ashram_road": {
+                            "type": "number",
+                            "min": 0.0,
+                            "max": 1.0
+                          },
+                          "ring_road": {
+                            "type": "number",
+                            "min": 0.0,
+                            "max": 1.0
+                          }
+                        }
+                      }
+                    },
+                    "optional_keys": {
+                      "confidence": {
+                        "type": "number",
+                        "min": 0.0,
+                        "max": 1.0
+                      }
+                    }
+                  },
+                  "readiness": {
+                    "type": "object",
+                    "keys": {
+                      "value": {
+                        "type": "number",
+                        "min": 1.0,
+                        "max": 3.0
+                      },
+                      "probability": {
+                        "type": "number",
+                        "min": 0.0,
+                        "max": 1.0
+                      },
+                      "distribution": {
+                        "type": "object",
+                        "keys": {
+                          "0": {
+                            "type": "number",
+                            "min": 0.0,
+                            "max": 1.0
+                          },
+                          "1": {
+                            "type": "number",
+                            "min": 0.0,
+                            "max": 1.0
+                          },
+                          "2": {
+                            "type": "number",
+                            "min": 0.0,
+                            "max": 1.0
+                          },
+                          "3": {
+                            "type": "number",
+                            "min": 0.0,
+                            "max": 1.0
+                          },
+                          "4": {
+                            "type": "number",
+                            "min": 0.0,
+                            "max": 1.0
+                          }
+                        }
+                      }
+                    },
+                    "optional_keys": {
+                      "confidence": {
+                        "type": "number",
+                        "min": 0.0,
+                        "max": 1.0
+                      }
+                    }
+                  }
+                }
+              },
+              "state_tokens": {
+                "type": "int",
+                "min": 1,
+                "max": 8192
+              },
+              "latency_ms": {
+                "type": "number",
+                "min": 0.0,
+                "max": 120000.0
+              }
+            },
+            "optional_keys": {
+              "request_id": {
+                "type": "str",
+                "in": [
+                  "drift-panel-checkpoint-1"
+                ]
+              }
+            }
+          },
+          "consistency": [
+            "noul_value_equals_true_mass",
+            "choice_value_is_distribution_argmax",
+            "score_probability_is_distribution_max"
+          ]
+        }
+      }
+    },
+    "gemma": {
+      "surface": "aditi-ps18-v7h-12b chat JSON (:8084)",
+      "latency_ms_max": 45000.0,
+      "observed_ms_at_baseline": 1203.7,
+      "latency_floor_ms": 45000,
+      "justifications": {
+        "latency_floor": "cold (uncached prompt) observed 7.35s = 115 prompt tokens @ ~110 tok/s + 23 generated tokens @ ~23 tok/s; warm prompt-cached 1.18-1.23s. Floor 45s ~ 6x cold: sustained generation slower than ~4.4 tok/s breaches.",
+        "semantic_anchors": "3/3 live runs of the constrained checkpoint named the corridor to avoid as 'Ashram Road' (the only corridor the user turn names). Anchor: corridor contains 'ashram' (case-insensitive) \u2014 tolerant to formatting, fatal to semantically gutted replies. The free-text 'answer' stays bounds-only."
+      },
+      "calls": {
+        "chat": {
+          "shape": {
+            "type": "object",
+            "keys": {
+              "choices": {
+                "type": "list",
+                "min_len": 1,
+                "items": {
+                  "type": "object",
+                  "keys": {
+                    "message": {
+                      "type": "object",
+                      "keys": {
+                        "content": {
+                          "type": "str",
+                          "min_len": 10
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              "usage": {
+                "type": "object",
+                "keys": {
+                  "completion_tokens": {
+                    "type": "int",
+                    "min": 1,
+                    "max": 1000
+                  }
+                }
+              }
+            }
+          },
+          "consistency": [],
+          "content_json": {
+            "type": "object",
+            "keys": {
+              "answer": {
+                "type": "str",
+                "min_len": 4,
+                "max_len": 300
+              },
+              "corridor": {
+                "type": "str",
+                "min_len": 3,
+                "max_len": 120,
+                "contains": "ashram"
+              },
+              "confidence": {
+                "type": "number",
+                "min": 0.0,
+                "max": 1.0
+              }
+            }
+          }
+        }
+      }
+    },
+    "embeddings": {
+      "surface": "pplx-embed-v2-late-0.6b + bge-m3 (:8085)",
+      "latency_ms_max": 10000.0,
+      "observed_ms_at_baseline": 173.4,
+      "latency_floor_ms": 10000,
+      "justifications": {
+        "latency_floor": "first observation 1.53s (2 docs through BOTH encoders + upsert), warm 0.16-0.19s. Floor 10s ~ 6.5x the first observation: an encoder path or store write taking seconds breaches.",
+        "semantic_anchors": "Both marker docs (ref_id drift-panel:7f3a:a/b) were upserted immediately before the search in 3/3 live runs and both were retrieved in the top hits. Anchor: search must return at least one hit per marker ref_id."
+      },
+      "calls": {
+        "embed": {
+          "shape": {
+            "type": "object",
+            "keys": {
+              "embedded": {
+                "type": "int",
+                "min": 2,
+                "max": 2
+              },
+              "doc_ids": {
+                "type": "list",
+                "min_len": 2,
+                "items": {
+                  "type": "nonempty"
+                },
+                "unique": true
+              }
+            }
+          },
+          "consistency": []
+        },
+        "search": {
+          "shape": {
+            "type": "object",
+            "keys": {
+              "results": {
+                "type": "list",
+                "min_len": 1,
+                "items": {
+                  "type": "object",
+                  "keys": {
+                    "doc_id": {
+                      "type": "nonempty"
+                    },
+                    "kind": {
+                      "type": "str"
+                    },
+                    "score": {
+                      "type": "number"
+                    }
+                  },
+                  "optional_keys": {
+                    "ref_id": {
+                      "type": "str"
+                    },
+                    "title": {
+                      "type": "str"
+                    },
+                    "snippet": {
+                      "type": "str"
+                    }
+                  }
+                },
+                "any": [
+                  {
+                    "type": "object",
+                    "keys": {
+                      "ref_id": {
+                        "type": "str",
+                        "prefix": "drift-panel:7f3a:a"
+                      }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "keys": {
+                      "ref_id": {
+                        "type": "str",
+                        "prefix": "drift-panel:7f3a:b"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          "consistency": []
+        }
+      }
+    },
+    "oracle_heuristic": {
+      "surface": "traffic-oracle heuristic summary (:8091)",
+      "latency_ms_max": 5000.0,
+      "observed_ms_at_baseline": 2.9,
+      "latency_floor_ms": 5000,
+      "justifications": {
+        "latency_floor": "cached summary 2.4ms, uncached SQL aggregate over the 10-min window 13.3ms (measured after the 60s valkey TTL expired). Floor 5s exists to catch connection/pool failure modes (restart loops, unreachable postgis) which take seconds \u2014 not query slowdown, which is already sub-second.",
+        "semantic_anchors": "Corridor status is a pure threshold function of avg_congestion_idx (traffic-oracle __main__.py: red if >0.7, amber if >0.4, else green). Anchor: status must equal classify(avg_congestion_idx) \u2014 the heuristic must not disagree with its own inputs, whatever the live values are."
+      },
+      "calls": {
+        "summary": {
+          "shape": {
+            "type": "object",
+            "keys": {
+              "total_segments": {
+                "type": "int",
+                "min": 0,
+                "max": 100000
+              },
+              "avg_speed_kmh": {
+                "type": "number",
+                "min": 0.0,
+                "max": 200.0
+              },
+              "avg_congestion_idx": {
+                "type": "number",
+                "min": 0.0,
+                "max": 1.0
+              },
+              "congested_segments": {
+                "type": "int",
+                "min": 0,
+                "max": 100000
+              },
+              "critical_segments": {
+                "type": "int",
+                "min": 0,
+                "max": 100000
+              },
+              "status": {
+                "type": "str",
+                "in": [
+                  "green",
+                  "amber",
+                  "red"
+                ]
+              }
+            }
+          },
+          "consistency": [
+            "status_matches_congestion_thresholds"
+          ]
+        }
+      }
+    }
+  }
+}

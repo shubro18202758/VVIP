@@ -1,0 +1,53 @@
+{
+ "dispatch_id": "8acf575f-84ef-4eb2-babb-86a4a0eea667",
+ "event_id": "3ef08290-66d8-511b-a25a-3d2967c79985",
+ "agency": "jan_rakshak",
+ "agency_label": "Jan Rakshak",
+ "unit_id": "JR-EM-01",
+ "statuses": [
+  "requested",
+  "approved",
+  "en_route",
+  "on_scene"
+ ],
+ "audit": [
+  [
+   null,
+   "requested",
+   "God's Eye Morning showcase"
+  ],
+  [
+   "requested",
+   "approved",
+   "Duty Officer R. Mehta (God's Eye Morning)"
+  ],
+  [
+   "approved",
+   "en_route",
+   "Duty Officer R. Mehta (God's Eye Morning)"
+  ],
+  [
+   "en_route",
+   "on_scene",
+   "Duty Officer R. Mehta (God's Eye Morning)"
+  ]
+ ],
+ "projected_unit": {
+  "unit_id": "JR-EM-01",
+  "dispatch_id": "8acf575f-84ef-4eb2-babb-86a4a0eea667",
+  "agency": "jan_rakshak",
+  "label": "Jan Rakshak \u00b7 JR-EM-01",
+  "assigned_event_id": "3ef08290-66d8-511b-a25a-3d2967c79985",
+  "status": "on_scene",
+  "emulated": true,
+  "source": "emulated_dispatch_projection",
+  "position": [
+   72.585,
+   23.02
+  ],
+  "progress": 1.0,
+  "eta_sec": 0.0,
+  "arrived": true,
+  "speed_kmh": 46.14
+ }
+}

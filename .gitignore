@@ -1,6 +1,7 @@
 # Dependencies
 node_modules/
 .venv/
+.venvs/
 __pycache__/
 *.pyc
 *.pyo
@@ -39,8 +40,19 @@ yarn-debug.log*
 # ONNX model binaries (large files)
 *.onnx
 
+# Clone-local model experiments (downloaded artifacts + their NOTICEs;
+# the sanctioned home per the models-local policy — never committed)
+models-local/
+
 # Vite cache
 .vite/
 
 # Bun
 bun.lockb
+
+# Host-shared model home — a symlink into this host's original-stack models
+# dir (machine glue like .venvs; the configs previously tracked under
+# models/ moved there 2026-10-13, recorded as deletions). Never committed.
+/models
+.mimosa/
+.run-models/

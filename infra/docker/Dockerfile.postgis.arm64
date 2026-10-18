@@ -1,0 +1,19 @@
+# VVIP PostGIS image — arm64 (GB10) build of infra/docker/Dockerfile.postgis.
+#
+# Why this file exists: infra/docker/Dockerfile.postgis is FROM
+# postgis/postgis:17-3.5, which publishes no linux/arm64 manifest (verified
+# on this GB10: `docker build` of that Dockerfile fails with "no match for
+# platform in manifest"). This file reuses the recipe proven by
+# services/embedding-service/tests/Dockerfile.migtest (image
+# veer-postgis-pgvector-migtest, built and running on this host): the
+# pgvector/pgvector:pg16 base is multi-arch, and Debian's
+# postgresql-16-postgis-3 + postgresql-16-pgrouting provide the same
+# PostGIS + pgRouting + pgvector extension stack the migrations require.
+# The migrations contain no PG17-specific syntax (Dockerfile.migtest
+# header documents the same verification).
+FROM pgvector/pgvector:pg16
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    postgresql-16-postgis-3 \
+    postgresql-16-pgrouting \
+ && rm -rf /var/lib/apt/lists/*

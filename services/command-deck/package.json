@@ -36,6 +36,7 @@
     "@deck.gl/layers": "^9.1.0",
     "@deck.gl/aggregation-layers": "^9.1.0",
     "@deck.gl/geo-layers": "^9.1.0",
-    "@deck.gl/mapbox": "^9.1.0"
+    "@deck.gl/mapbox": "^9.1.0",
+    "cesium": "^1.146.0"
   }
 }

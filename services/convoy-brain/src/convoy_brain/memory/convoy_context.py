@@ -27,12 +27,24 @@ CONTEXT_TTL_SEC = 86400  # 24 hours — auto-expire after movement completion
 
 @dataclass
 class ConvoyContext:
-    """In-memory representation of an active convoy movement's state."""
+    """In-memory representation of an active corridor event's state.
+
+    The id may be a legacy movement id or a corridor-event id — both are
+    corridor subjects; ``event_kind``/``crowd_class`` carry the public-
+    event profile (defaults keep the protected-movement base case
+    byte-identical through serialization).
+    """
 
     movement_id: str
     vvip_class: str
     status: str = "planning"  # planning | approved | active | completed
     selected_route_id: str | None = None
+    # Event-agnostic profile (core re-engineering, additive).
+    event_kind: str = "protected_movement"
+    crowd_class: str = "LOW"
+    # Adaptive tier's situation classification for this movement (baseline
+    # until the SituationEngine publishes otherwise).
+    situation_class: str = "baseline"
     convoy_position: tuple[float, float] | None = None  # (lon, lat)
     convoy_speed_kmh: float = 0.0
     active_diversions: list[str] = field(default_factory=list)

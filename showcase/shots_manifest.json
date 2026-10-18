@@ -1,0 +1,80 @@
+{
+  "chrome": "/home/sandy050405/.cache/puppeteer/chrome/linux_arm-153.0.8010.36/chrome-linux-arm64/chrome",
+  "origin": "http://127.0.0.1:5173",
+  "pursuitTitle": "PURSUIT — stolen GJ27EM9001 (FIR 4401/2026, Kalupur PS)",
+  "shots": {
+    "pursuit": {
+      "checks": {
+        "flagged-vehicle-live": {
+          "ok": true,
+          "detail": "vehicles feed=? vehicleId=9a030e3e-8429-4444-8a7d-534267345748"
+        },
+        "trace-positions": {
+          "ok": true,
+          "detail": "points=76 source=emulated_anpr"
+        }
+      }
+    },
+    "pursuitTrace": {
+      "checks": {
+        "phase-ready": {
+          "ok": true,
+          "detail": "phase=ready"
+        },
+        "entities-rendered": {
+          "ok": true,
+          "detail": "entities=38 layers=[events,traces,signals,units]"
+        },
+        "live-layer-on": {
+          "ok": true,
+          "detail": "layer=traces liveVehicles=1"
+        },
+        "vehicles-feed-live": {
+          "ok": true,
+          "detail": "vehicles=1"
+        },
+        "live-canvas-nonblank": {
+          "ok": true,
+          "detail": "distinct colours=865"
+        },
+        "png-nonblank": {
+          "ok": true,
+          "detail": "png colours=2928 opaque=100.0%"
+        }
+      },
+      "file": "showcase_pursuit_trace.png"
+    },
+    "citizen": {
+      "checks": {
+        "advisory-rendered": {
+          "ok": true,
+          "detail": "kicker=\"Your road, next 2 hours\" strip=watch"
+        },
+        "live-restriction-shown": {
+          "ok": true,
+          "detail": "16 live-source event card(s) of 16 (live corridor restriction rendered)"
+        },
+        "content-present": {
+          "ok": true,
+          "detail": "body text 2522 chars"
+        },
+        "png-nonblank": {
+          "ok": true,
+          "detail": "png colours=1095 opaque=100.0%"
+        }
+      },
+      "file": "showcase_citizen_advisory.png"
+    }
+  },
+  "pursuitFeed": {
+    "found": true,
+    "traceOk": true,
+    "vehicleId": "9a030e3e-8429-4444-8a7d-534267345748",
+    "points": 76,
+    "source": "emulated_anpr",
+    "centroid": [
+      72.58427275000001,
+      23.02409994736842
+    ]
+  }
+}

@@ -1,0 +1,26 @@
+[
+ {
+  "n": 1,
+  "effective_class": "RED",
+  "transitioned": false,
+  "previous_class": "RED"
+ },
+ {
+  "n": 2,
+  "effective_class": "RED",
+  "transitioned": false,
+  "previous_class": "RED"
+ },
+ {
+  "n": 3,
+  "effective_class": "RED",
+  "transitioned": false,
+  "previous_class": "RED"
+ },
+ {
+  "n": 4,
+  "effective_class": "GREEN",
+  "transitioned": true,
+  "previous_class": "RED"
+ }
+]

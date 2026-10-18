@@ -166,8 +166,29 @@ const VVIPDashboard = ({ navigate }) => {
 
         {/* Search Bar (Center) */}
         <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '12px' }}>
-          <SearchBar onSelect={(item) => console.log("Selected:", item)} />
-          <button 
+            <SearchBar onSelect={(item) => console.log("Selected:", item)} />
+          <button
+            onClick={() => navigate('citizen-advisory')}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              padding: '8px 18px',
+              background: 'linear-gradient(135deg, #16a34a 0%, #15803d 100%)',
+              color: 'white',
+              border: 'none',
+              borderRadius: '10px',
+              cursor: 'pointer',
+              fontWeight: 700,
+              fontSize: '12px',
+              transition: 'all 0.2s',
+              boxShadow: '0 2px 8px rgba(22, 163, 74, 0.25)',
+              letterSpacing: '0.5px',
+            }}
+          >
+            🔔 CITIZEN ALERTS
+          </button>
+          <button
             onClick={() => navigate('comms')}
             style={{
               display: 'flex',

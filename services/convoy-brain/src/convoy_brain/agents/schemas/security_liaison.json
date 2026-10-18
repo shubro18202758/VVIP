@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SecurityLiaisonValidation",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "compliant",
+    "violations",
+    "warnings",
+    "recommendations",
+    "security_score",
+    "confidence"
+  ],
+  "properties": {
+    "compliant": { "type": "boolean" },
+    "violations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["segment_id", "rule", "detail", "severity"],
+        "properties": {
+          "segment_id": { "type": "integer" },
+          "rule": { "type": "string" },
+          "detail": { "type": "string" },
+          "severity": { "type": "string", "enum": ["low", "medium", "high", "critical"] }
+        }
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["segment_id", "concern"],
+        "properties": {
+          "segment_id": { "type": "integer" },
+          "concern": { "type": "string" }
+        }
+      }
+    },
+    "recommendations": { "type": "array", "items": { "type": "string" } },
+    "security_score": { "type": "number" },
+    "confidence": { "type": "string", "enum": ["high", "medium", "low"] }
+  }
+}

@@ -1,0 +1,38 @@
+# Emulator stream compose stanza (contract C8: emulator-owned file, no
+# shared-file edits).  Run layered over the base fleet:
+#   docker compose -f infra/compose.yml -f infra/compose.event-emulator.yml up -d event-emulator
+#
+# Loopback demo topology (contract C5/C6): the emulator talks to the
+# traffic-oracle twin seam via http://traffic-oracle:8081 — a fixed internal
+# endpoint enforced by safe_http.assert_internal_endpoint's allowlist
+# (localhost / host.docker.internal).  Because the in-network hostname is
+# NOT on that allowlist, the stanza maps the oracle URL to a loopback
+# alias: the emulator container reaches the host-mapped :8081 through
+# host.docker.internal, which IS on the allowlist.
+services:
+  event-emulator:
+    build:
+      context: ../services/event-emulator
+      dockerfile: ../../infra/docker/Dockerfile.event-emulator
+    container_name: vvip-event-emulator
+    environment:
+      VVIP_DATABASE_URL: postgresql://corridor_admin:${POSTGIS_PASSWORD:-dev_changeme}@postgis:5432/corridor_db
+      VVIP_VALKEY_URL: redis://valkey:6379
+      VVIP_NATS_URL: nats://nats:4222
+      # fixed internal endpoint (config constant) — loopback-allowlisted host
+      EMULATOR_TRAFFIC_ORACLE_URL: http://host.docker.internal:8081
+    ports:
+      - "8090:8090"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      postgis:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+      traffic-oracle:
+        condition: service_started
+    deploy:
+      resources:
+        limits:
+          memory: 512M

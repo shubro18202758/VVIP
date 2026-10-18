@@ -1,8 +1,8 @@
 """Traffic Oracle entry point — ``python -m traffic_oracle``.
 
-Starts an HTTP server (FastAPI / Uvicorn) that exposes all 15 API
-endpoints expected by convoy-brain's ToolExecutor and direct frontend
-calls via Vite proxy.
+Starts an HTTP server (FastAPI / Uvicorn) that exposes the traffic API
+expected by convoy-brain's ToolExecutor and direct frontend calls via
+the Vite proxy, plus the adaptive (T2) and simulation (C5) routers.
 
 Endpoints:
     POST /api/v1/predict/flow           → DSTGAT flow forecaster
@@ -20,6 +20,11 @@ Endpoints:
     GET  /api/v1/corridor/summary       → Corridor conditions
     GET  /api/v1/traffic/history/{id}   → 24h segment history
     GET  /api/v1/movements/active       → Active convoy movements
+    GET  /api/v1/adaptive/params        → C4 adaptive parameters
+    GET  /api/v1/adaptive/status        → degradation + situations
+    POST /api/v1/adaptive/observe       → feed one situation observation
+    POST /api/v1/simulate/twin          → C5 twin (simulation router)
+    POST /api/v1/simulate/replay        → C5 calibration (simulation router)
     GET  /health                        → Readiness probe
     GET  /metrics                       → Prometheus metrics
 """
@@ -36,9 +41,15 @@ from typing import AsyncIterator
 import asyncpg
 import structlog
 import uvicorn
-from fastapi import FastAPI, HTTPException, Query, Request, Response
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field
 
+from traffic_oracle.adaptive.engine_loop import start_situation_engine
+from traffic_oracle.adaptive.persistence import AsyncpgPersister
+from traffic_oracle.adaptive.router import router as adaptive_router
+from traffic_oracle.adaptive.service import AdaptiveService
+from traffic_oracle.adaptive.twin import build_twin_port
+from traffic_oracle.adaptive.valkey_mirror import LoggingValkeySink
 from traffic_oracle.data.cache import TrafficCache
 from traffic_oracle.data.config import Settings
 from traffic_oracle.data.graph_queries import CorridorGraphDB
@@ -49,13 +60,33 @@ from traffic_oracle.metrics import (
     get_metrics_response,
     record_api_request,
 )
-from traffic_oracle.optimize.corridor_router import CorridorRouter
+from traffic_oracle.optimize.corridor_router import (
+    CorridorRouter,
+    _segment_quantiles_from_row,
+)
 from traffic_oracle.optimize.diversion_planner import DiversionPlanner
+from traffic_oracle.optimize.quantile_objective import (
+    SegmentQuantiles,
+    eta_band_seconds,
+)
 from traffic_oracle.predict.eta_model import ETAPredictor
 from traffic_oracle.predict.flow_forecaster import FlowForecaster
 from traffic_oracle.runtime.gpu_arbiter import GpuArbiter
 
 logger = structlog.get_logger(__name__)
+
+# C7 ordering contract: the simulation stream lands simulation/router.py
+# and simulation/twin.py (stub-safe).  Import defensively so this service
+# still boots if the ordering is violated in a working tree.
+try:  # pragma: no cover - depends on parallel stream landing order
+    from traffic_oracle.simulation.router import router as simulation_router
+except ImportError:  # pragma: no cover
+    simulation_router = None
+    logger.warning(
+        "traffic_oracle.startup",
+        msg="simulation.router not importable yet (C7 ordering) — "
+        "twin endpoints unavailable, adaptive shadow-eval fails closed",
+    )
 
 # ---------------------------------------------------------------------------
 # Request / response schemas
@@ -76,6 +107,12 @@ class ETAPredictRequest(BaseModel):
     dow: int
     num_signals: int = 0
     weighted_road_class_score: float = 50.0
+    # Optional ETA-band inputs (additive): when segment_ids is given the
+    # endpoint additionally computes an honest p10/p50/p90 band from the
+    # quantile forecast stream (lengths from the graph DB, quantiles from
+    # the app.state provider).  Aggregates above stay the point payload.
+    segment_ids: list[int] | None = None
+    horizon_min: int = 5
 
 
 class RouteOptimizeRequest(BaseModel):
@@ -124,6 +161,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         cache=cache,
         graph_db=graph_db,
         arbiter=arbiter,
+        support_bounds_path=settings.FORECAST_SUPPORT_BOUNDS_PATH,
+        foundation_model_path=settings.FOUNDATION_MODEL_PATH,
     )
 
     eta_predictor = ETAPredictor()
@@ -140,6 +179,19 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         eta_predictor=eta_predictor,
     )
 
+    # --- adaptive (T2) wiring: service + situation-engine startup hook (C7)
+    import valkey.asyncio as valkey_async
+
+    adaptive_valkey = valkey_async.from_url(
+        settings.VALKEY_URL, decode_responses=True
+    )
+    adaptive_service = AdaptiveService(
+        clock=time.monotonic,
+        sink=LoggingValkeySink(adaptive_valkey),
+        persister=AsyncpgPersister(pool),
+        twin_port=build_twin_port(app),
+    )
+
     app.state.pool = pool
     app.state.cache = cache
     app.state.graph_db = graph_db
@@ -150,6 +202,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.router = router
     app.state.diversion_planner = diversion_planner
     app.state.scenario_sim = scenario_sim
+    app.state.adaptive = adaptive_service
+    app.state.adaptive_valkey = adaptive_valkey
+    # Quantile stream for the ETA band: produced from the live forecaster
+    # through the shared mapping layer (never test-only wiring — absent
+    # only when the lifespan itself did not run, e.g. bare TestClients).
+    app.state.forecast_quantiles = build_forecast_quantiles_provider(forecaster)
 
     logger.info(
         "traffic_oracle.startup",
@@ -157,21 +215,188 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         valkey=settings.VALKEY_URL,
     )
 
+    # Situation-engine startup hook: classify active movements, publish
+    # situation:changed transitions, mirror adaptive params.
+    engine_loop = start_situation_engine(
+        app, adaptive_service, valkey_client=adaptive_valkey
+    )
+
     yield
 
+    await engine_loop.stop()
+    await adaptive_valkey.aclose()
     await cache.close()
     await pool.close()
     logger.info("traffic_oracle.shutdown")
+
+
+def build_forecast_quantiles_provider(forecaster: FlowForecaster):
+    """Production quantile provider for the ETA band (app.state hook).
+
+    Wraps the forecaster's point-shaped ``predict`` and maps each row's
+    optional ``quantiles`` object (the shared forecast-quantiles
+    contract) into the producer-agnostic ``SegmentQuantiles`` values the
+    leaf consumes — via the SAME thin mapping layer the corridor router
+    uses (``_segment_quantiles_from_row``), so a producer shape change
+    adapts one layer for both consumers.  Rows without the object are
+    absent from the mapping; ``eta_band_seconds`` then degrades with the
+    labelled reason (point-only producers never fabricate a spread).
+    """
+
+    async def provider(
+        segment_ids: list[int], horizon_min: int
+    ) -> dict[int, SegmentQuantiles]:
+        forecasts = await forecaster.predict(list(segment_ids), [horizon_min])
+        stream: dict[int, SegmentQuantiles] = {}
+        for sid, preds in forecasts.items():
+            row = preds.get(horizon_min) if isinstance(preds, dict) else None
+            if row is None:
+                continue
+            quantiles = _segment_quantiles_from_row(sid, horizon_min, row)
+            if quantiles is not None:
+                stream[sid] = quantiles
+        return stream
+
+    return provider
+
+
+async def _compute_eta_band(
+    app: FastAPI, segment_ids: list[int], horizon_min: int
+) -> tuple[dict | None, str | None]:
+    """Optional ETA band from the quantile forecast stream.
+
+    Returns ``(band_payload, None)`` when an honest p10/p50/p90 band was
+    computed (all requested segments covered by a monotone quantile
+    stream; lengths from the graph DB), else ``(None, reason)`` with the
+    precise labelled degradation reason.  The band rides additive-only
+    response fields — the two-key point payload is untouched.  The
+    provider is wired by the service lifespan from the live forecaster
+    (``build_forecast_quantiles_provider``); in test contexts without a
+    lifespan it is absent and degrades to ``no_quantile_stream``, never a
+    fabricated spread.
+    """
+    provider = getattr(app.state, "forecast_quantiles", None)
+    if provider is None:
+        return None, "no_quantile_stream"
+    pool = getattr(app.state, "pool", None)
+    if pool is None:
+        return None, "no_quantile_stream"
+    try:
+        quantiles = await provider(segment_ids, horizon_min)
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT segment_id, ST_Length(geom::geography) AS length_m
+                FROM corridor.road_segments
+                WHERE segment_id = ANY($1)
+                """,
+                list(segment_ids),
+            )
+    except Exception as exc:  # provider/DB failure degrades, never 500s the ETA
+        logger.warning("predict_eta.band_unavailable", error=str(exc))
+        return None, "no_quantile_stream"
+    if not quantiles:
+        return None, "no_quantile_stream"
+    lengths = {r["segment_id"]: float(r["length_m"]) for r in rows}
+    outcome = eta_band_seconds(lengths, quantiles, list(segment_ids))
+    if outcome.band is None:
+        logger.info("predict_eta.band_degraded", reason=outcome.reason)
+        return None, outcome.reason or "no_quantile_stream"
+    band = outcome.band
+    return (
+        {
+            "p10_sec": round(band.p10_sec, 1),
+            "p50_sec": round(band.p50_sec, 1),
+            "p90_sec": round(band.p90_sec, 1),
+            "source": band.source,
+        },
+        None,
+    )
 
 
 def create_app() -> FastAPI:
     """Build the FastAPI application with all traffic-oracle endpoints."""
     app = FastAPI(
         title="Traffic Oracle",
-        version="0.1.0",
+        version="0.2.0",
         description="Predictive traffic modeling API for VVIP corridor planning",
         lifespan=lifespan,
     )
+
+    # --- adaptive (T2) router: C4 params + status + observe ---------------
+    app.include_router(adaptive_router, prefix="/api/v1")
+
+    # --- events (007) router: event-agnostic corridor events --------------
+    # POST /api/v1/events + GET /api/v1/events/active; rows land in
+    # events.corridor_events which the situation-engine loop polls.
+    from traffic_oracle.events import router as events_router
+
+    app.include_router(events_router)
+
+    # --- simulation (C5) router: twin + replay -----------------------------
+    # C7 ordering contract: mounted when the simulation stream has landed
+    # its router (it carries its own "/api/v1/simulate" prefix); until
+    # then the twin endpoints are absent and adaptive shadow-eval fails
+    # closed to baseline params.
+    # C7 writer-gate (signalling stream): every twin request holds the
+    # shared half of the signal-policy gate for its full lifecycle, so a
+    # city-plan writer commit can never interleave with an in-flight twin
+    # read of corridor.signal_programs (signals/gate.py).
+    _twin_gate_deps = []
+    try:
+        from traffic_oracle.signals.gate import twin_in_flight as _twin_in_flight
+
+        _twin_gate_deps = [Depends(_twin_in_flight)]
+    except ImportError:  # pragma: no cover - tree-safety
+        pass
+    if simulation_router is not None:
+        app.include_router(simulation_router, dependencies=_twin_gate_deps)
+
+    # --- signalling-janrakshak stream (011): city signals + agency units --
+    # Real routers mount here so the C0 coordination stubs for
+    # /signals/state, /units and /adaptive/situation_log self-skip (they
+    # only mount when the path does not already exist).  Guarded imports
+    # keep the tree bootable regardless of landing order.
+    try:
+        from traffic_oracle.signals.router import router as signals_router
+
+        app.include_router(signals_router)
+    except ImportError as exc:  # pragma: no cover - tree-safety
+        logger.warning(
+            "traffic_oracle.startup",
+            msg="signals.router not importable (signalling stream)",
+            error=str(exc),
+        )
+    try:
+        from traffic_oracle.units.router import router as units_router
+
+        app.include_router(units_router)
+    except ImportError as exc:  # pragma: no cover - tree-safety
+        logger.warning(
+            "traffic_oracle.startup",
+            msg="units.router not importable (signalling stream)",
+            error=str(exc),
+        )
+    try:
+        from traffic_oracle.adaptive.surfacing import (
+            router as adaptive_surfacing_router,
+        )
+
+        app.include_router(adaptive_surfacing_router, prefix="/api/v1")
+    except ImportError as exc:  # pragma: no cover - tree-safety
+        logger.warning(
+            "traffic_oracle.startup",
+            msg="adaptive.surfacing not importable (signalling stream)",
+            error=str(exc),
+        )
+
+    # --- C0 coordination: one shared registration site for stream routers
+    # (watchlist-anpr's vehicles/enforcement/pursuit real; signals / units /
+    # situation_log degrade to 503 'not deployed' stubs until their owning
+    # streams land — the tree always boots, streams never collide here).
+    from traffic_oracle.coordination import register_coordination_routers
+
+    register_coordination_routers(app)
 
     # -------------------------------------------------------------------
     # Middleware — request metrics
@@ -232,12 +457,25 @@ def create_app() -> FastAPI:
                 road_class_score=req.weighted_road_class_score,
             )
             if not predictor._is_fitted:
-                # Fallback: simple distance / speed estimate
+                # Fallback: simple distance / speed estimate.  The fallback
+                # branch never gets a band (no model, no honest spread).
                 speed_ms = max(req.avg_predicted_speed * 1000 / 3600, 0.1)
                 eta_sec = req.route_length_m / speed_ms
                 return {"eta_seconds": round(eta_sec, 1), "model": "fallback"}
             eta = predictor.predict(features)
-            return {"eta_seconds": round(float(eta[0]), 1), "model": "histgbt"}
+            body: dict = {"eta_seconds": round(float(eta[0]), 1), "model": "histgbt"}
+            # Optional band (additive-only): present only when computed
+            # from the quantile stream; the labelled reason is present
+            # only when a band was requested but unavailable.
+            if req.segment_ids is not None:
+                band, band_reason = await _compute_eta_band(
+                    app, req.segment_ids, req.horizon_min
+                )
+                if band is not None:
+                    body["eta_band"] = band
+                else:
+                    body["eta_band_reason"] = band_reason
+            return body
         except Exception as exc:
             logger.error("predict_eta.failed", error=str(exc))
             raise HTTPException(status_code=500, detail=str(exc))
@@ -256,20 +494,26 @@ def create_app() -> FastAPI:
                 max_candidates=req.max_candidates,
                 avoid_segments=req.avoid_segments or None,
             )
-            return {
-                "routes": [
-                    {
-                        "route_id": c.route_id,
-                        "segment_ids": c.segment_ids,
-                        "total_distance_m": c.total_distance_m,
-                        "estimated_time_sec": c.estimated_time_sec,
-                        "disruption_score": c.disruption_score,
-                        "security_score": c.security_score,
-                        "composite_score": c.composite_score,
-                    }
-                    for c in candidates
-                ]
-            }
+            routes: list[dict] = []
+            for c in candidates:
+                route = {
+                    "route_id": c.route_id,
+                    "segment_ids": c.segment_ids,
+                    "total_distance_m": c.total_distance_m,
+                    "estimated_time_sec": c.estimated_time_sec,
+                    "disruption_score": c.disruption_score,
+                    "security_score": c.security_score,
+                    "composite_score": c.composite_score,
+                }
+                # Additive robust overlays: present only when the quantile
+                # stream drove the objective; today's keys (and their
+                # meaning) are untouched.
+                if c.estimated_time_p90_sec is not None:
+                    route["estimated_time_p90_sec"] = c.estimated_time_p90_sec
+                if c.disruption_p90 is not None:
+                    route["disruption_p90"] = c.disruption_p90
+                routes.append(route)
+            return {"routes": routes}
         except Exception as exc:
             logger.error("optimize_routes.failed", error=str(exc))
             raise HTTPException(status_code=500, detail=str(exc))

@@ -1,0 +1,11 @@
+{
+ "vehicle_id": "9a030e3e-8429-4444-8a7d-534267345748",
+ "plate": "GJ27EM9001",
+ "earmark_id": "5976a45c-7a08-4e90-873b-a321ca6a48a9",
+ "state": "flagged",
+ "reason": "STOLEN VEHICLE reported \u2014 FIR 4401/2026, Kalupur PS; God's Eye Morning flagship",
+ "lawful_basis": "stolen_vehicle_fir",
+ "earmarked_at": "2026-10-13T18:04:39.945771+00:00",
+ "retention_until": "2026-11-12T18:04:39.945771+00:00",
+ "retention_days": 30
+}

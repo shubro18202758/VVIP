@@ -12,34 +12,21 @@ Output: (B, N, 4, 2)     — (speed, congestion) at T+5, T+10, T+15, T+30 min
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 import torch
 import torch.nn as nn
 
 from traffic_oracle.predict.nn.congestion_gate import CongestionGate
+from traffic_oracle.predict.nn.config import DSTGATConfig
 from traffic_oracle.predict.nn.graph_attention import DynamicGATLayer
 from traffic_oracle.predict.nn.temporal_conv import (
     CausalTCNBlock,
     TemporalAttentionPooling,
 )
 
+__all__ = ["DSTGAT", "DSTGATConfig"]
 
-@dataclass
-class DSTGATConfig:
-    """Hyperparameters for the DSTGAT model."""
-
-    in_features: int = 8
-    hidden_dim: int = 64
-    tcn_kernel_size: int = 3
-    gat_layers: int = 3
-    gat_heads: int = 4
-    temporal_attention_heads: int = 2
-    n_horizons: int = 4
-    n_outputs: int = 2  # (speed, congestion)
-    dropout: float = 0.1
-    max_nodes: int = 200
-    lookback_steps: int = 12
+# DSTGATConfig is defined in the torch-free nn/config.py and re-exported
+# here for compatibility with `from ...nn.dstgat import DSTGATConfig`.
 
 
 class DSTGAT(nn.Module):

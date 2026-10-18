@@ -1,40 +1,25 @@
 [project]
 name = "convoy-brain"
-version = "0.1.0"
-description = "Agentic orchestration layer for VVIP convoy planning — powered by Qwen 3.5 9B via Ollama"
+version = "0.2.0"
+description = "Two-tier agentic orchestration for VVIP convoy planning — pplx-decider strategic tier + Gemma 4 12B tactical tier"
 requires-python = ">=3.12"
 license = "MIT"
 dependencies = [
-    # LLM agent framework — stateful multi-agent workflows
-    "langgraph>=0.3",
-    "langchain-core>=0.3",
-    "langchain-community>=0.3",
-
-    # Ollama Python client for local LLM inference
-    "ollama>=0.4",
-
-    # Database access (shared with traffic-oracle)
-    "asyncpg>=0.30",
-    "sqlalchemy[asyncio]>=2.0",
-    "geoalchemy2>=0.16",
-
     # Real-time state
     "valkey>=6.0",
-    "nats-py>=2.9",
 
     # Geospatial utilities
     "shapely>=2.0",
     "geojson>=3.1",
 
     # Data handling
-    "polars>=1.15",
     "pydantic>=2.10",
     "pydantic-settings>=2.6",
 
     # Structured logging
     "structlog>=24.4",
 
-    # HTTP client for inter-service calls
+    # HTTP client for inter-service calls (llama-server, model-host, oracle)
     "httpx>=0.28",
 
     # Web server
@@ -71,3 +56,7 @@ select = ["E", "F", "I", "N", "UP", "B", "SIM", "TCH"]
 [tool.mypy]
 python_version = "3.12"
 strict = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

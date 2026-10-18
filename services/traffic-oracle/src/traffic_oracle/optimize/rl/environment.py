@@ -1,25 +1,62 @@
-"""Gymnasium-compatible corridor signal environment for RL training.
+"""Gymnasium environments for corridor RL training.
 
-Simulates K ≤ 20 traffic signals along a convoy corridor.  The agent
-controls signal phases to create a green wave for the convoy while
-minimizing disruption to public traffic.
+Two environments live here:
 
-Step resolution: 5 simulated seconds.
-Max episode length: 600 steps (50 minutes simulated).
+``SignalCorridorEnv``
+    The original K-signal green-wave environment (K ≤ 20 signals,
+    5-second step resolution, 600-step episodes).  Logic unchanged from
+    v1; only the import surface was reworked.
+
+``TwinCorridorEnv``
+    A thin gymnasium adapter around the simulation stream's plain-Python
+    ``simulation.twin.TwinEnv`` (contract C5): the twin exposes
+    ``reset(seed) -> obs``, ``step(action) -> (obs, reward, done, info)``
+    and an ``is_stub: bool`` flag, and must never import gymnasium
+    itself.  This wrapper owns all gymnasium vocabulary (spaces, the
+    5-tuple step contract, truncation bookkeeping).
+
+Import-graph note (red-team F3): ``gymnasium`` is an adaptive-stream
+dependency declared in pyproject.toml, but this module remains importable
+without it — ``GYMNASIUM_AVAILABLE`` is False and constructing either
+environment then raises a clear RuntimeError instead of an ImportError at
+module import time.  This is what lets the traffic-oracle import graph
+load in minimal environments.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from typing import Any
 
-import gymnasium as gym
 import numpy as np
 import structlog
-from gymnasium import spaces
 
 from traffic_oracle.optimize.rl.reward import compute_signal_reward
 
+try:  # pragma: no cover - depends on environment
+    import gymnasium as gym
+    from gymnasium import spaces
+
+    GYMNASIUM_AVAILABLE = True
+except ImportError:  # pragma: no cover - depends on environment
+    gym = None  # type: ignore[assignment]
+    spaces = None  # type: ignore[assignment]
+    GYMNASIUM_AVAILABLE = False
+
 logger = structlog.get_logger(__name__)
+
+# Base class that keeps the module importable when gymnasium is absent.
+_GymEnvBase = gym.Env if GYMNASIUM_AVAILABLE else object
+
+
+def _require_gymnasium() -> None:
+    if not GYMNASIUM_AVAILABLE:
+        raise RuntimeError(
+            "gymnasium is required for RL environments but is not "
+            "installed in this environment (it is declared in "
+            "services/traffic-oracle/pyproject.toml)"
+        )
+
 
 # Physical constants used in the simplified queuing model
 ARRIVAL_RATE_VPS = 0.3  # vehicles per second arriving at each signal
@@ -52,7 +89,7 @@ class ConvoyState:
     delay_this_step_sec: float = 0.0
 
 
-class SignalCorridorEnv(gym.Env):
+class SignalCorridorEnv(_GymEnvBase):
     """Simulated corridor of K traffic signals with convoy traversal.
 
     Observation per signal (K, 6):
@@ -78,7 +115,9 @@ class SignalCorridorEnv(gym.Env):
         convoy_speed_kmh: float = 60.0,
         seed: int | None = None,
     ) -> None:
-        super().__init__()
+        _require_gymnasium()
+        if GYMNASIUM_AVAILABLE:
+            super().__init__()
 
         self.n_signals = min(n_signals, 20)
         self.corridor_length_m = corridor_length_m
@@ -104,7 +143,8 @@ class SignalCorridorEnv(gym.Env):
         options: dict | None = None,
     ) -> tuple[np.ndarray, dict]:
         """Reset episode: re-initialize signals and place convoy at start."""
-        super().reset(seed=seed)
+        if GYMNASIUM_AVAILABLE:
+            super().reset(seed=seed)
         if seed is not None:
             self._rng = np.random.default_rng(seed)
 
@@ -229,7 +269,7 @@ class SignalCorridorEnv(gym.Env):
                     QUEUE_DISCHARGE_RATE_VPS * STEP_DURATION_SEC,
                     sig.queue_vehicles,
                 )
-                sig.queue_vehicles = max(0, sig.queue_vehicles - discharged)
+                sig.queue_vehicles = max(0.0, sig.queue_vehicles - discharged)
 
             # Delay = queue_vehicles * step_duration (vehicle-seconds)
             total_delay += sig.queue_vehicles * STEP_DURATION_SEC
@@ -315,3 +355,146 @@ class SignalCorridorEnv(gym.Env):
                 max(s.queue_vehicles * AVG_VEHICLE_LENGTH_M for s in self._signals), 1
             ) if self._signals else 0.0,
         }
+
+
+# ---------------------------------------------------------------------------
+# TwinEnv adapter (contract C5)
+# ---------------------------------------------------------------------------
+
+
+class TwinCorridorEnv(_GymEnvBase):
+    """Gymnasium wrapper around the simulation stream's plain TwinEnv.
+
+    The twin is a black box with the C5 surface:
+        reset(seed) -> obs
+        step(action) -> (obs, reward, done, info)
+        is_stub: bool
+    This adapter translates to the gymnasium 5-tuple
+    ``(obs, reward, terminated, truncated, info)``; ``truncated`` is
+    raised when the wrapper's own ``max_steps`` budget is exhausted
+    (the twin only reports ``done``).
+
+    Spaces are built lazily from the first observation, so the wrapper
+    works regardless of the twin's observation encoding (any object
+    convertible to a float array).
+    """
+
+    metadata = {"render_modes": []}
+
+    def __init__(
+        self,
+        twin: Any | None = None,
+        max_steps: int = MAX_STEPS,
+        seed: int | None = None,
+    ) -> None:
+        _require_gymnasium()
+        if GYMNASIUM_AVAILABLE:
+            super().__init__()
+        self._twin = twin
+        self._max_steps = max_steps
+        self._seed = seed
+        self._step_count = 0
+        self.observation_space: Any = None
+        self.action_space: Any = None
+        if twin is not None and getattr(twin, "is_stub", False):
+            raise RuntimeError(
+                "TwinCorridorEnv cannot train on a stub twin "
+                "(simulation.twin.TwinEnv.is_stub is True)"
+            )
+
+    # -- twin construction -----------------------------------------------------
+
+    @classmethod
+    def from_simulation(cls, **kwargs: Any) -> TwinCorridorEnv:
+        """Build a TwinEnv from the simulation package (defensive import).
+
+        Returns None-equivalent failure as RuntimeError: callers in the
+        adaptive stream must fail closed, but an RL *training* entrypoint
+        fails loudly instead.
+        """
+        try:
+            from traffic_oracle.simulation.twin import TwinEnv  # type: ignore
+        except ImportError as exc:
+            raise RuntimeError(
+                "simulation.twin.TwinEnv is not available (simulation "
+                "stream not landed or not installed)"
+            ) from exc
+        twin = TwinEnv(**kwargs) if kwargs else TwinEnv()
+        return cls(twin=twin)
+
+    @property
+    def twin_is_stub(self) -> bool:
+        return bool(getattr(self._twin, "is_stub", False))
+
+    # -- gym API ----------------------------------------------------------------
+
+    def _coerce_obs(self, obs: Any) -> np.ndarray:
+        arr = np.asarray(obs, dtype=np.float32)
+        if arr.ndim == 0:
+            arr = arr.reshape(1)
+        return arr
+
+    def _build_spaces(self, obs: np.ndarray) -> None:
+        if self.observation_space is None and spaces is not None:
+            self.observation_space = spaces.Box(
+                low=-np.inf,
+                high=np.inf,
+                shape=obs.shape,
+                dtype=np.float32,
+            )
+            # Action space must be supplied by the caller (twin semantics
+            # are simulation-owned); default to a Discrete(1) placeholder
+            # so gym API contract checks still pass.
+            self.action_space = spaces.Discrete(1)
+
+    def set_action_space(self, action_space: Any) -> None:
+        """Inject the twin-appropriate action space (caller-owned)."""
+        self.action_space = action_space
+
+    def reset(
+        self,
+        *,
+        seed: int | None = None,
+        options: dict | None = None,
+    ) -> tuple[np.ndarray, dict]:
+        if GYMNASIUM_AVAILABLE:
+            super().reset(seed=seed)
+        if self._twin is None:
+            raise RuntimeError("TwinCorridorEnv has no twin to reset")
+        eff_seed = seed if seed is not None else self._seed
+        obs = self._twin.reset(seed=eff_seed) if eff_seed is not None else self._twin.reset()
+        self._step_count = 0
+        obs_arr = self._coerce_obs(obs)
+        self._build_spaces(obs_arr)
+        info = {} if options is None else dict(options)
+        return obs_arr, info
+
+    def step(self, action: Any) -> tuple[np.ndarray, float, bool, bool, dict]:
+        if self._twin is None:
+            raise RuntimeError("TwinCorridorEnv has no twin to step")
+        self._step_count += 1
+        obs, reward, done, info = self._twin.step(action)
+        terminated = bool(done)
+        truncated = (not terminated) and self._step_count >= self._max_steps
+        return (
+            self._coerce_obs(obs),
+            float(reward),
+            terminated,
+            truncated,
+            dict(info) if info else {},
+        )
+
+
+__all__ = [
+    "ARRIVAL_RATE_VPS",
+    "AVG_VEHICLE_LENGTH_M",
+    "ConvoyState",
+    "GYMNASIUM_AVAILABLE",
+    "MAX_QUEUE_VEHICLES",
+    "MAX_STEPS",
+    "QUEUE_DISCHARGE_RATE_VPS",
+    "SignalCorridorEnv",
+    "SignalState",
+    "STEP_DURATION_SEC",
+    "TwinCorridorEnv",
+]

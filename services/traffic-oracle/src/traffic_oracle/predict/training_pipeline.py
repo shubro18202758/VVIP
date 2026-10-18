@@ -159,9 +159,9 @@ class TrainingPipeline:
                 self._cfg.lookback_steps, self._cfg.in_features,
             )
 
-            # Extract GAT embeddings for pgvector
+            # Extract GAT embeddings for the memory store
             if self._vector_store is not None and windows:
-                await self._extract_embeddings(model, dataset)
+                await self._extract_embeddings(model, dataset, windows[0].segment_ids)
 
             model_size_kb = fp32_path.stat().st_size / 1024
             return TrainingResult(
@@ -208,8 +208,20 @@ class TrainingPipeline:
         self,
         model: DSTGAT,
         dataset: TensorDataset,
+        segment_ids: list[int],
     ) -> None:
-        """Extract final GAT layer embeddings and store in pgvector."""
+        """Extract final GAT layer embeddings and store in pgvector.
+
+        C11 fix: embeddings used to be written to traffic.segment_embeddings
+        with pattern_type='gat_l3', which the CHECK constraint in
+        002_graph_extensions.sql rejects (allowed: daily_profile,
+        weekly_profile, event_response, incident_response). They are now
+        stored via store_memory_embedding into traffic.memory_segment_embeddings
+        (migration 004) under model_name='dstgat_gat_l3', at the full GAT
+        hidden width (64), keyed by the real segment ids from the training
+        window instead of node indices (the legacy table FKs segment_id to
+        corridor.road_segments).
+        """
         model.eval()
         loader = DataLoader(dataset, batch_size=1)
 
@@ -223,14 +235,17 @@ class TrainingPipeline:
                 h, gate = model.congestion_gate(h)
                 for gat in model.gat_layers:
                     h = gat(h, adj[0], gate)
-                # h is (1, N, 64) — take mean over valid nodes as segment embedding
+                # h is (1, N, 64) — one embedding per valid node, mapped
+                # back to the real segment id from the training window
                 valid_mask = ~mask[0]
-                for j in range(h.shape[1]):
+                for j in range(min(h.shape[1], len(segment_ids))):
                     if valid_mask[j]:
-                        embeddings[j] = h[0, j, :24].tolist()  # dim=24 for pgvector
+                        embeddings[segment_ids[j]] = h[0, j, :].tolist()
                 break  # single batch for embeddings
 
-        for seg_idx, emb in embeddings.items():
-            await self._vector_store.store_embedding(seg_idx, "gat_l3", emb)
+        for seg_id, emb in embeddings.items():
+            await self._vector_store.store_memory_embedding(
+                seg_id, "dstgat_gat_l3", emb
+            )
 
         logger.info("training.embeddings_stored", count=len(embeddings))

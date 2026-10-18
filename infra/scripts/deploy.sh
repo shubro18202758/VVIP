@@ -41,32 +41,30 @@ preflight() {
         warn "  NVIDIA Container Toolkit not available — traffic-oracle will use CPU-only mode"
     fi
 
-    # Ollama (runs on host, not in container)
-    if command -v ollama &>/dev/null; then
-        if curl -sf http://localhost:11434/api/tags &>/dev/null; then
-            log "  Ollama: running"
-            if curl -sf http://localhost:11434/api/tags | grep -q "qwen3.5:9b-q4_K_M"; then
-                log "  Qwen 3.5 9B model: loaded"
-            else
-                warn "  Qwen model not found. Run: ollama pull qwen3.5:9b-q4_K_M"
-            fi
+    # Model hosts (GB10 unified-memory stack; qwen/ollama orchestration retired)
+    local mh_url="${MODEL_HOST_URL:-http://127.0.0.1:8083}"
+    local llama_url="${LLAMA_BASE_URL:-http://127.0.0.1:8084}"
+    local embed_url="${EMBEDDING_SERVICE_URL:-http://127.0.0.1:8085}"
+    for spec in "model-host:$mh_url/decider/health" "llama-server:$llama_url/health" "embedding-service:$embed_url/health"; do
+        local name="${spec%%:*}" url="${spec#*:}"
+        if curl -sf --max-time 3 "$url" >/dev/null 2>&1; then
+            log "  $name: running ($url)"
         else
-            warn "  Ollama installed but not running. Run: ollama serve"
+            warn "  $name not healthy ($url). Run: ./infra/scripts/serve_models.sh start"
         fi
-    else
-        warn "  Ollama not installed. LLM features will be unavailable."
-    fi
+    done
 
-    # GPU check
+    # GPU check — GB10 reports memory.total as N/A; /proc/meminfo is the
+    # source of truth for the unified pool (see models/MEMORY_BUDGET.md)
     if command -v nvidia-smi &>/dev/null; then
         GPU_NAME=$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || echo "unknown")
-        GPU_VRAM=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits 2>/dev/null || echo "0")
-        log "  GPU: $GPU_NAME (${GPU_VRAM} MB VRAM)"
-        if [ "${GPU_VRAM:-0}" -lt 8000 ]; then
-            warn "  GPU VRAM < 8GB — Ollama + ONNX may not fit simultaneously"
-        fi
+        log "  GPU: $GPU_NAME (unified memory — see /proc/meminfo)"
     else
         warn "  No NVIDIA GPU detected"
+    fi
+    if [ -r /proc/meminfo ]; then
+        TOTAL_KB=$(awk '/^MemTotal:/{print $2}' /proc/meminfo)
+        log "  Unified memory pool: $(( TOTAL_KB / 1024 / 1024 )) GiB total"
     fi
 
     # System RAM
@@ -136,6 +134,23 @@ cmd_up() {
         exit 1
     }
 
+    # Apply migrations (idempotent ledgered runner — reaches existing volumes,
+    # unlike docker-entrypoint-initdb.d which only runs on an EMPTY volume)
+    log "Phase 1b: Applying corridor-store migrations (migrate.py)..."
+    MIGRATE_VENV="$PROJECT_ROOT/models/.venvs/migrate/bin/python"
+    if [ -x "$MIGRATE_VENV" ]; then
+        "$MIGRATE_VENV" "$PROJECT_ROOT/scripts/migrate.py" || {
+            err "migrate.py failed"
+            exit 1
+        }
+    else
+        warn "migrate venv missing — run: ./infra/scripts/serve_models.sh build"
+    fi
+
+    # Model hosts on the host (GB10 unified-memory stack)
+    log "Phase 1c: Starting model hosts (:8083 decider, :8084 Gemma, :8085 embeddings)..."
+    "$PROJECT_ROOT/infra/scripts/serve_models.sh" start
+
     # Start compute services
     log "Phase 2: Compute (signal-ingress, traffic-oracle)..."
     docker compose -f "$COMPOSE_FILE" up -d signal-ingress traffic-oracle
@@ -191,19 +206,9 @@ cmd_status() {
         echo ""
     fi
 
-    # Ollama status
-    echo -e "${CYAN}--- Ollama Status ---${NC}"
-    if curl -sf http://localhost:11434/api/tags &>/dev/null; then
-        echo "Ollama: running"
-        curl -sf http://localhost:11434/api/tags | python3 -c "
-import sys, json
-data = json.load(sys.stdin)
-for m in data.get('models', []):
-    print(f\"  Model: {m['name']}  Size: {m.get('size', 0) // 1048576} MB\")
-" 2>/dev/null || echo "  (could not parse model list)"
-    else
-        echo "Ollama: not running"
-    fi
+    # Model host status (GB10 unified-memory stack)
+    echo -e "${CYAN}--- Model Hosts ---${NC}"
+    "$PROJECT_ROOT/infra/scripts/serve_models.sh" status || true
     echo ""
 }
 

@@ -37,6 +37,28 @@ scrape_configs:
     metrics_path: /metrics
     scrape_interval: 5s
 
+  # ─── Model Stack (host processes via host-gateway, C10) ────────
+  # model-host :8083 — pplx-decider-v1-27b (loaded/RSS/queue/p95)
+  - job_name: "model-host"
+    static_configs:
+      - targets: ["host.docker.internal:8083"]
+    metrics_path: /metrics
+    scrape_interval: 5s
+
+  # llama-server :8084 — aditi-ps18-v7h Gemma 4 12B (native /metrics)
+  - job_name: "llama-server"
+    static_configs:
+      - targets: ["host.docker.internal:8084"]
+    metrics_path: /metrics
+    scrape_interval: 5s
+
+  # embedding-service :8085 — pplx-late-0.6b + bge-m3 (embeddings stream)
+  - job_name: "embedding-service"
+    static_configs:
+      - targets: ["host.docker.internal:8085"]
+    metrics_path: /metrics
+    scrape_interval: 5s
+
   # ─── PostgreSQL (pgRouting / pgvector metrics) ──────────────────
   - job_name: "postgis"
     static_configs:

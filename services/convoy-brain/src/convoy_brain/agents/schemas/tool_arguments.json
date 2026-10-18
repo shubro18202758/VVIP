@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ToolArguments",
+  "description": "Gemma drafts arguments for a tool the decider already selected.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["arguments"],
+  "properties": {
+    "arguments": { "type": "object" }
+  }
+}

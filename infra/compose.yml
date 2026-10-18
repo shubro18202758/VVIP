@@ -1,8 +1,11 @@
 # VVIP Convoy Orchestration Platform — Full Stack Compose
-# Designed for edge deployment on RTX 4070 (8GB VRAM) constrained hardware.
+# Deployed on NVIDIA GB10 (Grace-Blackwell) 121.44 GiB unified memory.
 #
-# VRAM Budget: Ollama (Qwen 3.5 9B) gets priority allocation.
-# All other services run on CPU / system RAM only.
+# Model stack runs ON THE HOST (see infra/scripts/serve_models.sh):
+#   :8083 model-host (pplx-decider-v1-27b)  :8084 llama-server (Gemma 4 12B)
+#   :8085 embedding-service
+# Containers reach them via host.docker.internal (extra_hosts below).
+# Full memory budget: VVIP/models/MEMORY_BUDGET.md.
 
 services:
   # ─── Storage Layer ───────────────────────────────────────────────
@@ -64,9 +67,12 @@ services:
       - nats_data:/data
 
   # ─── LLM Runtime ────────────────────────────────────────────────
-  # Ollama runs OUTSIDE Docker to get native GPU access.
-  # Start manually: ollama serve
-  # Pull model: ollama pull qwen3.5:9b-q4_K_M
+  # Model hosts run OUTSIDE Docker for native GB10 unified-memory access.
+  # Start them with: ./infra/scripts/serve_models.sh start
+  #   :8083 model-host (27B decider)  :8084 llama-server (Gemma 4 12B)
+  #   :8085 embedding-service (multivector + dense)
+  # ollama :11434 is externally active and untouched; gemma-vvip:12b is an
+  # optional debug side-load (models/Modelfile.gemma_vvip).
 
   # ─── Data Integration ───────────────────────────────────────────
   signal-ingress:
@@ -95,8 +101,16 @@ services:
       VVIP_DATABASE_URL: postgresql://corridor_admin:${POSTGIS_PASSWORD:-dev_changeme}@postgis:5432/corridor_db
       VVIP_VALKEY_URL: redis://valkey:6379
       VVIP_NATS_URL: nats://nats:4222
+      EMBEDDING_SERVICE_URL: http://host.docker.internal:8085
+      # C7 gated city signal-plan writer — default OFF (empty = disabled).
+      # scripts/showcase_run.sh exports =1 and recreates traffic-oracle so
+      # the God's Eye Morning flagship can demonstrate band->plan shifts,
+      # then restores every program it rewrote (POST /api/v1/signals/restore).
+      VVIP_SIGNAL_POLICY_WRITER: ${VVIP_SIGNAL_POLICY_WRITER:-}
     ports:
       - "8081:8081"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       postgis:
         condition: service_healthy
@@ -107,7 +121,8 @@ services:
         limits:
           memory: 4G
         # NOTE: GPU access via NVIDIA Container Toolkit when needed
-        # Inference uses host Ollama; ONNX models may use GPU passthrough
+        # LLM/embedding inference is served by the host model stack on
+        # :8083/:8084/:8085 via host.docker.internal (see serve_models.sh)
 
   # ─── Agentic Orchestration ──────────────────────────────────────
   convoy-brain:
@@ -119,11 +134,18 @@ services:
       VVIP_DATABASE_URL: postgresql://corridor_admin:${POSTGIS_PASSWORD:-dev_changeme}@postgis:5432/corridor_db
       VVIP_VALKEY_URL: redis://valkey:6379
       VVIP_NATS_URL: nats://nats:4222
+      # Host model stack (models stream, C8/C10): fixed internal endpoints
+      MODEL_HOST_URL: http://host.docker.internal:8083
+      LLAMA_BASE_URL: http://host.docker.internal:8084
+      EMBEDDING_SERVICE_URL: http://host.docker.internal:8085
+      # legacy (retired with ollama_bridge.py; kept for transition):
       OLLAMA_BASE_URL: http://host.docker.internal:11434
       TRAFFIC_ORACLE_URL: http://traffic-oracle:8081
-      PORT: "8082"
+      PORT: "8080"
     ports:
-      - "8082:8082"
+      - "8080:8080"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       postgis:
         condition: service_healthy

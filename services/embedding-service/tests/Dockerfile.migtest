@@ -1,0 +1,14 @@
+# Disposable test-database image for the embedding-service migration tests.
+#
+# Equivalent of the stack's infra/docker/Dockerfile.postgis (postgis +
+# pgRouting + pgvector), but based on pgvector/pgvector:pg16 because
+# postgis/postgis:17-3.5 publishes no arm64 manifest (verified on this
+# GB10: `docker build` of the repo Dockerfile fails with "no match for
+# platform in manifest"). The migrations under test contain no
+# PG17-specific syntax.
+FROM pgvector/pgvector:pg16
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    postgresql-16-postgis-3 \
+    postgresql-16-pgrouting \
+ && rm -rf /var/lib/apt/lists/*

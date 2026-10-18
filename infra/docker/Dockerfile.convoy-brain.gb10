@@ -1,0 +1,27 @@
+# Build convoy-brain Python service — GB10/arm64 variant.
+#
+# Same dependency set as Dockerfile.convoy-brain, but mirrors the repo's
+# directory tree inside the image. Why: convoy_brain/config.py computes
+# _REPO_ROOT = _PACKAGE_DIR.parents[4] (src/convoy_brain -> convoy-brain ->
+# services -> VVIP -> repo root) to locate VVIP/models/configs/
+# veer_models.yaml. With the original WORKDIR /app layout parents[4] doesn't
+# exist and the container dies at import (IndexError, observed on this
+# host). Building at /repo/VVIP/services/convoy-brain fixes the arithmetic;
+# every URL from that yaml is overridden by compose env anyway
+# (MODEL_HOST_URL / LLAMA_BASE_URL / EMBEDDING_SERVICE_URL /
+# TRAFFIC_ORACLE_URL / VVIP_VALKEY_URL), so the yaml itself is not copied.
+FROM python:3.12-slim AS base
+
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
+WORKDIR /repo/VVIP/services/convoy-brain
+
+COPY services/convoy-brain/pyproject.toml ./
+
+RUN uv pip install --system --no-cache -r pyproject.toml
+
+COPY services/convoy-brain/src/ src/
+
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONPATH=/repo/VVIP/services/convoy-brain/src
+CMD ["python", "-m", "convoy_brain"]

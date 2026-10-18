@@ -1,17 +1,20 @@
 # VVIP Convoy Orchestration Platform — Production Compose
-# Hardware-aware deployment for Legion 7i (i9-13900HX / RTX 4070 8GB / 32GB RAM)
+# Hardware-aware deployment for NVIDIA GB10 (Grace-Blackwell, 121.44 GiB
+# unified memory — /proc/meminfo is the source of truth; nvidia-smi reports
+# memory.total as N/A on GB10).
 #
-# CPU Core Allocation (24 threads total):
-#   Cores  0-3:  signal-ingress (Stream Processor — latency-sensitive)
-#   Cores  4-7:  traffic-oracle (ML inference — ONNX, sklearn, OR-Tools)
-#   Cores  8-11: postgis (pgRouting/pgvector — CPU-bound spatial)
-#   Cores 12-15: convoy-brain (agentic orchestration, Ollama CPU fallback)
-#   Cores 16-23: OS kernel, NATS, Valkey, command-deck, observability
+# Model Stack (runs on HOST, native unified-memory access — serve_models.sh):
+#   :8083 model-host  pplx-decider-v1-27b (T5 strategic)   ~55 GiB process budget
+#   :8084 llama-server aditi-ps18-v7h Gemma 4 12B Q4_K_M    ~9.5 GiB
+#   :8085 embedding-service pplx-late-0.6b + bge-m3         ~5.0 GiB
+#   Containers reach them via host.docker.internal (extra_hosts).
+#   Full budget + measured RSS: VVIP/models/MEMORY_BUDGET.md
 #
-# GPU Context Isolation:
-#   Ollama runs on HOST (native GPU access) — 5632 MB VRAM
-#   traffic-oracle ONNX: NVIDIA Container Toolkit passthrough — 409 MB VRAM
-#   All other services: ZERO GPU access
+# CPU Core Allocation (20-core GB10; indicative — cpuset entries below):
+#   latency-sensitive ingest, ML inference, spatial DB, orchestration, system
+#
+# GPU: single unified pool — the retired 8 GB VRAM isolation regime is gone;
+#      traffic-oracle keeps NVIDIA passthrough for ONNX (0.4 GiB budget).
 #
 # Memory Budget (32 GB system RAM):
 #   PostGIS:        2 GB (hard limit, shared_buffers=512MB)
@@ -204,8 +207,12 @@ services:
       NVIDIA_DRIVER_CAPABILITIES: compute,utility
       # ONNX Runtime tuning
       ORT_GLOBAL_THREAD_POOL_SIZE: "4"
+      # Host embedding service (models stack, C10)
+      EMBEDDING_SERVICE_URL: http://host.docker.internal:8085
     ports:
       - "8081:8081"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       postgis:
         condition: service_healthy
@@ -244,6 +251,11 @@ services:
       VVIP_DATABASE_URL: postgresql://corridor_admin:${POSTGIS_PASSWORD:-dev_changeme}@postgis:5432/corridor_db
       VVIP_VALKEY_URL: redis://valkey:6379
       VVIP_NATS_URL: nats://nats:4222
+      # Host model stack (models stream, C10): fixed internal endpoints
+      MODEL_HOST_URL: http://host.docker.internal:8083
+      LLAMA_BASE_URL: http://host.docker.internal:8084
+      EMBEDDING_SERVICE_URL: http://host.docker.internal:8085
+      # legacy (retired with ollama_bridge.py; kept for transition):
       OLLAMA_BASE_URL: http://host.docker.internal:11434
       TRAFFIC_ORACLE_URL: http://traffic-oracle:8081
       PORT: "8080"
@@ -306,6 +318,8 @@ services:
     restart: unless-stopped
     ports:
       - "9090:9090"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # scrape host model stack 8083-8085
     volumes:
       - ./infra/observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./infra/observability/alerts.yml:/etc/prometheus/alerts.yml:ro

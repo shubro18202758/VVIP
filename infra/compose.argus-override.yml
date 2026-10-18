@@ -1,0 +1,95 @@
+# VVIP compose override — ARGUS CLONE (parallel live instance).
+#
+# Runs the cloned Veer stack at ~/argus/veer ALONGSIDE the original fleet
+# (project `vvip`) with ZERO port collisions. The two stacks SHARE the host
+# model services (:8083 decider, :8084 llama-server, :8085 embeddings —
+# loopback-only, never duplicated) and the shared model weights via the
+# VVIP/models symlink; everything else (postgis, valkey, nats, oracle, brain,
+# deck) is the clone's own.
+#
+# Port map (original → clone):
+#   postgis  55434 → 56434      valkey  6379 → 6380
+#   nats     4222/8222 → 4223/8223
+#   traffic-oracle 8081 → 8091 (host-net, PORT env)
+#   convoy-brain   8080 → 8092 (host-net, PORT env)
+#   command-deck   5173 → 5273 (host-net, PORT env + ORACLE_PORT/BRAIN_PORT/
+#                               EMULATOR_PORT proxy targets — see
+#                               src/hooks.server.ts in this clone)
+#
+# Usage (from this clone's VVIP/):
+#   docker compose -p vvip-argus -f infra/compose.yml \
+#     -f infra/compose.gb10-override.yml -f infra/compose.argus-override.yml up -d
+#   python3 scripts/migrate.py   # applies 001..011 to the fresh volume
+
+services:
+  postgis:
+    container_name: vvip-argus-postgis
+    ports: !override
+      - "56434:5432"
+
+  valkey:
+    container_name: vvip-argus-valkey
+    ports: !override
+      - "6380:6379"
+
+  nats:
+    container_name: vvip-argus-nats
+    ports: !override
+      - "4223:4222"
+      - "8223:8222"
+
+  signal-ingress:
+    container_name: vvip-argus-signal-ingress
+    # Clone tree code is byte-identical for this service; reuse the original image.
+    image: vvip-signal-ingress:latest
+    # NATS_URL stays nats://nats:4222 — service DNS resolves inside this
+    # project's own network, i.e. the clone's nats.
+
+  traffic-oracle:
+    container_name: vvip-argus-traffic-oracle
+    # Clone tree code is byte-identical for this service; reuse the original image.
+    image: vvip-traffic-oracle:latest
+    network_mode: host
+    ports: !override []
+    extra_hosts: !override []
+    environment:
+      VVIP_DATABASE_URL: postgresql://corridor_admin:${POSTGIS_PASSWORD:-dev_changeme}@127.0.0.1:56434/corridor_db
+      VVIP_VALKEY_URL: redis://127.0.0.1:6380
+      VVIP_NATS_URL: nats://127.0.0.1:4223
+      EMBEDDING_SERVICE_URL: http://127.0.0.1:8085
+      PORT: "8091"
+
+  convoy-brain:
+    container_name: vvip-argus-convoy-brain
+    # Clone tree code is byte-identical for this service; reuse the original image.
+    image: vvip-convoy-brain:latest
+    network_mode: host
+    ports: !override []
+    extra_hosts: !override []
+    environment:
+      VVIP_DATABASE_URL: postgresql://corridor_admin:${POSTGIS_PASSWORD:-dev_changeme}@127.0.0.1:56434/corridor_db
+      VVIP_VALKEY_URL: redis://127.0.0.1:6380
+      VVIP_NATS_URL: nats://127.0.0.1:4223
+      MODEL_HOST_URL: http://127.0.0.1:8083
+      LLAMA_BASE_URL: http://127.0.0.1:8084
+      EMBEDDING_SERVICE_URL: http://127.0.0.1:8085
+      TRAFFIC_ORACLE_URL: http://127.0.0.1:8091
+      PORT: "8092"
+
+  command-deck:
+    container_name: vvip-argus-command-deck
+    network_mode: host
+    ports: !override []
+    extra_hosts: !override []
+    environment:
+      PORT: "5273"
+      HOST: "0.0.0.0"
+      ORACLE_PORT: "8091"
+      BRAIN_PORT: "8092"
+      # The emulator is a SHARED host service on :8090 (loopback-only,
+      # like the model hosts) — the clone does not duplicate it. An earlier
+      # draft pointed at a containerised 8095 that never existed, which
+      # 502'd the deck's /api/emulator proxy (red EMULATOR dot + degraded
+      # emulator panel). Verified: 8090 answers /health.
+      EMULATOR_PORT: "8090"
+      VEER_CESIUM_ION_TOKEN: ${VEER_CESIUM_ION_TOKEN:-}

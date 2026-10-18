@@ -25,6 +25,15 @@ export default defineConfig({
 				target: 'http://localhost:8081',
 				changeOrigin: true,
 			},
+			// Optional dev-tidiness entry for the event emulator (loopback
+			// :8090): same-origin fallback for decks served from an origin the
+			// emulator's CORS allowlist does not cover. The primary path stays
+			// the absolute http://localhost:8090 constant (contract C6).
+			'/api/emulator': {
+				target: 'http://localhost:8090',
+				changeOrigin: true,
+				rewrite: (path) => path.replace(/^\/api\/emulator/, ''),
+			},
 		},
 	},
 
@@ -38,18 +47,17 @@ export default defineConfig({
 		sourcemap: false,
 		// Limit parallel operations to reduce peak memory
 		minify: 'esbuild', // esbuild is CPU-only, faster than terser
-		// Chunk strategy: keep vendor libs separate for caching
+		// Chunk strategy: keep vendor libs separate for caching.
+		// Function form — the object form (package-name keys) hard-fails on
+		// vite/rollup versions that resolve these dynamic-imported packages
+		// as external (observed: "maplibre-gl cannot be included in
+		// manualChunks because it is resolved as an external module").
 		rollupOptions: {
 			output: {
-				manualChunks: {
-					'maplibre': ['maplibre-gl'],
-					'deckgl': [
-						'@deck.gl/core',
-						'@deck.gl/layers',
-						'@deck.gl/aggregation-layers',
-						'@deck.gl/geo-layers',
-						'@deck.gl/mapbox',
-					],
+				manualChunks(id: string) {
+					if (id.includes('maplibre-gl')) return 'maplibre';
+					if (id.includes('@deck.gl')) return 'deckgl';
+					return undefined;
 				},
 			},
 		},

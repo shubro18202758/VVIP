@@ -18,34 +18,36 @@ class CorridorGraphDB:
         self, source: int, target: int
     ) -> list[dict]:
         """Find shortest path using pgr_dijkstra on corridor.road_graph."""
-        # Embed validated ints directly to avoid pgRouting function overload ambiguity
-        query = f"""
+        # Bound parameters with in-text casts: the ::bigint casts pin the
+        # pgr_dijkstra(text, bigint, bigint, boolean) overload, so no value
+        # is ever interpolated into the SQL text.
+        query = """
             SELECT seq, node, edge, cost, agg_cost
             FROM pgr_dijkstra(
                 'SELECT id, source, target, cost, reverse_cost FROM corridor.road_graph',
-                {int(source)}::bigint, {int(target)}::bigint, directed := true
+                $1::bigint, $2::bigint, directed := true
             )
             ORDER BY seq;
         """
         async with self._pool.acquire() as conn:
-            rows = await conn.fetch(query)
+            rows = await conn.fetch(query, int(source), int(target))
         return [dict(r) for r in rows]
 
     async def k_shortest_paths(
         self, source: int, target: int, k: int = 5
     ) -> list[list[dict]]:
         """Find K shortest paths using pgr_KSP."""
-        # Embed validated ints directly to avoid pgRouting function overload ambiguity
-        query = f"""
+        # Bound parameters + in-text casts (see shortest_path).
+        query = """
             SELECT seq, path_id, path_seq, node, edge, cost, agg_cost
             FROM pgr_KSP(
                 'SELECT id, source, target, cost, reverse_cost FROM corridor.road_graph',
-                {int(source)}::bigint, {int(target)}::bigint, {int(k)}::integer, directed := true
+                $1::bigint, $2::bigint, $3::integer, directed := true
             )
             ORDER BY path_id, path_seq;
         """
         async with self._pool.acquire() as conn:
-            rows = await conn.fetch(query)
+            rows = await conn.fetch(query, int(source), int(target), int(k))
 
         paths: dict[int, list[dict]] = {}
         for r in rows:
@@ -78,15 +80,16 @@ class CorridorGraphDB:
         self, segment_id: int, max_cost_sec: float = 300.0
     ) -> list[dict]:
         """Compute driving-distance isochrone from a segment."""
-        # Embed validated values directly to avoid pgRouting function overload ambiguity
-        query = f"""
+        # Bound parameters + in-text casts (see shortest_path); ::float pins
+        # the double-precision overload of pgr_drivingDistance.
+        query = """
             SELECT seq, node, edge, cost, agg_cost
             FROM pgr_drivingDistance(
                 'SELECT id, source, target, cost, reverse_cost FROM corridor.road_graph',
-                {int(segment_id)}::bigint, {float(max_cost_sec)}::float, directed := true
+                $1::bigint, $2::float, directed := true
             )
             ORDER BY agg_cost;
         """
         async with self._pool.acquire() as conn:
-            rows = await conn.fetch(query)
+            rows = await conn.fetch(query, int(segment_id), float(max_cost_sec))
         return [dict(r) for r in rows]

@@ -1,0 +1,11 @@
+# city-canvas stream: keep the bun Docker build self-contained — the image
+# installs its own node_modules (incl. the cesium package whose Build/Cesium
+# the build vendors into static/cesium) and builds its own .svelte-kit/build
+# outputs. Host artifacts must never leak into the layer cache.
+node_modules
+.svelte-kit
+build
+static/cesium
+.venv
+.mimosa
+tests/artifacts

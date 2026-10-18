@@ -1,0 +1,253 @@
+/*
+ * Veer design tokens — the one token contract for both themes.
+ *
+ * `command`  — operator, command-graphite: the map is the hero, chrome is
+ *              furniture; matte surfaces lifted by 1px hairlines, no
+ *              drop shadows.
+ * `daylight` — citizen/driver: warm paper, one orange accent, calm band
+ *              strips with plain-language consequences.
+ *
+ * The themes are ONE variable list (tests/design-tokens.mjs asserts key
+ * parity with tokens.ts). Components consume semantic tokens only
+ * (var(--v-*)); canvas code (Cesium/deck.gl/SVG) cannot read CSS vars and
+ * calls bandColor()/cssVar() from tokens.ts instead.
+ *
+ * :root carries the command values so a no-JS/first-paint deck defaults to
+ * the operator theme; (public) layouts flip data-theme="daylight" on <html>.
+ */
+
+:root,
+[data-theme='command'] {
+	/* surfaces — matte; elevation = one surface step + 1px hairline, never shadow */
+	--v-canvas: #0a0f1a;
+	--v-surface-1: #101828;
+	--v-surface-2: #16213a;
+	--v-surface-3: #1c2a47;
+	--v-surface-sink: #070b12;
+	--v-paper: #101828;
+
+	/* hairlines */
+	--v-line-1: rgba(255, 255, 255, 0.08);
+	--v-line-2: rgba(255, 255, 255, 0.14);
+	--v-line-select: rgba(86, 180, 245, 0.35);
+
+	/* ink */
+	--v-ink-1: #e8eef8;
+	--v-ink-2: #9aa7bd;
+	--v-ink-3: #5f6c85;
+	--v-ink-4: #39455c;
+
+	/* human-act orange — the single "a human must act" color; never fills
+	 * large areas, never paints nav */
+	--v-act: #ea580c;
+	--v-act-2: #f97316;
+	--v-act-focus: #fb923c;
+	--v-act-veil: rgba(234, 88, 12, 0.14);
+	--v-act-text: #fb923c;
+
+	/* band ladder — city state ONLY (amber is reserved exclusively for it) */
+	--v-band-green: #2fbf71;
+	--v-band-amber: #f5a524;
+	--v-band-red: #e5484d;
+	--v-band-black-fill: rgba(11, 15, 23, 0.55);
+	--v-band-black-hairline: #e5484d;
+	--v-band-veil: rgba(245, 165, 36, 0.14);
+
+	/* data accents — identity/live + decision-level audit; tool calls */
+	--v-data: #56b4f5;
+	--v-tool: #a78bfa;
+
+	/* template identity — the VVIP command-ops layer restored ON the token
+	 * system: glass instruments float over the map (structural panels stay
+	 * matte+hairline), the display face carries titles, the flow ramp is
+	 * the live-congestion ladder (5 stops, green→red). */
+	--v-glass-bg: rgba(10, 15, 26, 0.82);
+	--v-glass-border: rgba(148, 175, 215, 0.24);
+	--v-glass-blur: 14px;
+	--v-glow-act: rgba(249, 115, 22, 0.3);
+	--v-flow-light: #84cc16;
+
+	/* modal veil — 8% canvas veil, no blur */
+	--v-veil: rgba(10, 15, 26, 0.08);
+
+	/* type */
+	--v-font-ui: Inter, 'Noto Sans', 'Noto Sans Devanagari', 'Noto Sans Gujarati', system-ui,
+		sans-serif;
+	--v-font-display: Outfit, Inter, 'Noto Sans', 'Noto Sans Devanagari', system-ui, sans-serif;
+	--v-font-mono: 'JetBrains Mono', 'Noto Sans Mono', ui-monospace, monospace;
+	--v-text-2xs: 10px;
+	--v-text-xs: 11px;
+	--v-text-sm: 12px;
+	--v-text-base: 13px; /* OPERATOR base */
+	--v-text-md: 16px;
+	--v-text-lg: 20px;
+	--v-text-xl: 28px;
+	--v-weight-status: 600;
+	--v-tracking-status: 0.08em;
+
+	/* 4px space grid */
+	--v-space-1: 4px;
+	--v-space-2: 8px;
+	--v-space-3: 12px;
+	--v-space-4: 16px;
+	--v-space-5: 20px;
+	--v-space-6: 24px;
+	--v-space-7: 32px;
+	--v-space-8: 40px;
+
+	/* control heights (operator 24/28/32, citizen 44 tap) */
+	--v-ctl-sm: 24px;
+	--v-ctl-md: 28px;
+	--v-ctl-lg: 32px;
+	--v-ctl-touch: 44px;
+
+	/* radii */
+	--v-radius-chip: 4px;
+	--v-radius-btn: 6px;
+	--v-radius-panel: 10px;
+	--v-radius-modal: 14px;
+	--v-radius-pill: 999px;
+
+	/* panel rhythm (operator 12/8; citizen 16/12 below) */
+	--v-pad-panel: 12px;
+	--v-gap-panel: 8px;
+
+	/* motion — one curve, deliberate in / immediate out */
+	--v-ease: cubic-bezier(0.2, 0, 0, 1);
+	--v-dur-out: 150ms;
+	--v-dur-in: 300ms;
+	--v-dur-wipe: 600ms;
+	--v-dur-trace: 1200ms;
+	--v-dur-comet: 300ms;
+	--v-dur-stagger: 120ms;
+	--v-dur-pulse: 200ms;
+	--v-dur-lift: 2s;
+	--v-dur-breathe: 2s;
+	--v-dur-sweep: 3.5s;
+}
+
+[data-theme='daylight'] {
+	/* warm paper, one orange accent, calm everything — the SAME variable
+	 * list as command (parity is asserted); every value restated so the
+	 * block stands alone and tokens.ts mirrors it one-to-one. */
+	--v-canvas: #edeae3;
+	--v-surface-1: #ffffff;
+	--v-surface-2: #f6f3ee;
+	--v-surface-3: #fcfbf8;
+	--v-surface-sink: #e5e1d8;
+	--v-paper: #faf9f7;
+
+	--v-line-1: rgba(26, 31, 46, 0.12);
+	--v-line-2: rgba(26, 31, 46, 0.2);
+	--v-line-select: rgba(194, 65, 12, 0.35);
+
+	--v-ink-1: #1a1f2e;
+	--v-ink-2: #4a5468;
+	--v-ink-3: #7a8399;
+	--v-ink-4: #98a0b3;
+
+	--v-act: #ea580c;
+	--v-act-2: #c2410c;
+	--v-act-focus: #c2410c;
+	--v-act-veil: rgba(234, 88, 12, 0.1);
+	--v-act-text: #c2410c; /* AA on light */
+
+	/* calm strips — citizens never see "BLACK"; plain-language labels instead */
+	--v-band-green: #2f9e6f;
+	--v-band-amber: #b27a1e;
+	--v-band-red: #c24444;
+	--v-band-black-fill: rgba(26, 31, 46, 0.4);
+	--v-band-black-hairline: #c24444;
+	--v-band-veil: rgba(178, 122, 30, 0.12);
+
+	--v-data: #2e6fae;
+	--v-tool: #6d5bb8;
+
+	/* template identity — daylight readings of the same keys (calmer glass,
+	 * calmer glow, AA-safe flow ramp stop) */
+	--v-glass-bg: rgba(255, 255, 255, 0.92);
+	--v-glass-border: rgba(26, 31, 46, 0.18);
+	--v-glass-blur: 10px;
+	--v-glow-act: rgba(194, 65, 12, 0.16);
+	--v-flow-light: #5f8f2a;
+
+	--v-veil: rgba(26, 31, 46, 0.08);
+
+	/* type */
+	--v-font-ui: Inter, 'Noto Sans', 'Noto Sans Devanagari', 'Noto Sans Gujarati', system-ui,
+		sans-serif;
+	--v-font-display: Outfit, Inter, 'Noto Sans', 'Noto Sans Devanagari', system-ui, sans-serif;
+	--v-font-mono: 'JetBrains Mono', 'Noto Sans Mono', ui-monospace, monospace;
+	--v-text-2xs: 10px;
+	--v-text-xs: 11px;
+	--v-text-sm: 12px;
+	--v-text-base: 16px; /* CITIZEN base */
+	--v-text-md: 16px;
+	--v-text-lg: 20px;
+	--v-text-xl: 28px;
+	--v-weight-status: 600;
+	--v-tracking-status: 0.08em;
+
+	/* 4px space grid */
+	--v-space-1: 4px;
+	--v-space-2: 8px;
+	--v-space-3: 12px;
+	--v-space-4: 16px;
+	--v-space-5: 20px;
+	--v-space-6: 24px;
+	--v-space-7: 32px;
+	--v-space-8: 40px;
+
+	/* control heights (operator 24/28/32, citizen 44 tap) */
+	--v-ctl-sm: 24px;
+	--v-ctl-md: 28px;
+	--v-ctl-lg: 32px;
+	--v-ctl-touch: 44px;
+
+	/* radii */
+	--v-radius-chip: 4px;
+	--v-radius-btn: 6px;
+	--v-radius-panel: 10px;
+	--v-radius-modal: 14px;
+	--v-radius-pill: 999px;
+
+	/* citizen rhythm */
+	--v-pad-panel: 16px;
+	--v-gap-panel: 12px;
+
+	/* motion — one curve, deliberate in / immediate out */
+	--v-ease: cubic-bezier(0.2, 0, 0, 1);
+	--v-dur-out: 150ms;
+	--v-dur-in: 300ms;
+	--v-dur-wipe: 600ms;
+	--v-dur-trace: 1200ms;
+	--v-dur-comet: 300ms;
+	--v-dur-stagger: 120ms;
+	--v-dur-pulse: 200ms;
+	--v-dur-lift: 2s;
+	--v-dur-breathe: 2s;
+	--v-dur-sweep: 3.5s;
+}
+
+/*
+ * Reduced motion (doctrine): wipes become 64ms two-frame crossfades, the
+ * comet becomes a stepped polyline (canvas side), breathing becomes a
+ * static hairline, pulses become static orange edges. Components read the
+ * duration vars, so this single block calms the whole deck.
+ */
+@media (prefers-reduced-motion: reduce) {
+	:root,
+	[data-theme='command'],
+	[data-theme='daylight'] {
+		--v-dur-out: 64ms;
+		--v-dur-in: 64ms;
+		--v-dur-wipe: 64ms;
+		--v-dur-trace: 64ms;
+		--v-dur-comet: 64ms;
+		--v-dur-stagger: 0ms;
+		--v-dur-pulse: 0ms;
+		--v-dur-lift: 0ms;
+		--v-dur-breathe: 0ms;
+		--v-dur-sweep: 0ms;
+	}
+}

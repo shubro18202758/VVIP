@@ -42,6 +42,11 @@ class MIPSolution:
     security_score: float
     objective_value: float
     solve_status: str  # "optimal", "feasible", "timeout_fallback"
+    # Robust (P90) overlays — present only when quantile-derived cost
+    # tables were supplied to solve(); total_time_sec / disruption_score
+    # keep their point meaning either way.
+    total_time_q_sec: float | None = None
+    disruption_q: float | None = None
 
 
 class ConvoyMIPSolver:
@@ -63,6 +68,9 @@ class ConvoyMIPSolver:
         max_duration_sec: float | None = None,
         convoy_width_m: float = 7.0,
         timeout_ms: int = 2000,
+        robust_time_costs: dict[int, int] | None = None,
+        robust_disruption_costs: dict[int, int] | None = None,
+        robust_weights: dict[str, float] | None = None,
     ) -> MIPSolution | None:
         """Solve convoy routing as a CP-SAT problem.
 
@@ -77,6 +85,16 @@ class ConvoyMIPSolver:
             max_duration_sec: Optional maximum route duration constraint
             convoy_width_m: Required road width for convoy passage
             timeout_ms: Solver time limit in milliseconds
+            robust_time_costs: Optional quantile-derived (P90) time costs,
+                ×SCALE integers keyed by segment_id (from
+                optimize.quantile_objective).  When present together with
+                robust_disruption_costs they REPLACE the time/disruption
+                terms of the objective; security/complexity terms and the
+                duration constraint keep their point meaning.
+            robust_disruption_costs: Optional P90 disruption costs (×SCALE,
+                keyed by segment_id).
+            robust_weights: Optional {"time", "disruption"} coefficients for
+                the robust terms (defaults to the solver's own weights).
 
         Returns:
             MIPSolution or None if infeasible
@@ -160,16 +178,54 @@ class ConvoyMIPSolver:
                 ROAD_CLASS_SECURITY.get(road_class, 30) * SCALE
             )
 
-        # Objective: minimize weighted combination
+        # Robust (P90) overlay: quantile-derived cost tables supplied by the
+        # router replace the time/disruption terms of the objective.  The
+        # tables carry the point value for degraded segments already, so a
+        # missing key falls back to today's point cost (defensive only).
+        # With the baseline knob weights the coefficients are identical to
+        # the point path — absent tables leave the model byte-identical.
         w = self._weights
+        robust_active = (
+            robust_time_costs is not None and robust_disruption_costs is not None
+        )
+        if robust_active:
+            obj_time_costs = {
+                (src, tgt): robust_time_costs.get(src, time_costs[(src, tgt)])
+                for (src, tgt) in valid_edges
+            }
+            obj_disruption_costs = {
+                (src, tgt): robust_disruption_costs.get(src, disruption_costs[(src, tgt)])
+                for (src, tgt) in valid_edges
+            }
+            obj_time_weight = float(
+                (robust_weights or {}).get("time", w["time"])
+            )
+            obj_disruption_weight = float(
+                (robust_weights or {}).get("disruption", w["disruption"])
+            )
+            logger.info(
+                "mip_solver.robust_objective",
+                quantile_tables=True,
+                time_weight=obj_time_weight,
+                disruption_weight=obj_disruption_weight,
+            )
+        else:
+            obj_time_costs = time_costs
+            obj_disruption_costs = disruption_costs
+            obj_time_weight = w["time"]
+            obj_disruption_weight = w["disruption"]
+
+        # Objective: minimize weighted combination
         objective_terms = []
         for edge in valid_edges:
             if edge in x:
                 objective_terms.append(
-                    int(w["time"] * SCALE) * time_costs[edge] * x[edge]
+                    int(obj_time_weight * SCALE) * obj_time_costs[edge] * x[edge]
                 )
                 objective_terms.append(
-                    int(w["disruption"] * SCALE) * disruption_costs[edge] * x[edge]
+                    int(obj_disruption_weight * SCALE)
+                    * obj_disruption_costs[edge]
+                    * x[edge]
                 )
                 objective_terms.append(
                     -int(w["security"] * SCALE) * security_scores[edge] * x[edge]
@@ -212,6 +268,21 @@ class ConvoyMIPSolver:
             ) / SCALE / max(len(path) - 1, 1)
 
             status_str = "optimal" if status == cp_model.OPTIMAL else "feasible"
+
+            # Robust (P90) totals over the chosen path — point totals above
+            # keep their today meaning regardless.
+            total_time_q = None
+            disruption_q_total = None
+            if robust_active:
+                total_time_q = sum(
+                    obj_time_costs.get((path[i], path[i + 1]), 0)
+                    for i in range(len(path) - 1)
+                ) / SCALE
+                disruption_q_total = sum(
+                    obj_disruption_costs.get((path[i], path[i + 1]), 0)
+                    for i in range(len(path) - 1)
+                ) / SCALE
+
             logger.info(
                 "mip_solver.solved",
                 status=status_str,
@@ -226,6 +297,8 @@ class ConvoyMIPSolver:
                 security_score=security,
                 objective_value=solver.ObjectiveValue() / (SCALE * SCALE),
                 solve_status=status_str,
+                total_time_q_sec=total_time_q,
+                disruption_q=disruption_q_total,
             )
 
         logger.warning("mip_solver.infeasible", status=status)

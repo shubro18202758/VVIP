@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CommunityLiaisonDirectives",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "directives",
+    "summary",
+    "confidence"
+  ],
+  "properties": {
+    "directives": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["agency", "action", "vehicle_plate", "priority", "context"],
+        "properties": {
+          "agency": { "type": "string", "enum": ["jan_rakshak", "traffic_police", "police_control"] },
+          "action": { "type": "string" },
+          "vehicle_plate": { "type": "string" },
+          "priority": { "type": "string", "enum": ["low", "medium", "high"] },
+          "context": { "type": "string" }
+        }
+      }
+    },
+    "summary": { "type": "string" },
+    "confidence": { "type": "string", "enum": ["high", "medium", "low"] }
+  }
+}

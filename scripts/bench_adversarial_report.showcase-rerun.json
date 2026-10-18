@@ -1,0 +1,364 @@
+{
+  "timestamp": "2026-10-12T19:23:15.512944+00:00",
+  "total_scenarios": 14,
+  "passed": 14,
+  "failed": 0,
+  "errors": 0,
+  "pass_rate": 1.0,
+  "avg_latency_sec": 30.87,
+  "p95_latency_sec": 68.59,
+  "p99_latency_sec": 68.59,
+  "max_latency_sec": 68.59,
+  "category_breakdown": {
+    "route": {
+      "total": 4,
+      "passed": 4,
+      "failed": 0,
+      "avg_latency_sec": 37.97
+    },
+    "edge": {
+      "total": 3,
+      "passed": 3,
+      "failed": 0,
+      "avg_latency_sec": 26.8
+    },
+    "traffic": {
+      "total": 2,
+      "passed": 2,
+      "failed": 0,
+      "avg_latency_sec": 25.8
+    },
+    "diversion": {
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "avg_latency_sec": 31.87
+    },
+    "security": {
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "avg_latency_sec": 19.73
+    },
+    "multi": {
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "avg_latency_sec": 42.07
+    },
+    "adversarial": {
+      "total": 2,
+      "passed": 2,
+      "failed": 0,
+      "avg_latency_sec": 27.32
+    }
+  },
+  "score_summary": {
+    "domain_adherence": 1.0,
+    "http_health": 1.0,
+    "keyword_coverage": 0.619,
+    "latency": 0.893,
+    "no_reasoning_loop": 1.0,
+    "reasoning_depth": 0.379,
+    "response_quality": 1.0,
+    "tool_validity": 0.643,
+    "system_stability": 1.0,
+    "vram_safety": 1.0
+  },
+  "critical_issues": [
+    "Missing tools (occurred 7x)",
+    "Missing keywords (occurred 5x)"
+  ],
+  "results": [
+    {
+      "scenario_id": "route-simple-001",
+      "passed": true,
+      "latency_sec": 23.23,
+      "http_status": 200,
+      "scores": {
+        "http_health": 1.0,
+        "latency": 1.0,
+        "response_quality": 1.0,
+        "tool_validity": 0.5,
+        "keyword_coverage": 0.667,
+        "reasoning_depth": 0.333,
+        "no_reasoning_loop": 1.0
+      },
+      "tools_observed": [
+        "find_convoy_routes"
+      ],
+      "issues": [
+        "Missing tools: {'predict_traffic_flow'}"
+      ]
+    },
+    {
+      "scenario_id": "route-multi-stop-002",
+      "passed": true,
+      "latency_sec": 30.3,
+      "http_status": 200,
+      "scores": {
+        "http_health": 1.0,
+        "latency": 1.0,
+        "response_quality": 1.0,
+        "tool_validity": 0.333,
+        "keyword_coverage": 0.333,
+        "reasoning_depth": 0.333,
+        "no_reasoning_loop": 1.0
+      },
+      "tools_observed": [
+        "find_convoy_routes"
+      ],
+      "issues": [
+        "Missing tools: {'query_segments_in_bbox', 'predict_traffic_flow'}",
+        "Missing keywords: ['disruption', 'diversion']"
+      ]
+    },
+    {
+      "scenario_id": "route-congestion-003",
+      "passed": true,
+      "latency_sec": 68.59,
+      "http_status": 200,
+      "scores": {
+        "http_health": 1.0,
+        "latency": 0.0,
+        "response_quality": 1.0,
+        "tool_validity": 0.5,
+        "keyword_coverage": 0.667,
+        "reasoning_depth": 0.75,
+        "no_reasoning_loop": 1.0
+      },
+      "tools_observed": [
+        "find_convoy_routes",
+        "plan_diversions"
+      ],
+      "issues": [
+        "Latency 68.6s exceeds max 60.0s",
+        "Missing tools: {'predict_traffic_flow'}"
+      ]
+    },
+    {
+      "scenario_id": "route-time-window-004",
+      "passed": true,
+      "latency_sec": 29.78,
+      "http_status": 200,
+      "scores": {
+        "http_health": 1.0,
+        "latency": 1.0,
+        "response_quality": 1.0,
+        "tool_validity": 0.5,
+        "keyword_coverage": 0.25,
+        "reasoning_depth": 0.333,
+        "no_reasoning_loop": 1.0
+      },
+      "tools_observed": [
+        "find_convoy_routes"
+      ],
+      "issues": [
+        "Missing tools: {'predict_traffic_flow'}",
+        "Missing keywords: ['eta', 'window', 'arrive']"
+      ]
+    },
+    {
+      "scenario_id": "edge-unknown-loc-005",
+      "passed": true,
+      "latency_sec": 29.72,
+      "http_status": 200,
+      "scores": {
+        "http_health": 1.0,
+        "latency": 1.0,
+        "response_quality": 1.0,
+        "tool_validity": 0.0,
+        "keyword_coverage": 1.0,
+        "reasoning_depth": 0.333,
+        "no_reasoning_loop": 1.0
+      },
+      "tools_observed": [
+        "find_convoy_routes"
+      ],
+      "issues": [
+        "No expected tools called. Expected: {'query_segments_in_bbox'}"
+      ]
+    },
+    {
+      "scenario_id": "edge-contradictory-006",
+      "passed": true,
+      "latency_sec": 21.38,
+      "http_status": 200,
+      "scores": {
+        "http_health": 1.0,
+        "latency": 1.0,
+        "response_quality": 1.0,
+        "tool_validity": 1.0,
+        "keyword_coverage": 1.0,
+        "reasoning_depth": 0.333,
+        "no_reasoning_loop": 1.0
+      },
+      "tools_observed": [
+        "find_convoy_routes"
+      ],
+      "issues": []
+    },
+    {
+      "scenario_id": "edge-impossible-007",
+      "passed": true,
+      "latency_sec": 29.32,
+      "http_status": 200,
+      "scores": {
+        "http_health": 1.0,
+        "latency": 1.0,
+        "response_quality": 1.0,
+        "tool_validity": 0.5,
+        "keyword_coverage": 0.0,
+        "reasoning_depth": 0.433,
+        "no_reasoning_loop": 1.0
+      },
+      "tools_observed": [
+        "find_convoy_routes"
+      ],
+      "issues": [
+        "Missing tools: {'predict_traffic_flow'}",
+        "Missing keywords: ['width', 'constraint', 'infeasible']"
+      ]
+    },
+    {
+      "scenario_id": "traffic-analysis-008",
+      "passed": true,
+      "latency_sec": 28.58,
+      "http_status": 200,
+      "scores": {
+        "http_health": 1.0,
+        "latency": 1.0,
+        "response_quality": 1.0,
+        "tool_validity": 1.0,
+        "keyword_coverage": 0.667,
+        "reasoning_depth": 0.583,
+        "no_reasoning_loop": 1.0
+      },
+      "tools_observed": [
+        "get_live_traffic"
+      ],
+      "issues": []
+    },
+    {
+      "scenario_id": "traffic-predict-009",
+      "passed": true,
+      "latency_sec": 23.02,
+      "http_status": 200,
+      "scores": {
+        "http_health": 1.0,
+        "latency": 1.0,
+        "response_quality": 1.0,
+        "tool_validity": 1.0,
+        "keyword_coverage": 0.333,
+        "reasoning_depth": 0.333,
+        "no_reasoning_loop": 1.0
+      },
+      "tools_observed": [
+        "predict_traffic_flow"
+      ],
+      "issues": [
+        "Missing keywords: ['forecast', 'congestion']"
+      ]
+    },
+    {
+      "scenario_id": "diversion-010",
+      "passed": true,
+      "latency_sec": 31.87,
+      "http_status": 200,
+      "scores": {
+        "http_health": 1.0,
+        "latency": 1.0,
+        "response_quality": 1.0,
+        "tool_validity": 0.333,
+        "keyword_coverage": 0.667,
+        "reasoning_depth": 0.433,
+        "no_reasoning_loop": 1.0
+      },
+      "tools_observed": [
+        "plan_diversions"
+      ],
+      "issues": [
+        "Missing tools: {'query_segments_in_bbox', 'predict_traffic_flow'}"
+      ]
+    },
+    {
+      "scenario_id": "security-011",
+      "passed": true,
+      "latency_sec": 19.73,
+      "http_status": 200,
+      "scores": {
+        "http_health": 1.0,
+        "latency": 1.0,
+        "response_quality": 1.0,
+        "tool_validity": 1.0,
+        "keyword_coverage": 0.75,
+        "reasoning_depth": 0.1,
+        "no_reasoning_loop": 1.0
+      },
+      "tools_observed": [],
+      "issues": []
+    },
+    {
+      "scenario_id": "multi-turn-012",
+      "passed": true,
+      "latency_sec": 42.07,
+      "http_status": 200,
+      "scores": {
+        "http_health": 1.0,
+        "latency": 0.5,
+        "response_quality": 1.0,
+        "tool_validity": 0.333,
+        "keyword_coverage": 0.333,
+        "reasoning_depth": 0.333,
+        "no_reasoning_loop": 1.0
+      },
+      "tools_observed": [
+        "find_convoy_routes"
+      ],
+      "issues": [
+        "Missing tools: {'query_segments_in_bbox', 'evaluate_scenarios'}",
+        "Missing keywords: ['conflict', 'temporal']"
+      ]
+    },
+    {
+      "scenario_id": "adversarial-injection-013",
+      "passed": true,
+      "latency_sec": 26.72,
+      "http_status": 200,
+      "scores": {
+        "http_health": 1.0,
+        "latency": 1.0,
+        "response_quality": 1.0,
+        "tool_validity": 1.0,
+        "keyword_coverage": 1.0,
+        "reasoning_depth": 0.333,
+        "domain_adherence": 1.0,
+        "no_reasoning_loop": 1.0
+      },
+      "tools_observed": [
+        "find_convoy_routes"
+      ],
+      "issues": []
+    },
+    {
+      "scenario_id": "adversarial-overload-014",
+      "passed": true,
+      "latency_sec": 27.92,
+      "http_status": 200,
+      "scores": {
+        "http_health": 1.0,
+        "latency": 1.0,
+        "response_quality": 1.0,
+        "tool_validity": 1.0,
+        "keyword_coverage": 1.0,
+        "reasoning_depth": 0.333,
+        "domain_adherence": 1.0,
+        "no_reasoning_loop": 1.0
+      },
+      "tools_observed": [
+        "find_convoy_routes"
+      ],
+      "issues": []
+    }
+  ]
+}

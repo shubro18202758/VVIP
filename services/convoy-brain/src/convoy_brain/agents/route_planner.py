@@ -1,12 +1,11 @@
-"""Route Planner Agent — LLM-driven convoy route selection and comparison.
+"""Route Planner Agent — Gemma 4 12B tactical tier with brain-side scoring.
 
 This agent reasons over route candidates produced by the CorridorRouter
-(traffic-oracle) and makes contextual recommendations. It considers:
-    - Current and predicted traffic conditions
-    - Security requirements for the VVIP class
-    - Historical patterns (time of day, day of week)
-    - Ongoing events or construction
-    - Multi-route diversification for unpredictability
+(traffic-oracle OR-Tools MIP). The adaptive tier's ``scoring_weights`` are
+applied HERE, brain-side, when ranking ``find_convoy_routes`` candidates
+(contract C4 — no traffic-oracle optimize/ edit needed): candidates are
+deterministically ranked first, then Gemma narrates the recommendation
+against that ranking. The deterministic ranking is also the fallback floor.
 """
 
 from __future__ import annotations
@@ -15,28 +14,39 @@ import json
 
 import structlog
 
+from convoy_brain.agents.base import AgentSpec, structured_agent_call
+from convoy_brain.config import AdaptiveParams
+from convoy_brain.llm.heuristics import heuristic_route_ranking
+from convoy_brain.llm.llama_bridge import LlamaBridge
 from convoy_brain.mcp.server import ToolExecutor
-from convoy_brain.ollama_bridge import OllamaBridge
 
 logger = structlog.get_logger(__name__)
 
 ROUTE_PLANNER_SYSTEM_PROMPT = """\
-You are the Route Planner agent for the VVIP Convoy Orchestration Platform.
-Your role is to analyze route candidates and recommend the optimal convoy path.
+You are the Route Planner agent for the Corridor Event Orchestration Platform.
+Your role is to analyze route/spine candidates and recommend the optimal
+corridor for the event — a protected movement, procession, race, ceremonial,
+egress surge, evacuation run or work zone.
 
 You have access to the following tools:
 - find_convoy_routes: Multi-objective route search (OR-Tools MIP solver)
 - predict_traffic_flow: Forecast speed/congestion at T+5/10/15/30 min
-- predict_eta: Estimate convoy travel time
+- predict_eta: Estimate travel time along the corridor
 - query_segment_details: Road attributes (width, class, speed limit, lanes)
 - plan_diversions: Per-segment closure plans with timing and queue estimates
 - evaluate_scenarios: Compare routes by total disruption
 
 When recommending routes, always consider:
-1. SECURITY: Wider roads with fewer chokepoints are preferred for higher VVIP classes
-2. DISRUPTION: Minimize the number of affected public traffic segments
-3. TIMING: Consider time-of-day traffic patterns
-4. BACKUP: Always recommend at least one alternate route
+1. PROTECTION: Wider roads with fewer chokepoints are preferred for higher protection classes
+2. CROWD: For public events, prefer spines with hardened perimeters and staged ingress capacity
+3. DISRUPTION: Minimize the number of affected public traffic segments
+4. TIMING: Consider time-of-day traffic patterns and event phase windows
+5. BACKUP: Always recommend at least one alternate route
+
+The candidates arrive pre-ranked by a weighted score (time / disruption /
+security / complexity). Respect that ordering unless a hard protection rule
+(minimum lanes for the protection class) rejects a candidate — then say so
+explicitly in the reason. Use only segment IDs that appear in the candidates.
 
 Respond with structured JSON:
 {
@@ -48,18 +58,29 @@ Respond with structured JSON:
 }
 """
 
+SPEC = AgentSpec(
+    name="route_planner",
+    system_prompt=ROUTE_PLANNER_SYSTEM_PROMPT,
+    schema_name="route_planner",
+)
+
 
 # Minimum lanes by VVIP class for pre-filtering
 _MIN_LANES = {"Z+": 6, "Z": 4, "Y": 2, "X": 1}
 
 
 class RoutePlannerAgent:
-    """LLM agent specialized in convoy route analysis and recommendation."""
+    """Tactical agent specialized in convoy route analysis and recommendation."""
 
-    def __init__(self, bridge: OllamaBridge, executor: ToolExecutor) -> None:
+    def __init__(
+        self,
+        bridge: LlamaBridge,
+        executor: ToolExecutor,
+        adaptive: AdaptiveParams | None = None,
+    ) -> None:
         self._bridge = bridge
         self._executor = executor
-        self._system_prompt = ROUTE_PLANNER_SYSTEM_PROMPT
+        self._adaptive = adaptive
         logger.info("route_planner_agent.init")
 
     async def analyze_routes(
@@ -70,18 +91,7 @@ class RoutePlannerAgent:
         vvip_class: str,
         avoid_segments: list[int] | None = None,
     ) -> dict:
-        """Analyze and recommend convoy routes for a planned movement.
-
-        Args:
-            movement_id: UUID of the convoy movement
-            origin: (lon, lat) of movement origin
-            destination: (lon, lat) of movement destination
-            vvip_class: Security class (Z+, Z, Y, X)
-            avoid_segments: Optional segments to exclude
-
-        Returns:
-            Structured recommendation with primary route, alternates, and reasoning
-        """
+        """Analyze and recommend convoy routes for a planned movement."""
         logger.info(
             "route_planner_agent.analyze",
             movement_id=movement_id,
@@ -112,6 +122,7 @@ class RoutePlannerAgent:
                 "rejected_routes": [],
                 "overall_reasoning": "Could not resolve origin or destination to road segments.",
                 "confidence": "low",
+                "_tier": "deterministic",
             }
 
         # 2. Fetch route candidates from MIP solver
@@ -134,22 +145,41 @@ class RoutePlannerAgent:
                 "rejected_routes": [],
                 "overall_reasoning": "MIP solver returned no route candidates.",
                 "confidence": "low",
+                "_tier": "deterministic",
             }
 
-        # 3. Collect all unique segment IDs for forecast
+        # 3. Rank candidates brain-side with the adaptive scoring weights (C4)
+        weights = (self._adaptive.scoring_weights if self._adaptive else None) or {}
+        ranked = heuristic_route_ranking(candidates, weights)
+
+        # 4. Collect unique segment IDs for forecast
         all_seg_ids: list[int] = []
-        for route in candidates:
+        for route in ranked:
             segs = route.get("segment_ids", []) if isinstance(route, dict) else []
             all_seg_ids.extend(segs)
         unique_seg_ids = list(set(all_seg_ids))[:200]
 
-        # 4. Fetch traffic forecast
+        # 5. Fetch traffic forecast
         forecast = await self._executor.execute("predict_traffic_flow", {
             "segment_ids": unique_seg_ids,
             "horizons_min": [5, 15, 30],
         })
 
-        # 5. Ask LLM to evaluate and rank
+        # 6. Gemma narrates the recommendation; deterministic ranking is the floor
+        def heuristic() -> dict:
+            primary = ranked[0] if ranked else None
+            return {
+                "primary_route": primary,
+                "alternate_routes": ranked[1:],
+                "rejected_routes": [],
+                "overall_reasoning": (
+                    f"Weighted ranking (time/disruption/security/complexity = "
+                    f"{json.dumps(weights, sort_keys=True)}); tactical narration "
+                    f"unavailable, returning deterministic ranking."
+                ),
+                "confidence": "low",
+            }
+
         user_prompt = json.dumps({
             "task": "analyze_and_rank_routes",
             "movement_id": movement_id,
@@ -157,26 +187,21 @@ class RoutePlannerAgent:
             "min_lanes_required": _MIN_LANES.get(vvip_class, 2),
             "origin_segment": origin_id,
             "destination_segment": dest_id,
-            "route_candidates": candidates,
+            "scoring_weights": weights,
+            "pre_ranked_candidates": ranked,
             "traffic_forecast": forecast,
         }, default=str)
 
-        response = await self._bridge.generate(
-            system_prompt=self._system_prompt,
-            user_prompt=user_prompt,
+        result, tier = await structured_agent_call(
+            self._bridge,
+            SPEC,
+            user_prompt,
+            heuristic,
+            repair_hint="keys: primary_route, alternate_routes[], rejected_routes[], overall_reasoning, confidence",
         )
-
-        try:
-            return json.loads(response)
-        except json.JSONDecodeError:
-            logger.warning("route_planner.parse_failed", raw_len=len(response))
-            return {
-                "primary_route": candidates[0] if candidates else None,
-                "alternate_routes": candidates[1:],
-                "rejected_routes": [],
-                "overall_reasoning": "LLM analysis failed; returning unranked MIP solver output.",
-                "confidence": "low",
-            }
+        result["_tier"] = tier
+        result["_ranked_candidates"] = ranked
+        return result
 
 
 def _extract_segment_id(result: dict | list) -> int | None:
