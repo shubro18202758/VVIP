@@ -63,6 +63,8 @@ export const POLL_MS = {
 	signals: 10000,
 	/** Watchlist (earmarked vehicles + last sightings). */
 	watchlist: 8000,
+	/** Degradation ledger (decisions_log failure taxonomy). */
+	ledger: 10000,
 } as const;
 
 /** WebSocket ladder grace before falling through to the next rung. */
@@ -245,6 +247,14 @@ export const SIGNALS_PLANS_API = `${ORACLE_V1}/signals/plans`;
 /** Interception choke ranking: GET /events/{id}/interception-plan (read-only). */
 export const INTERCEPTION_PLAN_PATH = (eventId: string) =>
 	`${EVENTS_API}/${eventId}/interception-plan`;
+
+/**
+ * Degradation ledger: GET /ops/degradation-taxonomy — the recurring-failure
+ * taxonomy convoy-brain's decisions_log actually carries (latch firings,
+ * tier-0 misses, tactical fallbacks, operator alerts, failed turns), mined
+ * by the oracle out of the shared Valkey. Empty log → honest empty ledger.
+ */
+export const DEGRADATION_TAXONOMY_API = `${ORACLE_V1}/ops/degradation-taxonomy`;
 
 /**
  * The closed agency registry (migration 011 CHECK values mirrored from

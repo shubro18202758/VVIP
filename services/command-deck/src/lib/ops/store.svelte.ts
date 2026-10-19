@@ -10,6 +10,8 @@
  *                   WS ladder for the selected event and the on-demand NDJSON
  *                   probe into the brain's /chat/stream audit channel
  *   emulator  10 s  health probe on the absolute loopback constant
+ *   ledger    10 s  GET /api/v1/ops/degradation-taxonomy (decisions_log
+ *                   failure taxonomy; empty log is an honest empty ledger)
  *   twin      never twin compare runs ONLY on operator demand and caches per
  *                   (scenario, policies, seed) — no interval polling of the
  *                   double-compute endpoint (oracle-load mitigation)
@@ -33,6 +35,7 @@ import {
 	fetchActiveEvents,
 	fetchAdaptiveParams,
 	fetchAdaptiveStatus,
+	fetchDegradationTaxonomy,
 	fetchDispatches,
 	fetchEnforcementRecommendations,
 	fetchInterceptionPlan,
@@ -59,6 +62,7 @@ import type {
 	BandPoint,
 	CorridorEvent,
 	ClosurePolicySpec,
+	DegradationTaxonomy,
 	DispatchRecord,
 	EmulatorState,
 	EnforcementRecommendation,
@@ -184,6 +188,12 @@ class OpsStore {
 	interceptionNote = $state<string | null>(null);
 	pursuitBusy = $state<string | null>(null);
 
+	// ─── degradation ledger (decisions_log failure taxonomy) ─────────────────
+	degradation = $state<DegradationTaxonomy | null>(null);
+	degradationUpdated = $state(0);
+	degradationLive = $state<boolean | null>(null);
+	degradationNote = $state<string | null>(null);
+
 	// ─── internals ────────────────────────────────────────────────────────────
 	private auditSeq = 0;
 	private timers: ReturnType<typeof setInterval>[] = [];
@@ -220,6 +230,7 @@ class OpsStore {
 		void this.pollDispatches();
 		void this.pollSignalPlans();
 		void this.pollWatchlist();
+		void this.pollDegradation();
 		this.timers.push(setInterval(() => void this.pollBoard(), POLL_MS.board));
 		this.timers.push(setInterval(() => void this.pollBand(), POLL_MS.band));
 		this.timers.push(setInterval(() => void this.pollAudit(), POLL_MS.audit));
@@ -228,6 +239,7 @@ class OpsStore {
 		this.timers.push(setInterval(() => void this.pollDispatches(), POLL_MS.dispatch));
 		this.timers.push(setInterval(() => void this.pollSignalPlans(), POLL_MS.signals));
 		this.timers.push(setInterval(() => void this.pollWatchlist(), POLL_MS.watchlist));
+		this.timers.push(setInterval(() => void this.pollDegradation(), POLL_MS.ledger));
 		if (!this.selectedEventId && this.events.length) {
 			this.selectedEventId = this.events[0].eventId;
 		}
@@ -979,6 +991,30 @@ class OpsStore {
 				err instanceof ApiNotDeployed
 					? 'interception-plan not deployed (404)'
 					: `no interception plan: ${err instanceof Error ? err.message : String(err)}`;
+		}
+	}
+
+	// ─── degradation ledger ────────────────────────────────────────────────────
+
+	/**
+	 * Poll the decisions_log failure taxonomy. An EMPTY ledger from a live
+	 * endpoint is a valid, honest answer (no degradation on record) — only
+	 * transport failures flip degradationLive and leave the last-good ledger
+	 * in place with a labelled note.
+	 */
+	async pollDegradation() {
+		try {
+			const taxonomy = await fetchDegradationTaxonomy();
+			this.degradation = taxonomy;
+			this.degradationLive = true;
+			this.degradationUpdated = Date.now();
+			this.degradationNote = null;
+		} catch (err) {
+			this.degradationLive = false;
+			this.degradationNote =
+				err instanceof ApiNotDeployed
+					? 'ops degradation-taxonomy not deployed (404) — no ledger'
+					: `degradation ledger unavailable: ${err instanceof Error ? err.message : String(err)}`;
 		}
 	}
 

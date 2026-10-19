@@ -90,6 +90,47 @@ def decider_handler(payloads: list):
 
 
 class TestDeciderClient:
+    async def test_noul_confidence_none_flows_through(self):
+        # Wire contract (model_host/decider_runtime.py): "autojev noul
+        # answers carry no confidence". The client must preserve None —
+        # the old None→0.0 coercion made every noul-bearing question set
+        # permanently low_confidence below the floor (fixed 2026-10-19).
+        def handler(request: httpx.Request) -> httpx.Response:
+            body = json.loads(request.content)
+            return httpx.Response(200, json={
+                "answers": {
+                    name: (
+                        {"value": 0.46, "probability": 0.46,
+                         "confidence": None,
+                         "distribution": {"false": 0.54, "true": 0.46}}
+                        if body["questions"][name]["type"] == "noul"
+                        else {"value": "primary", "probability": 0.67,
+                              "confidence": 0.5033,
+                              "distribution": {"primary": 0.67}}
+                    )
+                    for name in body["questions"]
+                },
+                "state_tokens": 30,
+                "latency_ms": 120,
+            })
+
+        client = DeciderClient(
+            base_url="http://127.0.0.1:8083",
+            client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+        )
+        answers = await client.decide(
+            state="TRIGGER: pre_movement",
+            questions={
+                "route_strategy": {
+                    "type": "choice", "instructions": "pick",
+                    "options": ["primary", "alternate"],
+                },
+                "urgency": {"type": "noul", "instructions": "how urgent"},
+            },
+        )
+        assert answers["route_strategy"].confidence == 0.5033
+        assert answers["urgency"].confidence is None  # NOT 0.0
+
     async def test_decide_round_trip(self):
         payloads: list = []
         client = DeciderClient(

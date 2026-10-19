@@ -23,6 +23,8 @@ from prometheus_client import (
     CONTENT_TYPE_LATEST,
 )
 
+from convoy_brain.config import CONFIDENCE_FLOOR
+
 # ─── Strategic tier (model-host / decider) ────────────────────────
 
 MODEL_HOST_HEALTH = Gauge(
@@ -73,6 +75,14 @@ TIER0_CACHE_EVENTS = Counter(
 TIER0_LATENCY_SAVED_MS = Counter(
     "vvip_decider_tier0_latency_saved_ms_total",
     "Model-host /decide latency avoided by tier-0 cache hits, in milliseconds",
+)
+
+MEMORY_RECORD_EVENTS = Counter(
+    "vvip_decider_memory_record_events_total",
+    "Decision-memory feeder outcomes: served decider checkpoints upserted "
+    "into the embedding corpus as kind=decision (the C3 write side the "
+    "novelty latch and tier-0 gate read)",
+    ["outcome"],  # recorded | error | skipped_unconfigured | skipped_no_client
 )
 
 # ─── Tactical tier (llama-server / Gemma) ─────────────────────────
@@ -224,7 +234,9 @@ async def track_decider_checkpoint(question_types: list[str] | None = None) -> A
         for qtype in question_types or []:
             DECIDER_CHECKPOINT_ANSWERS.labels(question_type=qtype).inc()
         for confidence in tracker.get("confidences", []):
-            if confidence < 0.6:
+            # None (noul answers carry no confidence) is excluded, mirroring
+            # the decider's gating; the floor is the calibrated constant.
+            if confidence is not None and confidence < CONFIDENCE_FLOOR:
                 DECIDER_LOW_CONFIDENCE.inc()
 
 

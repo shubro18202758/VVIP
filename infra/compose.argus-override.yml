@@ -7,6 +7,25 @@
 # VVIP/models symlink; everything else (postgis, valkey, nats, oracle, brain,
 # deck) is the clone's own.
 #
+# IMAGE OWNERSHIP (Wave-1/2/3 redeploy, 2026-10-18). The clone's tree code
+# for traffic-oracle and convoy-brain has DIVERGED from the original stack
+# (out-of-support hatch + novelty latch, T0 foundation rung + quantile
+# contract, P90 robust routing, banded ETAs), so those services now BUILD
+# THEIR OWN images from this tree under -argus names:
+#   traffic-oracle → vvip-argus-traffic-oracle:latest
+#   convoy-brain   → vvip-argus-convoy-brain:latest
+#   command-deck   → vvip-argus-command-deck:latest (explicit; Wave-2 ETA
+#                    band touches the deck — rebuild on every redeploy)
+# The shared original-stack tags (vvip-traffic-oracle:latest,
+# vvip-convoy-brain:latest, vvip-command-deck:latest) are therefore NEVER
+# written by this project. Conversely the clone's postgis and signal-ingress
+# code are byte-identical to the original, so they REUSE the shared images
+# — their inherited build stanzas are stripped (`build: !reset null`) so a
+# project-wide `docker compose build` here can never retag
+# veer-vvip-postgis:arm64 or vvip-signal-ingress:latest either.
+# scripts/argus_full_smoke.sh snapshots those shared tags/containers
+# read-only and fails the gate if any of them moved.
+#
 # Port map (original → clone):
 #   postgis  55434 → 56434      valkey  6379 → 6380
 #   nats     4222/8222 → 4223/8223
@@ -18,37 +37,68 @@
 #
 # Usage (from this clone's VVIP/):
 #   docker compose -p vvip-argus -f infra/compose.yml \
+#     -f infra/compose.gb10-override.yml -f infra/compose.argus-override.yml \
+#     build traffic-oracle convoy-brain command-deck
+#   docker compose -p vvip-argus -f infra/compose.yml \
 #     -f infra/compose.gb10-override.yml -f infra/compose.argus-override.yml up -d
 #   python3 scripts/migrate.py   # applies 001..011 to the fresh volume
+#   bash scripts/argus_full_smoke.sh  # full-system live gate (also proves
+#                                      # the original stack stayed untouched)
 
 services:
   postgis:
     container_name: vvip-argus-postgis
+    # 5273 is THE system now (original retired 2026-10-19): survive host reboots
+    restart: unless-stopped
+    # Infra-only image (Dockerfile.postgis.arm64, untouched by the waves):
+    # reuse the ORIGINAL stack's built tag. `build: !reset null` strips the
+    # inherited build stanza so `docker compose build` on this project can
+    # never retag the shared veer-vvip-postgis:arm64.
+    build: !reset null
+    image: veer-vvip-postgis:arm64
     ports: !override
       - "56434:5432"
 
   valkey:
     container_name: vvip-argus-valkey
+    # 5273 is THE system now (original retired 2026-10-19): survive host reboots
+    restart: unless-stopped
     ports: !override
       - "6380:6379"
 
   nats:
     container_name: vvip-argus-nats
+    # 5273 is THE system now (original retired 2026-10-19): survive host reboots
+    restart: unless-stopped
     ports: !override
       - "4223:4222"
       - "8223:8222"
 
   signal-ingress:
     container_name: vvip-argus-signal-ingress
-    # Clone tree code is byte-identical for this service; reuse the original image.
+    # 5273 is THE system now (original retired 2026-10-19): survive host reboots
+    restart: unless-stopped
+    # Clone tree code is byte-identical for this service; reuse the original
+    # image. `build: !reset null` (same guard as postgis) keeps a project-
+    # wide `docker compose build` from retagging the shared
+    # vvip-signal-ingress:latest.
+    build: !reset null
     image: vvip-signal-ingress:latest
     # NATS_URL stays nats://nats:4222 — service DNS resolves inside this
     # project's own network, i.e. the clone's nats.
 
   traffic-oracle:
     container_name: vvip-argus-traffic-oracle
-    # Clone tree code is byte-identical for this service; reuse the original image.
-    image: vvip-traffic-oracle:latest
+    # 5273 is THE system now (original retired 2026-10-19): survive host reboots
+    restart: unless-stopped
+    # Wave-1/2/3 code lives in this tree (hatch/latch, foundation rung,
+    # quantile routing): build the CLONE's own image — build stanza mirrors
+    # compose.gb10-override.yml (repo-tree context, gb10 Dockerfile) — so
+    # the shared vvip-traffic-oracle:latest is never overwritten.
+    build:
+      context: ..
+      dockerfile: infra/docker/Dockerfile.traffic-oracle.gb10
+    image: vvip-argus-traffic-oracle:latest
     network_mode: host
     ports: !override []
     extra_hosts: !override []
@@ -61,8 +111,16 @@ services:
 
   convoy-brain:
     container_name: vvip-argus-convoy-brain
-    # Clone tree code is byte-identical for this service; reuse the original image.
-    image: vvip-convoy-brain:latest
+    # 5273 is THE system now (original retired 2026-10-19): survive host reboots
+    restart: unless-stopped
+    # Wave code diverged here too (routing consumers, banded-ETA clients):
+    # build the CLONE's own image — build stanza mirrors
+    # compose.gb10-override.yml — so the shared vvip-convoy-brain:latest is
+    # never overwritten.
+    build:
+      context: ..
+      dockerfile: infra/docker/Dockerfile.convoy-brain.gb10
+    image: vvip-argus-convoy-brain:latest
     network_mode: host
     ports: !override []
     extra_hosts: !override []
@@ -78,6 +136,14 @@ services:
 
   command-deck:
     container_name: vvip-argus-command-deck
+    # 5273 is THE system now (original retired 2026-10-19): survive host reboots
+    restart: unless-stopped
+    # Keeps the inherited build (compose.gb10-override.yml: SvelteKit deck
+    # built from services/command-deck); the explicit image name pins the
+    # clone's own tag (identical to the compose auto-name for this project)
+    # so Wave-2 deck touches (ETA bands) rebuild without ever writing the
+    # shared vvip-command-deck:latest.
+    image: vvip-argus-command-deck:latest
     network_mode: host
     ports: !override []
     extra_hosts: !override []

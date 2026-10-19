@@ -25,6 +25,7 @@ Endpoints:
     POST /api/v1/adaptive/observe       → feed one situation observation
     POST /api/v1/simulate/twin          → C5 twin (simulation router)
     POST /api/v1/simulate/replay        → C5 calibration (simulation router)
+    GET  /api/v1/ops/degradation-taxonomy → decisions_log failure ledger
     GET  /health                        → Readiness probe
     GET  /metrics                       → Prometheus metrics
 """
@@ -387,6 +388,20 @@ def create_app() -> FastAPI:
         logger.warning(
             "traffic_oracle.startup",
             msg="adaptive.surfacing not importable (signalling stream)",
+            error=str(exc),
+        )
+
+    # --- ops ledger: degradation taxonomy over convoy-brain's
+    # decisions_log (read from the SHARED Valkey both services wire to).
+    # Guarded import keeps the tree bootable regardless of landing order.
+    try:
+        from traffic_oracle.ops.router import router as ops_router
+
+        app.include_router(ops_router, prefix="/api/v1")
+    except ImportError as exc:  # pragma: no cover - tree-safety
+        logger.warning(
+            "traffic_oracle.startup",
+            msg="ops.router not importable (degradation ledger)",
             error=str(exc),
         )
 

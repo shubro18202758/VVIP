@@ -121,7 +121,10 @@ FLAG_SEED=202506271
 FLAG_EVENT_ID="$(python3 -c "import uuid; print(uuid.uuid5(uuid.uuid5(uuid.NAMESPACE_URL,'vvip-event-emulator'),'${FLAGSHIP_ID}|${FLAG_SEED}'))")"
 SWEEP_ID="watchlist_anpr_sweep"
 SWEEP_BASE_SEED=20261105
-SWEEP_SEED=$((SWEEP_BASE_SEED + (EPOCHSECONDS % 899999)))   # fresh per run
+# Fresh per run by default; overridable via env so the repetition gate can
+# PIN the seed (identical tapes -> identical sightings/rules/terminal state
+# across rounds; the historical default behavior is preserved byte-for-byte).
+SWEEP_SEED="${SWEEP_SEED:-$((SWEEP_BASE_SEED + (EPOCHSECONDS % 899999)))}"
 STOLEN_PLATE="GJ27EM9001"                                    # tape.py _STOLEN_LABEL
 OFFICER="Duty Officer R. Mehta (God's Eye Morning)"
 FIR_REF="FIR 4401/2026, Kalupur PS"
@@ -658,6 +661,15 @@ pending_rows = attempt(get, "/api/v1/enforcement/recommendations?status=pending&
 pending = pending_rows.get("recommendations", []) if "_http_error" not in pending_rows else []
 mine = [r for r in pending if r["plate"] == plate]
 pool = [r for r in mine if r["rule_id"] == "R_SPD_SEGMENT"] or mine
+# Deterministic duty-officer choice: the pending listing is ordered by
+# created_at (enforcement/__init__.py), which follows the sightings' t
+# order — and each emulated read's t is a hash of the per-run sweep seed
+# (tape.py _build_anpr_frames t_sec). pool[0] alone would approve a
+# DIFFERENT camera's challan on otherwise-identical runs (caught by the
+# repetition gate, 2026-10-18); ties among equal candidates are broken
+# by CONTENT (camera, then rule), never by seed-derived ordering.
+pool.sort(key=lambda r: ((r.get("evidence") or {}).get("camera_id") or "",
+                         r.get("rule_id") or ""))
 rec = pool[0] if pool else None
 approval = None
 if rec:

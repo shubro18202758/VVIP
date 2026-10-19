@@ -327,3 +327,34 @@ export interface InterceptionPlan {
 	chokes: InterceptionChoke[];
 	note: string | null;
 }
+
+// ─── Degradation ledger (decisions_log failure taxonomy) ─────────────────────
+
+/**
+ * One recurring-failure cause mined from convoy-brain's decisions_log by
+ * the oracle's /ops/degradation-taxonomy endpoint. The five fields are the
+ * server contract (traffic_oracle/ops/degradation_taxonomy.py); everything
+ * is optional-tolerant because the API is additive and may not be deployed
+ * yet — the panel renders whatever is present and never invents values.
+ */
+export interface DegradationTaxonomyEntry {
+	/** Cause family, e.g. "novelty_latch:novel" / "checkpoint_fallback:gemma". */
+	cause: string;
+	count: number;
+	/** Epoch seconds of the earliest / latest contributing row (null = none datable). */
+	firstSeen: number | null;
+	lastSeen: number | null;
+	/** Pointer to one real row: "<movement>:<phase>:<timestamp>". */
+	sampleRef: string;
+}
+
+export interface DegradationTaxonomy {
+	/** Causes sorted by count desc — the ledger proper. */
+	entries: DegradationTaxonomyEntry[];
+	contextsScanned: number;
+	rowsScanned: number;
+	/** True when the Valkey scan hit its context bound (honest escape hatch). */
+	truncated: boolean;
+	contextsSkippedCorrupt: number;
+	generatedAt: string | null;
+}

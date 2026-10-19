@@ -115,7 +115,7 @@ VALUES
 
 
 -- ═══════════════════════════════════════════════════════════════════
--- JUNCTIONS (14 junctions at major intersections)
+-- JUNCTIONS (15 junctions at major intersections)
 -- ═══════════════════════════════════════════════════════════════════
 
 INSERT INTO corridor.junctions (junction_type, signal_control, geom)
@@ -147,7 +147,10 @@ VALUES
     -- J13: Gandhinagar Hwy / Airport Road
     ('signal',       TRUE,  ST_GeomFromText('POINT(72.6200 23.0500)', 4326)),
     -- J14: Gandhinagar Hwy North / Airport
-    ('intersection', TRUE,  ST_GeomFromText('POINT(72.6300 23.0700)', 4326));
+    ('intersection', TRUE,  ST_GeomFromText('POINT(72.6300 23.0700)', 4326)),
+    -- J15: Tilak Road / Station Road (Kalupur) — unsignalized intersection
+    -- linking Tilak Road to the Kalupur station cluster (segments 1013/1014)
+    ('intersection', FALSE, ST_GeomFromText('POINT(72.6006 23.0251)', 4326));
 
 
 -- ═══════════════════════════════════════════════════════════════════
@@ -257,7 +260,12 @@ VALUES
     (1025, 1026, 14, 3),   -- GN Hwy Central → GN Hwy North (straight)
     (1026, 1025, 14, 3),   -- GN Hwy North → GN Hwy Central
     (1025, 1029, 14, 10),  -- GN Hwy Central → Hansol Connector
-    (1029, 1025, 14, 10);  -- Hansol Connector → GN Hwy Central
+    (1029, 1025, 14, 10),  -- Hansol Connector → GN Hwy Central
+
+    -- Via J15 (Tilak Road / Station Road Kalupur) — reconnects the central
+    -- corridor to the Kalupur station cluster (city otherwise splits in two)
+    (1013, 1014, 15, 5),   -- Tilak Rd → Station Rd (Kalupur)
+    (1014, 1013, 15, 5);   -- Station Rd (Kalupur) → Tilak Rd
 
 
 -- ═══════════════════════════════════════════════════════════════════

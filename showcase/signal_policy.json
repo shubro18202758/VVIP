@@ -2,7 +2,7 @@
  "replay": {
   "status": "ok",
   "n_observations": 40,
-  "speed_mae_kmh": 13.23,
+  "speed_mae_kmh": 7.2,
   "mae_tolerance_kmh": 5.0,
   "calibrated": false
  },
@@ -28,8 +28,8 @@
   "shadow_eval": {
    "status": "unavailable",
    "detail": "twin_not_calibrated",
-   "baseline_disruption_vh": 88.612,
-   "candidate_disruption_vh": 88.612
+   "baseline_disruption_vh": 26.8438,
+   "candidate_disruption_vh": 26.8438
   }
  },
  "last_plan_auditable": {
@@ -50,8 +50,8 @@
   "shadow_eval": {
    "status": "unavailable",
    "detail": "twin_not_calibrated",
-   "baseline_disruption_vh": 88.612,
-   "candidate_disruption_vh": 88.612
+   "baseline_disruption_vh": 26.8438,
+   "candidate_disruption_vh": 26.8438
   },
   "event_id": "3ef08290-66d8-511b-a25a-3d2967c79985"
  },

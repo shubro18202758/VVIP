@@ -1,1 +1,1 @@
-{"run_id":null,"status":"completed","movement_id":"3ef08290-66d8-511b-a25a-3d2967c79985","use_case_id":"rath_yatra_monsoon_ambulance","seed":202506271,"t0_anchor":"2026-10-13T18:04:40.037846+00:00","clock_scale":30.0,"delivery":{"frames":736,"delivered":736,"failed":0,"skipped":0,"late":0}}
+{"run_id":19,"status":"completed","movement_id":"3ef08290-66d8-511b-a25a-3d2967c79985","use_case_id":"rath_yatra_monsoon_ambulance","seed":202506271,"t0_anchor":"2026-10-18T14:57:19.138112+00:00","clock_scale":30.0,"delivery":{"frames":736,"delivered":736,"failed":0,"skipped":0,"late":0}}

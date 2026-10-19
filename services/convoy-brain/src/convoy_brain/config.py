@@ -67,23 +67,59 @@ DECIDER_P95_DEGRADE_MS = 3000               # health p95 above this -> Gemma-onl
 DECIDER_PROBE_TIMEOUT_SEC = 3.0             # probe-decide wall bound; a healthy tier must beat the p95 line
 
 # -- Confidence gating --------------------------------------------------------
-CONFIDENCE_FLOOR = 0.6                      # decider confidence below this -> Gemma draft + operator alert
+# CALIBRATED 2026-10-19 against the live 27B (POST :8083/decide with the
+# exact pre-movement question set): route_strategy confidence 0.5033,
+# disruption_tolerance 0.4696 (the noul question carries no confidence and
+# is excluded from the gate — see decider.py). The previous 0.6 floor
+# labeled every live pre-movement checkpoint low_confidence, which also
+# permanently blocked the tier-0 cache write side. 0.45 sits below both
+# measured values; do NOT go lower without new measurements. RE-MEASURE if
+# the decider model ever changes. Env-overridable at process start
+# (VVIP_CONFIDENCE_FLOOR) like the service URLs.
+CONFIDENCE_FLOOR = float(os.environ.get("VVIP_CONFIDENCE_FLOOR", "0.45"))
 
 # -- Decider novelty latch (confident-but-novel abstention) -------------------
 # When the strategic tier answers CONFIDENTLY, verify the situation is
-# represented in recent memory via the embedding service (/search, maxsim
-# scale); if nothing similar is on record, the confident answer is withheld
+# represented in recent memory via the embedding service (/search); if
+# nothing similar is on record, the confident answer is withheld
 # (escalated to the tactical tier + operator) instead of trusted
 # off-distribution. These are brain-platform constants like CONFIDENCE_FLOOR
 # — they do NOT belong in protocol_params_gen (shared-schema owned) or the
 # adaptive C4 surface.
-NOVELTY_SIMILARITY_FLOOR = 0.35   # maxsim scale; UNCALIBRATED initial value —
-                                  # needs empirical calibration against seeded
-                                  # memory before trusting; ctor-injectable on
-                                  # DeciderBrain like confidence_floor.
+NOVELTY_SIMILARITY_FLOOR = 0.35   # normalized MaxSim scale (0..1) — the
+                                  # fraction of a query's tokens that must
+                                  # find a strong match in the best memory
+                                  # doc for the situation to count as "on
+                                  # record". CALIBRATED 2026-10-19: live
+                                  # raw MaxSim is a SUM over query tokens
+                                  # (self-match of the 172-char gate state
+                                  # doc measured 55.40; embedding README
+                                  # shows 4.19 for a short query), so the
+                                  # raw scale is unbounded by query length
+                                  # and a 0.35/0.75 raw comparison passed
+                                  # ANY maxsim-scored doc. MemoryClient now
+                                  # normalizes (raw / query_token_count)
+                                  # before these floors are applied —
+                                  # re-calibrate only against normalized
+                                  # scores.
 NOVELTY_SEARCH_TIMEOUT_SEC = 2.0  # wall bound for one POST /search (wait_for)
 NOVELTY_MEMORY_TOP_K = 5          # results requested per search
 NOVELTY_MEMO_TTL_SEC = 30.0       # memoize one search per (movement, state_doc)
+
+# -- Decision-memory feeder (C3 write side) ------------------------------------
+# The novelty latch and the tier-0 gate READ traffic.memory_docs through
+# NOVELTY_SEARCH_KINDS, which includes "decision" — the decider's own
+# checkpoints. Nothing else in the stack feeds that kind, so on live traffic
+# the corpus never gains a decision doc and every checkpoint reads
+# miss_novel forever. After a SERVED /decide (tier "decider" — including a
+# low-confidence one, which is still served with a Gemma draft), the brain
+# upserts the checkpoint's state document into the corpus as kind=decision.
+# Recording happens AFTER the checkpoint's own /search, so the first
+# occurrence of a situation can still be novel (Wave-1 latch semantics are
+# preserved; repeats become "on record"). The record never carries answers
+# into the tier-0 ANSWER cache — which answers may be cached stays gated in
+# decider.py (confident + memory-covered only).
+DECISION_MEMORY_RECORD_TIMEOUT_SEC = 5.0  # wall bound for one POST /embed/documents
 
 # -- Decider tier-0 gate (routine-checkpoint cache in front of the 27B) -------
 # A ROUTINE checkpoint — same movement, same trigger, same canonical question
@@ -94,17 +130,22 @@ NOVELTY_MEMO_TTL_SEC = 30.0       # memoize one search per (movement, state_doc)
 # low-confidence answer never enters the cache). Same brain-platform
 # constants doctrine as the novelty block above: ctor-injectable on
 # DeciderBrain, NOT protocol_params_gen surface.
-TIER0_ROUTINE_SIMILARITY_FLOOR = 0.75  # maxsim scale — UNCALIBRATED, and
-                                       # deliberately STRICTLY TIGHTER than
-                                       # NOVELTY_SIMILARITY_FLOOR so that
-                                       # "routine" is a strictly stronger
-                                       # condition than "not novel": a hit
-                                       # requires the situation to strongly
-                                       # resemble the remembered one, not
-                                       # merely to fail the novelty test.
-                                       # Conservative placeholder — relax only
-                                       # after empirical calibration against
-                                       # seeded memory.
+TIER0_ROUTINE_SIMILARITY_FLOOR = 0.75  # NORMALIZED MaxSim scale (0..1 — see
+                                       # the NOVELTY block's 2026-10-19
+                                       # calibration note: MemoryClient
+                                       # divides the raw sum by
+                                       # query_token_count before floors are
+                                       # applied). Deliberately STRICTLY
+                                       # TIGHTER than NOVELTY_SIMILARITY_FLOOR
+                                       # so that "routine" is a strictly
+                                       # stronger condition than "not novel":
+                                       # a hit requires the situation to
+                                       # strongly resemble the remembered
+                                       # one, not merely to fail the novelty
+                                       # test. Live reference points
+                                       # (2026-10-19, gate state doc):
+                                       # identical-repeat self-match ≈ 0.87+
+                                       # normalized (raw 55.40).
 TIER0_CACHE_TTL_SEC = 300.0            # staleness bound for a cached routine answer
 TIER0_CACHE_MAX_ENTRIES = 128          # FIFO bound — long-lived processes must not leak
 TIER0_ELIGIBLE_TRIGGERS = frozenset({

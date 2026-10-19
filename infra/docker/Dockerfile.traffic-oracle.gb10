@@ -24,6 +24,13 @@ COPY services/traffic-oracle/src/ src/
 # Seed network for the simulation twin (parsed at runtime via parents[5]).
 COPY services/corridor-store/seed/ /repo/VVIP/services/corridor-store/seed/
 
+# Zero-shot foundation forecaster artifact (t0-alpha ONNX INT8, Apache-2.0) —
+# BAKED into the image per the hosting decision (2026-10-19) so the
+# foundation rung serves live with quantiles without mounts or host paths.
+# Provenance, license and sha256 in models-local/t0/NOTICE (copied along).
+COPY models-local/t0/ /repo/VVIP/models-local/t0/
+ENV VVIP_FOUNDATION_MODEL_PATH=/repo/VVIP/models-local/t0/t0-alpha-grouped-int8.onnx
+
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONPATH=/repo/VVIP/services/traffic-oracle/src
 CMD ["python", "-m", "traffic_oracle"]

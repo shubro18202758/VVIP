@@ -117,16 +117,16 @@ event** → **pgRouting interception plan** (choke junctions ranked off the
 latest sighting) → **live trace on the God's-eye canvas** — while a **Jan
 Rakshak unit** is dispatched to the spillover and the **city signal-policy
 guard** refuses an uncalibrated commit, audited. Re-run for this revision
-(2026-10-13, bench artifacts 13:24 UTC, showcase summary 13:28 UTC / 18:54–18:58
-IST, pursuit-chain evidence the same-day 18:07 UTC re-run, **exit 0,
+(2026-10-18, bench artifacts 2026-10-13 13:24 UTC, showcase one run —
+summary + pursuit chain 15:01 UTC / 20:23–20:31 IST, **exit 0,
 `passed: true`**): 736/736 + 600 emulator frames delivered; **36 audit
 decisions this run** (30 situation + 6 parameter); 3 band transitions; 1
 ambulance-delay escalation; **4 green-corridor windows**; 12-replication
 twin ambulance delay mean **7.63 s** (model output); **4 pixel-proven
 screenshots** — the God's-eye 3D city mid-chaos (38 entities, all five
 layers), the pursuit-trace camera parked on the stolen vehicle's real trace
-centroid (76 timed positions, `source=emulated_anpr`), the rebuilt Daylight
-citizen advisory (16 live-source event cards), and the `/ops` situation wall
+centroid (4 timed positions, `source=emulated_anpr`), the rebuilt Daylight
+citizen advisory (1/1 live-source event cards), and the `/ops` situation wall
 in the flagship aftermath (band eased to GREEN, plate GJ27EM9001 live in the
 Decision Queue). Evidence lands in `showcase/` (results JSON, pursuit chain,
 earmark, twin audit, screenshots + shot manifests). The emulated/real
@@ -316,11 +316,12 @@ all three green after **one fix round** — `scripts/verify_all.sh` (exit 0,
 ALL TIERS PASSED: frontend bundle + headless e2e journey + the two
 gods-eye tiers (svelte-check + SwiftShader canvas smoke) + every
 pure-python pytest suite, as collected on the current tree — convoy-brain
-240, corridor-store importer 22 + store 12, embedding-service 113,
-event-emulator 94, traffic-oracle 574 — + live models smoke);
+262, corridor-store importer 22 + store 12, embedding-service 113,
+event-emulator 94, traffic-oracle 633, plus the command-deck's own 2
+proxy-guard tests — + live models smoke);
 `scripts/showcase_run.sh` (exit 0, SHOWCASE PASS — "God's Eye Morning",
 numbers and artifacts in the flagship section above, `passed: true` in
-`showcase/showcase_results.json`, 2026-10-13T13:28Z); `scripts/bench_stack.sh`
+`showcase/showcase_results.json`, 2026-10-18T15:01Z); `scripts/bench_stack.sh`
 (exit 0, BENCH OK — the run quoted above, `bench_results.json` +
 `bench_adversarial_report.json` at 2026-10-13T13:24Z). The interface
 acceptance camera `services/command-deck/tests/screens-verify.mjs` was
@@ -333,12 +334,13 @@ containers. *(The earlier 127 exits of the gate scripts in the
 2026-10-12 repair session are history, kept visible in
 `TECHNICAL_DOCS.md` §3/§13's provenance notes.)*
 
-**Waves 1–2 (2026-10-17/18) — what the ladder grew:** the acceptance gate
-(`scripts/verify_all.sh`) now runs twelve tiers in order —
+**Waves 1–3 (2026-10-17/18) — what the ladder grew:** the acceptance gate
+(`scripts/verify_all.sh`) now runs fourteen tiers in order —
 frontend-bundle, frontend-e2e, gods-eye-check, gods-eye-canvas, the
 pure-python pytest suites, submission-consistency, wave1-hatches,
-wave2-forecaster, wave2-routing, wave2-tier0, models, model-drift —
-aborting at the first failure. Wave-1 added the forecaster out-of-support
+wave2-forecaster, wave2-routing, wave2-tier0, wave3-repetition,
+wave3-ledger, models, model-drift — aborting at the first failure.
+Wave-1 added the forecaster out-of-support
 hatch (`predict/support_bounds.py`: no model ever sees an
 out-of-support input), the decider novelty latch (confident-but-novel
 checkpoints abstain with an audit row, memory outages fail to
@@ -350,7 +352,16 @@ routing (`optimize/quantile_objective.py`; knob `routing.robust_routing`
 registered in `shared/schemas/protocol_params.json`, drift-guarded into
 both services) with banded ETAs (`eta_band`/`eta_band_reason`), and the
 decider tier-0 routine-checkpoint cache (routine hits served with zero
-27B calls; `DECIDER_TIER0_DISABLE` kill switch). Full detail:
+27B calls; `DECIDER_TIER0_DISABLE` kill switch). Wave-3 added the
+**degradation ledger** (oracle
+`GET /api/v1/ops/degradation-taxonomy` mining convoy-brain's
+`decisions_log` into a recurring-cause taxonomy + the deck's
+DegradationLedger panel on `/ops`) and the **repetition gate**
+(`scripts/repetition_gate.sh`: identical showcase terminal DB state
+across restored rounds — `--fast` offline selftest in the ladder, the
+full live gate on demand); `scripts/argus_full_smoke.sh` is the argus
+clone's full-system live smoke with a read-only guard over the original
+stack. Full detail:
 `TECHNICAL_DOCS.md` §3 (latch + tier-0 cache), §6.1b (forecast ladder),
 §13 (wave gates). *Re-executed standalone by the 2026-10-18 repair pass:
 `smoke_models.sh` exit 0 and `model_drift_panel.sh` `--selftest` + live

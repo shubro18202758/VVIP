@@ -568,6 +568,105 @@ class TestMetrics:
         assert _metric(sample) == seeded  # the hit added NO observation
 
 
+# ─── (E) Calibrated confidence gate (2026-10-19 authorization) ────────────────
+
+
+class TestCalibratedConfidenceGate:
+    """Pins the calibration authorized 2026-10-19.
+
+    Live measurements (POST :8083/decide, exact pre-movement questions):
+    route_strategy 0.5033, disruption_tolerance 0.4696, urgency (noul)
+    carries NO confidence (model-host contract). The previous state —
+    CONFIDENCE_FLOOR=0.6 plus None→0.0 coercion for noul — mislabeled every
+    live pre-movement checkpoint low_confidence and permanently blocked the
+    tier-0 write side. Now: floor 0.45 (config, env VVIP_CONFIDENCE_FLOOR),
+    noul excluded from aggregation (unknown is neither pass nor fail).
+    """
+
+    PRE_MOVEMENT_QS = {
+        "route_strategy": {
+            "type": "choice", "instructions": "pick",
+            "options": ["primary", "alternate", "delay_departure"],
+        },
+        "urgency": {"type": "noul", "instructions": "how urgent"},
+        "disruption_tolerance": {
+            "type": "score", "instructions": "tolerance", "scale": [0.0, 1.0],
+        },
+    }
+
+    async def test_noul_absence_does_not_block_caching(self):
+        # Live-shaped answers: choice 0.5033 / score 0.4696 (both above the
+        # calibrated 0.45 floor), noul confidence None. The checkpoint is
+        # CONFIDENT, stores, and the identical repeat HITS — the exact live
+        # behavior the calibration enables.
+        memory = FakeMemoryClient(results=[memory_ok(best_score=0.88)])
+        scripted = ScriptedDecider(confidence=0.5033)  # noul → None by default
+        brain = DeciderBrain(
+            scripted, memory_client=memory, min_interval_sec=0,
+            confidence_floor=0.45,
+        )
+        first = await brain.checkpoint(
+            "mv-c1", "pre_movement", "state", self.PRE_MOVEMENT_QS
+        )
+        assert first.tier == "decider"
+        assert first.audit["needs_gemma_draft"] is False
+        assert first.operator_alerts == []
+        # The noul answer's absent confidence is labeled honestly (null),
+        # not fabricated as 0.0.
+        assert first.audit["answers"]["urgency"]["confidence"] is None
+        assert brain._tier0_cache  # stored
+
+        repeat = await brain.checkpoint(
+            "mv-c1", "pre_movement", "state-2-same-kind",
+            self.PRE_MOVEMENT_QS, force=True,
+        )
+        assert repeat.tier == "tier0_cache_hit"
+        assert scripted.decide_calls == 1  # the repeat never called the 27B
+        assert repeat.audit["answers"]["urgency"]["confidence"] is None
+
+    async def test_genuinely_low_choice_confidence_never_caches(self):
+        # Noul presence must not ENABLE caching either: a genuinely
+        # low-confidence choice answer (0.40 < 0.45) never stores even with
+        # the noul excluded.
+        memory = FakeMemoryClient(results=[memory_ok(best_score=0.88)])
+        brain = DeciderBrain(
+            ScriptedDecider(confidence=0.40), memory_client=memory,
+            min_interval_sec=0, confidence_floor=0.45,
+        )
+        result = await brain.checkpoint(
+            "mv-c2", "pre_movement", "state", self.PRE_MOVEMENT_QS
+        )
+        assert result.tier == "decider"
+        assert any(
+            a["type"] == "low_confidence_decision" for a in result.operator_alerts
+        )
+        assert brain._tier0_cache == {}
+
+    async def test_below_floor_similarity_normalized_0_60_never_hits(self):
+        # Normalized-scale discrimination: a best doc at 0.60 (covered by
+        # the 0.35 novelty floor, below the 0.75 routine bar) must NOT serve
+        # or store — "routine" stays strictly stronger than "not novel".
+        memory = FakeMemoryClient(results=[memory_ok(best_score=0.60)])
+        scripted = ScriptedDecider(confidence=0.95)
+        brain = DeciderBrain(scripted, memory_client=memory, min_interval_sec=0)
+        first = await brain.checkpoint(
+            "mv-c3", "pre_movement", "state", self.PRE_MOVEMENT_QS
+        )
+        assert first.audit["tier0_cache"]["status"] == "miss_below_routine_floor"
+        assert brain._tier0_cache == {}  # write side mirrors the routine bar
+        second = await brain.checkpoint(
+            "mv-c3", "pre_movement", "state", self.PRE_MOVEMENT_QS, force=True
+        )
+        assert second.audit["tier0_cache"]["status"] == "miss_below_routine_floor"
+        assert scripted.decide_calls == 2
+
+    async def test_confidence_floor_default_is_the_calibrated_constant(self):
+        from convoy_brain.config import CONFIDENCE_FLOOR
+        assert CONFIDENCE_FLOOR == 0.45
+        brain = DeciderBrain(ScriptedDecider())
+        assert brain._confidence_floor == 0.45
+
+
 # ─── (D) Integration — live escort incident path ─────────────────────────────
 
 

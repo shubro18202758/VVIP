@@ -45,10 +45,21 @@ from test_orchestrator import ScriptBridge, ScriptDecider, run_turn
 
 
 class ScriptedDecider:
-    """Deterministic DeciderClient stand-in (confidence configurable)."""
+    """Deterministic DeciderClient stand-in (confidence configurable).
 
-    def __init__(self, confidence: float = 0.95, error: Exception | None = None):
+    noul answers default to confidence=None — mirroring the model-host wire
+    contract (decider_runtime.py: "autojev noul answers carry no
+    confidence"), which the decider excludes from confidence gating.
+    """
+
+    def __init__(
+        self,
+        confidence: float = 0.95,
+        error: Exception | None = None,
+        noul_confidence: float | None = None,
+    ):
         self.confidence = confidence
+        self.noul_confidence = noul_confidence
         self.error = error
         self.decide_calls = 0
 
@@ -66,7 +77,10 @@ class ScriptedDecider:
                 type=spec["type"],
                 value="final_answer" if spec["type"] == "choice" else 0.9,
                 probability=0.9,
-                confidence=self.confidence,
+                confidence=(
+                    self.noul_confidence if spec["type"] == "noul"
+                    else self.confidence
+                ),
             )
             for name, spec in questions.items()
         }
@@ -123,6 +137,9 @@ class FakeMemoryClient:
         self.delay = delay
         self.calls = 0
         self.seen: list[dict] = []
+        self.recorded: list[dict] = []
+        self.record_error: Exception | None = None
+        self.record_returns: bool = True
 
     async def search(self, state_doc, *, movement_id=None, top_k=5):
         self.calls += 1
@@ -138,6 +155,19 @@ class FakeMemoryClient:
                 return self.results.pop(0)
             return self.results[0]
         return memory_ok()
+
+    async def record_decision(self, state_doc, *, movement_id, ref_id, title,
+                              metadata=None, timeout_sec=5.0):
+        if self.record_error:
+            raise self.record_error
+        self.recorded.append({
+            "state_doc": state_doc,
+            "movement_id": movement_id,
+            "ref_id": ref_id,
+            "title": title,
+            "metadata": metadata or {},
+        })
+        return self.record_returns
 
 
 class ScriptedClock:
@@ -235,8 +265,12 @@ class TestMemoryClientParsing:
         )
         assert result.status == "ok"
         assert result.hits == 2
-        # BEST maxsim across rows — not results[0] ordering.
-        assert result.best_score == 0.58
+        # BEST maxsim across rows — not results[0] ordering. best_score is
+        # the NORMALIZED value (raw / query_token_count — the 2026-10-19
+        # calibration; 0.58 raw over 4 query tokens → 0.145); the raw
+        # service value is preserved on best_score_raw.
+        assert result.best_score == 0.58 / 4
+        assert result.best_score_raw == 0.58
         assert result.best_doc_id == "d2"
         assert result.best_kind == "aar"
         assert result.maxsim_present is True
@@ -254,6 +288,26 @@ class TestMemoryClientParsing:
         assert result.hits == 0
         assert result.best_score is None
         assert result.maxsim_present is False
+
+    async def test_missing_query_token_count_passes_raw_through(self):
+        # Fail-open legacy shape: a response without query_token_count (an
+        # older embedding service) leaves the RAW maxsim as best_score —
+        # documented passthrough, never a raise.
+        def handler(request):
+            return httpx.Response(200, json={
+                "results": [
+                    {"doc_id": "d1", "kind": "decision", "ref_id": "r1",
+                     "title": "t", "snippet": "s", "score": 3.2,
+                     "maxsim_score": 3.2, "dense_score": 0.5,
+                     "strategy": "maxsim", "token_count": 40,
+                     "occurred_at": None, "metadata": {}},
+                ],
+            })
+
+        result = await client_with(handler).search("TRIGGER: incident")
+        assert result.status == "ok"
+        assert result.best_score == 3.2
+        assert result.best_score_raw == 3.2
 
     async def test_all_dense_fallback_rows_carry_no_comparable_score(self):
         # maxsim_score None on every row — the scales must never be mixed.

@@ -8,7 +8,7 @@
 	 *       confirmations) + event board · CENTER God's-eye wall canvas
 	 *       (auto-orbit, pursuit overlay) with the signal gate card and AMA
 	 *       module card under it · RIGHT situation band panel, twin compare,
-	 *       event dossier;
+	 *       event dossier, degradation ledger;
 	 *   (4) full-width audit stream (pointer auto-pause, rung-labelled).
 	 *
 	 * CommandBar state is assigned in the $effect below (the R3 contract:
@@ -38,6 +38,7 @@
 	import EventDossierDrawer from '$lib/ops/components/EventDossierDrawer.svelte';
 	import AuditStream from '$lib/ops/components/AuditStream.svelte';
 	import EmulatorPanel from '$lib/ops/components/EmulatorPanel.svelte';
+	import DegradationLedger from '$lib/ops/components/DegradationLedger.svelte';
 	import GodsEyeCanvas from '$lib/gods-eye/GodsEyeCanvas.svelte';
 
 	onMount(() => {
@@ -125,12 +126,13 @@
 			</div>
 		</div>
 
-		<!-- RIGHT — band panel, twin compare, dossier -->
+		<!-- RIGHT — band panel, twin compare, dossier, degradation ledger -->
 		<div class="col col-right">
 			<SituationBandPanel />
 			<TwinComparePanel />
 			<EventDossierDrawer />
 			<EmulatorPanel />
+			<DegradationLedger />
 		</div>
 	</div>
 

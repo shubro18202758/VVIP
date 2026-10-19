@@ -840,7 +840,9 @@ class TestNetwork:
         harness_segments, harness_junctions = mod.parse_seed(SEED_SQL)
         net = from_seed_sql(SEED_SQL)
         assert len(net) == len(harness_segments)
-        assert net.n_signalized_junctions + 3 == harness_junctions  # 3 roundabouts
+        # unsignalized seed junctions: 3 roundabouts + J15 (unsignalized
+        # Tilak Rd / Station Rd intersection — keeps the seed equal to live)
+        assert net.n_signalized_junctions + 4 == harness_junctions
         for hs in harness_segments:
             seg = net.require(hs["id"])
             assert seg.length_m == pytest.approx(hs["length_m"], abs=1.0)

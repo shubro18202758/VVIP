@@ -13,6 +13,11 @@
 #                          render smoke (tests/gods-eye-smoke.mjs — canvas
 #                          non-blank, keyless, proxy; LIVE oracle+emulator
 #                          required, like the models tier)
+#   TIER design-smoke      the cockpit-topology tripwire + design-shell
+#                          smoke (tests/design-smoke.mjs — / IS the
+#                          convoy-command cockpit, the EIGHT live URLs 200,
+#                          token parity both themes; serves the canvas
+#                          tier's build/ output itself on :5199)
 #   TIER pytest-<service>  every pure-python pytest suite under VVIP/
 #                          (suites needing torch/onnx/GPU stacks are SKIPped
 #                          with an explicit reason, never silently)
@@ -33,6 +38,17 @@
 #   TIER wave2-tier0       scripts/check_tier0_gate.sh from the VVIP dir —
 #                          the FULL convoy-brain suite incl. the decider
 #                          tier-0 routine-checkpoint cache gate (gate venv)
+#   TIER wave3-repetition  scripts/repetition_gate.sh --fast from the VVIP
+#                          dir — offline selftest of the consistency-under-
+#                          repetition gate (comparator/normalizer/FAIL path;
+#                          no showcase, no docker, no db). The FULL live run
+#                          is on-demand only: bash VVIP/scripts/
+#                          repetition_gate.sh (tens of minutes) — NOT in
+#                          this default ladder.
+#   TIER wave3-ledger      scripts/check_degradation_ledger.sh from the VVIP
+#                          dir — degradation-ledger taxonomy tests over
+#                          decisions_log (gate venv; run after the pytest
+#                          tier so the venv is bootstrapped)
 #   TIER models            VVIP/scripts/smoke_models.sh (live model stack)
 #   TIER model-drift       VVIP/scripts/model_drift_panel.sh --selftest,
 #                          then the live panel (live model stack, same env
@@ -187,6 +203,42 @@ tier_gods_eye_canvas() {
 }
 
 # ────────────────────────────────────────────────────────────────────────────
+# TIER 2d — city-canvas stream: cockpit-topology tripwire + design-shell smoke
+# ────────────────────────────────────────────────────────────────────────────
+tier_design_smoke() {
+    need node; need npx
+    log "== TIER design-smoke: cockpit-topology tripwire + design-shell smoke =="
+    (
+        cd "$DECK" || exit 1
+        # Same 5199 hygiene as the canvas tier above: this smoke serves the
+        # build/ output itself (spawning `PORT=5199 node build` when nothing
+        # answers), and a stale deck leaked on that port would be reused —
+        # free it first so the smoke spawns its own fresh origin.
+        fuser -k 5199/tcp >/dev/null 2>&1 || true
+        sleep 1
+        # In the default ladder the canvas tier above has just built the
+        # deck; only bootstrap+build when this tier runs standalone and the
+        # adapter-node output is missing.
+        if [ ! -f build/index.js ]; then
+            [ -x node_modules/.bin/vite ] || {
+                npm install --no-package-lock --no-audit --no-fund >/dev/null 2>&1 || exit 1
+            }
+            # Vendor the prebuilt Cesium bundle exactly like the Dockerfile does.
+            if [ ! -f static/cesium/Cesium.js ]; then
+                [ -d node_modules/cesium/Build/Cesium ] || {
+                    npm install --no-package-lock --no-audit --no-fund >/dev/null 2>&1 || exit 1
+                }
+                mkdir -p static && cp -r node_modules/cesium/Build/Cesium static/cesium || exit 1
+            fi
+            NODE_OPTIONS=--max-old-space-size=1024 ./node_modules/.bin/vite build >/dev/null 2>&1 || exit 1
+        fi
+        [ -f build/index.js ] || exit 1
+        node tests/design-smoke.mjs
+    ) || fail_tier design-smoke "cockpit-topology/design-shell smoke failed (run node tests/design-smoke.mjs in services/command-deck for detail)"
+    pass "design-smoke (cockpit-topology tripwire: / is the cockpit + EIGHT urls 200 + design-shell parity)"
+}
+
+# ────────────────────────────────────────────────────────────────────────────
 # TIER 3 — every pure-python pytest suite under VVIP/
 # ────────────────────────────────────────────────────────────────────────────
 # Bash array so extras brackets reach pip verbatim (no word-split/glob).
@@ -329,6 +381,34 @@ tier_wave2_tier0() {
 }
 
 # ────────────────────────────────────────────────────────────────────────────
+# TIER 3g — wave-3 repetition: consistency-under-repetition gate (selftest)
+# ────────────────────────────────────────────────────────────────────────────
+tier_wave3_repetition() {
+    log "== TIER wave3-repetition: scripts/repetition_gate.sh --fast (offline selftest; the FULL live gate is on-demand 'bash scripts/repetition_gate.sh' — tens of minutes — and is NOT run in this default ladder) =="
+    GATE="$VVIP_DIR/scripts/repetition_gate.sh"
+    [ -f "$GATE" ] || fail_tier wave3-repetition "VVIP/scripts/repetition_gate.sh not found"
+    (
+        cd "$VVIP_DIR" || exit 1
+        bash scripts/repetition_gate.sh --fast
+    ) || fail_tier wave3-repetition "repetition_gate.sh --fast failed (comparator / normalizer / FAIL-path selftest)"
+    pass "wave3-repetition (--fast selftest; full live gate is on-demand scripts/repetition_gate.sh)"
+}
+
+# ────────────────────────────────────────────────────────────────────────────
+# TIER 3h — wave-3 ledger: degradation-ledger taxonomy over decisions_log
+# ────────────────────────────────────────────────────────────────────────────
+tier_wave3_ledger() {
+    log "== TIER wave3-ledger: scripts/check_degradation_ledger.sh (gate venv) =="
+    CHECK="$VVIP_DIR/scripts/check_degradation_ledger.sh"
+    [ -f "$CHECK" ] || fail_tier wave3-ledger "VVIP/scripts/check_degradation_ledger.sh not found"
+    (
+        cd "$VVIP_DIR" || exit 1
+        bash scripts/check_degradation_ledger.sh
+    ) || fail_tier wave3-ledger "check_degradation_ledger.sh failed (degradation-ledger taxonomy over decisions_log)"
+    pass "wave3-ledger"
+}
+
+# ────────────────────────────────────────────────────────────────────────────
 # TIER 4 — model-stack smoke (live services)
 # ────────────────────────────────────────────────────────────────────────────
 tier_models() {
@@ -359,12 +439,15 @@ main() {
     tier_frontend_e2e
     tier_gods_eye_check
     tier_gods_eye_canvas
+    tier_design_smoke
     tier_pytest_suites
     tier_submission_consistency
     tier_wave1_hatches
     tier_wave2_forecaster
     tier_wave2_routing
     tier_wave2_tier0
+    tier_wave3_repetition
+    tier_wave3_ledger
     tier_models
     tier_model_drift
     log ""

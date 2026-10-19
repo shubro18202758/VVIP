@@ -1,6 +1,6 @@
 # Veer (VVIP) — Technical Documentation
 
-> **Version**: 2.4 (city-platform pass — Veer is now a **city-scale
+> **Version**: 2.5 (city-platform pass + Waves 1–3 — Veer is now a **city-scale
 > multi-agency corridor-and-enforcement operating system**; VVIP routing is
 > one component among many. On top of the corridor-OS generalization
 > (`events.*` schema, migrations 007–009; the cause-only event-emulator,
@@ -11,7 +11,8 @@
 > module** (R9, `docs/ACTIVE_MOVEMENT_ADAPTATION.md`) and the multi-agency
 > dispatch channel with Jan Rakshak first-class. All three gates
 > re-executed green by the documentation pass itself — bench re-measured,
-> numbers in §3/§13)
+> numbers in §3/§13. The Wave-3 pass adds the degradation ledger and the
+> repetition gate — §13)
 > **Stack**: Python 3.12/3.13 · Rust 2024 · TypeScript 5.7 · PostgreSQL 17 + PostGIS · Valkey · NATS
 > **Intelligence stack**: model-host **pplx-decider-v1-27b** (:8083) · llama-server **aditi-ps18-v7h Gemma 4 12B** (:8084) · embedding-service **pplx-embed-v2-late-0.6b + bge-m3** (:8085) · ONNX Runtime ≥1.20 · PyTorch ≥2.6 (oracle) / torch 2.14.0 (embedding venv pins)
 > **Infrastructure**: Docker Compose (platform services) + supervised host model stack · Prometheus · Grafana
@@ -200,6 +201,7 @@ BATCH_FLUSH_TIMEOUT_MS   = 100
 | `synthetic/` | generator.py, gap_detector.py, pattern_matcher.py, spatial_interpolator.py, confidence_scorer.py | Gap-filling synthetic data generation |
 | `evaluate/` | scenario_sim.py | Monte Carlo scenario comparison |
 | `runtime/` | gpu_arbiter.py, onnx_serve.py, memory_profiler.py, thread_pool.py | Unified-memory allocation, ONNX session management, memory guards |
+| `ops/` | `__init__.py` (API), router.py, degradation_taxonomy.py | **Wave-3 degradation ledger** — read-only failure surfaces over shared fleet state: mines convoy-brain's `decisions_log` into a recurring-cause taxonomy (`GET /api/v1/ops/degradation-taxonomy`, §13) |
 
 #### The Adaptive Layer (T2)
 
@@ -249,6 +251,7 @@ BATCH_FLUSH_TIMEOUT_MS   = 100
 | `POST` | `/api/v1/adaptive/observe` | Feed one situation observation |
 | `GET` | `/api/v1/adaptive/situation_log` | Band audit history (board primary rung; adaptive surfacing router) |
 | `GET` | `/api/v1/adaptive/module` | AMA module card as data (R9) |
+| `GET` | `/api/v1/ops/degradation-taxonomy` | **Wave-3 degradation ledger** — recurring degradation/failure causes mined from convoy-brain's `decisions_log` (latch firings, tier-0 misses, tactical fallbacks, operator alerts, failed turns; honest-empty taxonomy when the log is clean, every entry sample-referenced — §13) |
 | `POST` | `/api/v1/vehicles/{plate}/earmark` · `POST .../earmark/clear` | Watchlist earmark (lawful basis + capped retention) / clear |
 | `GET` | `/api/v1/vehicles` · `/{id}/sightings` · `/{id}/trace` | Earmarked vehicles / camera reads / timed trace (all source-labelled) |
 | `POST` | `/api/v1/enforcement/evaluate` | Run deterministic rules for one sighting → PENDING recommendations |
@@ -807,15 +810,16 @@ runs — it moves run to run); reasoning_depth is 0.30–0.41 across runs.
 
 **Gates — green for this revision (the interface revision's gate sessions
 drove all three green after one fix round; the bench artifacts on disk are
-the 2026-10-13T13:24Z run, the showcase summary the 13:28Z run, and the
-pursuit-chain evidence the same-day **2026-10-13T18:07Z re-run**
-(`pursuit_chain.json`); `verify_all.sh` was not
+the 2026-10-13T13:24Z run, and the showcase artifacts on disk are the
+**2026-10-18T15:01Z single run** (`showcase_results.json` +
+`pursuit_chain.json`, §13); `verify_all.sh` was not
 re-executed by the docs pass itself):**
 `scripts/verify_all.sh` → **exit 0, ALL TIERS PASSED** — frontend bundle +
 headless e2e journey + the two gods-eye tiers (svelte-check; SwiftShader
 canvas smoke) + every pure-python pytest suite (as collected on the current tree:
-convoy-brain **240**, corridor-store importer 22 + store **12**,
-embedding-service **113**, event-emulator **94**, traffic-oracle **574**)
+convoy-brain **262**, corridor-store importer 22 + store **12**,
+embedding-service **113**, event-emulator **94**, traffic-oracle **633**,
+plus the command-deck's own 2 proxy-guard tests)
 + live models smoke; `scripts/showcase_run.sh` → **exit 0, SHOWCASE PASS**
 ("God's Eye Morning", §13); `scripts/bench_stack.sh` → **exit 0, BENCH OK**
 (the run quoted above). The interface camera
@@ -1476,7 +1480,7 @@ approved via PostGIS :55434; the fleet was health-checked end-to-end by
 the showcase phase-1 gate and the screens camera against the same
 containers).
 
-### Wave gates in the acceptance ladder (Waves 1–2, 2026-10-17/18)
+### Wave gates in the acceptance ladder (Waves 1–3, 2026-10-17/18)
 
 The acceptance ladder (`scripts/verify_all.sh`) now runs, in order:
 frontend-bundle, frontend-e2e, gods-eye-check, gods-eye-canvas, the
@@ -1488,12 +1492,17 @@ contract tests, then the real ONNX artifact through the wave2 venv),
 **wave2-routing** (`check_routing_quantiles.sh`: the P90-robust routing
 objective plus the protocol-params drift guard), **wave2-tier0**
 (`check_tier0_gate.sh`: the full convoy-brain suite including the
-tier-0 gate) — and finally **models** (`smoke_models.sh`, live
-27B/12B/embedder legs) and **model-drift** (`model_drift_panel.sh
---selftest`, then the live four-surface panel). The first failing tier
-aborts the run with `TIER <name> FAILED`. The wave check scripts resolve
-every path from their own location, take no arguments, and run the
-gate venv bootstrapped by the pytest tier.
+tier-0 gate), **wave3-repetition** (`repetition_gate.sh --fast`: the
+offline selftest of the consistency-under-repetition gate — comparator,
+normalizer and FAIL path proven on fixtures; the FULL live gate is
+on-demand `bash scripts/repetition_gate.sh`, tens of minutes) and
+**wave3-ledger** (`check_degradation_ledger.sh`: the degradation-ledger
+taxonomy tests over `decisions_log`, gate venv) — and finally **models**
+(`smoke_models.sh`, live 27B/12B/embedder legs) and **model-drift**
+(`model_drift_panel.sh --selftest`, then the live four-surface panel).
+The first failing tier aborts the run with `TIER <name> FAILED`. The
+wave check scripts resolve every path from their own location, take no
+arguments, and run the gate venv bootstrapped by the pytest tier.
 
 - **P90-robust routing (Wave-2).** `optimize/quantile_objective.py` is a
   pure leaf (torch-free, mirrors the hatch leaf pattern) pricing edge
@@ -1524,6 +1533,84 @@ gate venv bootstrapped by the pytest tier.
   anchors + latency bounds — never byte comparison (free generation is
   sampling-dependent) — and each anchor's evidence is recorded in the
   baseline under `justifications`.
+
+### Wave-3 — the degradation ledger + the repetition gate (2026-10-18)
+
+**Degradation ledger (the self-criticism surface).** The oracle's `ops/`
+module (§2.2 — read-only router + the pure `degradation_taxonomy.py`)
+serves `GET /api/v1/ops/degradation-taxonomy`: it scans the
+`convoy:context:*` Valkey keys convoy-brain persists and groups the
+degradation/failure rows of each `decisions_log` into a recurring-cause
+taxonomy — `checkpoint_fallback:<tier>` (a checkpoint answered by a
+fallback tier, e.g. `gemma`), `checkpoint_rate_limited` (cadence
+refusal), `novelty_latch:novel` (the Wave-1 latch firing, §3),
+`tier0:<miss status>` (an ARMED tier-0 gate that failed to serve, §3),
+`alert:<type>` (operator alerts — classified by SHAPE, any non-checkpoint
+row carrying a `type` field, so future alert phases classify without
+touching the module) and `orchestrator:<action>` for failed turns. It
+fabricates nothing: an empty log yields an honest empty taxonomy, every
+entry carries a `sample_ref` naming one real audit row, and corrupt
+contexts are counted, never silently skipped. The taxonomy is pinned by
+`services/traffic-oracle/tests/test_degradation_taxonomy.py` (the
+wave3-ledger tier, `check_degradation_ledger.sh`). The **deck panel**
+(`services/command-deck/src/lib/ops/components/DegradationLedger.svelte`,
+fed by the ops store's 10 s poll of the same endpoint) renders the ledger
+on `/ops` — click a row for the full audit entry, a down endpoint degrades
+to a labelled note over the last-good ledger, and a clean log renders the
+honest EmptyState, never invented entries.
+
+**Repetition gate — `scripts/repetition_gate.sh`.** The
+consistency-under-repetition proof for the flagship showcase: restore an
+identical baseline, run `showcase_run.sh` N times (default 2) against the
+live argus fleet, and the terminal database state the showcase's phase-8
+assertions are judged over (`adaptive.situation_log`,
+`adaptive.param_overrides`, the `events.*` tables, plus the
+pursuit/dispatch/earmark terminal tables) is IDENTICAL across rounds —
+after normalizing exactly the volatility classes that are provably not
+system output (wall clock, the harness's per-run sweep seed,
+`gen_random_uuid`/BIGSERIAL identity, one in-process counter, and
+engine-loop row multiplicity/sampling — the engine loop polls a doc the
+flagship tape overwrites many times per poll period), every
+normalization justified in a manifest printed on every run; anything else
+that differs FAILS with the differing rows. Each round resets the ARGUS
+traffic-oracle process (its in-memory adaptive state cannot be restored
+by any DB snapshot; the original stack's containers are never touched)
+and the database is restored to baseline and left as found. The gate
+snapshots the ORIGINAL stack read-only before and after; any drift fails
+it. `--fast` is the offline selftest (comparator/normalizer/FAIL path on
+fixtures — the ladder tier above); the full live gate is on demand and
+takes tens of minutes.
+
+**`scripts/argus_full_smoke.sh` — the clone's full-system live smoke.**
+Proves the wave tree code runs LIVE end to end on the argus clone
+(compose project `vvip-argus`): every service, every shared host model
+(:8083/:8084/:8085), the shared emulator (:8090), the deck (:5273), the
+`-argus` image tags, working signal-ingress NATS proof, and one REAL
+movement plan through the fleet — after a bounded converge-wait that
+absorbs exactly the redeploy window. It snapshots the original stack's
+containers (stable state fields) and image tags read-only before and
+after, additionally asserts the original fleet is still RUNNING, and
+fails on any drift.
+
+**The `-argus` image split (Wave redeploy).** The clone's
+traffic-oracle / convoy-brain / command-deck code has diverged from the
+original stack, so `infra/compose.argus-override.yml` has those services
+BUILD their own `vvip-argus-*:latest` images from this tree — the shared
+original-stack tags (`vvip-traffic-oracle:latest`,
+`vvip-convoy-brain:latest`, `vvip-command-deck:latest`) are never written
+by the argus project. Conversely the clone's postgis and signal-ingress
+are byte-identical infra and REUSE the shared images, with the inherited
+build stanzas stripped (`build: !reset null`) so a project-wide build can
+never retag those either. `argus_full_smoke.sh` enforces the boundary.
+
+**Submission-consistency oracle — `scripts/submission_consistency_check.mjs`.**
+The submission-material registry as code (~20 checks, each with a
+failure path proven by `--selftest`): deck/script/maker path existence,
+figure-vs-artifact agreement (bench, showcase, pursuit, pixel proofs),
+PPTX/PDF freshness, pytest-count agreement between the deck and adjacent
+docs, and gate-script contract checks. It is itself the
+submission-consistency tier of the ladder above; the submission deck was
+regenerated against it (2026-10-18 evening).
 
 ### Adversarial testing (`tests/adversarial/` + `scripts/scenario_library.json`)
 
@@ -1581,25 +1668,26 @@ The city-platform end-to-end proof — **"God's Eye Morning"**: the flagship
 composite `rath_yatra_monsoon_ambulance` (Rath Yatra + monsoon burst + one
 108 ambulance, `docs/USE_CASES.md`) **plus the emulated stolen-vehicle
 ANPR sweep**, injected through the emulator's real HTTP API into the
-**running** stack. **Re-executed for the interface revision, 2026-10-13
+**running** stack. **Re-executed for the interface revision, 2026-10-18
 (IST): exit 0, SHOWCASE PASS** (`showcase/showcase_results.json`,
-generated 2026-10-13T13:28:15Z, `passed: true`; the pursuit-chain evidence
-was regenerated later the same day — `pursuit_chain.json`,
-2026-10-13T18:07Z — and the figures below follow the current artifacts):
+generated 2026-10-18T15:01:09Z, `passed: true`; the pursuit-chain
+evidence `pursuit_chain.json` is the same single run — approval audit
+row 2026-10-18T15:00:04Z — and the figures below follow the current
+artifacts):
 
 | Assertion | Result |
 |---|---|
 | Fleet + models + emulator health | 7 containers, `:8083/:8084`, `:8090`, deck `:5173` — all green (phase 1 fails fast otherwise) |
-| Injections | flagship run 51: 736/736 frames, 0 failed / 0 late, event row `procession`, `protection_class=none` · ANPR sweep run 52: 600 frames |
+| Injections | flagship run 19: 736/736 frames, 0 failed / 0 late, event row `procession`, `protection_class=none` · ANPR sweep run 20: 600/601 frames (1 failed delivery, reported as measured) |
 | Audit trail | **36 decision rows this run** (30 situation + 6 parameter overrides); 1 `AMBULANCE_DELAY_SEVERE` escalation decision (TAKEOVER, handoff operator) |
-| Adaptive response | 3 band transitions this run; band ledger AMBER 58 / GREEN 37 / RED 507; the morning eased RED → GREEN through 4 consecutive calmer observations (hysteresis down-confirm, `band_easing.json`) |
+| Adaptive response | 3 band transitions this run; band ledger AMBER 6 / GREEN 2 / RED 22; the morning eased RED → GREEN through 4 consecutive calmer observations (hysteresis down-confirm, `band_easing.json`) |
 | Green corridor | **4 `emergency_vehicle` windows** in the audited twin schedule (Relief Road → Nehru Bridge → Riverfront West → Ashram South); 12-replication twin ambulance-delay mean **7.63 s** (model output, `twin_audit.json`) |
-| Pursuit chain (enforcement family) | earmark `lawful_basis=stolen_vehicle_fir`, retention 30 d → 4 emulated ANPR reads this run (EM-CAM-01..04 at 105–114 km/h, `R_SPD_SEGMENT` ×3 + `R_SIGNAL_VIOLATION` ×2 fired, `matched_plate_hit=stolen_vehicle`) → e-challan "GJ27EM9001 read at 114 km/h in a 50 km/h segment" filed PENDING → **approved by Duty Officer R. Mehta** (append-only audit tail) → operator-opened `vehicle_pursuit` event `a6827de9-…` (metadata carries vehicle_id + recommendation_id + FIR, **merged into `pursuit_chain.json` from `events.corridor_events`** — the POST response echoes metadata as `{}`) → **9 choke junctions ranked** by pgRouting off the latest sighting (top: junction 3, signal-controlled, score 0.9) → 76-position live trace (`source=emulated_anpr`) |
+| Pursuit chain (enforcement family) | earmark `lawful_basis=stolen_vehicle_fir`, retention 30 d → 4 emulated ANPR reads this run (EM-CAM-01..04 at 92–112 km/h, `R_SPD_SEGMENT` ×4 + `R_SIGNAL_VIOLATION` ×0 fired — the red-phase rule is a wall-clock lottery the chain never asserts, and it did not fire this run, `matched_plate_hit=stolen_vehicle`) → e-challan "GJ27EM9001 read at 95 km/h in a 40 km/h segment" filed PENDING → **approved by Duty Officer R. Mehta** (append-only audit tail) → operator-opened `vehicle_pursuit` event `4508d86d-…` (metadata carries vehicle_id + recommendation_id + FIR, **merged into `pursuit_chain.json` from `events.corridor_events`** — the POST response echoes metadata as `{}`) → **10 choke junctions ranked** by pgRouting off the latest sighting (top: junction 3, signal-controlled, score 0.9) → 4-position live trace (`source=emulated_anpr`) |
 | Jan Rakshak dispatch | JR-EM-01 to the Tilak Road spillover (segment 1013): requested → approved → en_route → on_scene, every transition audited; unit projected deterministically (`emulated_dispatch_projection`) |
-| Signal-policy guard (C7) | city band plan proposed for 11 junctions; the operator apply returned **409 `shadow_eval_failed_closed`** (`twin_not_calibrated`, replay MAE 13.23 km/h vs the 5.0 gate over 40 observations) — fail-closed by design; `signal_plan_shifts_committed: 0`, the refusal itself auditable in `GET /api/v1/signals/plans` |
+| Signal-policy guard (C7) | city band plan proposed for 11 junctions; the operator apply returned **409 `shadow_eval_failed_closed`** (`twin_not_calibrated`, replay MAE 7.2 km/h vs the 5.0 gate over 40 observations) — fail-closed by design; `signal_plan_shifts_committed: 0`, the refusal itself auditable in `GET /api/v1/signals/plans` |
 | Citizen advisory | active-movements feed reflected the public event (no protectee) |
 | Engine's closure answer | `signal_hold`, 45 s advance — "regulated, not stopped" |
-| Interface evidence | **4 screenshots, all on the canonical command-deck at `:5173`** — God's-eye 3D city mid-chaos (38 entities, all five layers; PNG 2,778 colours, `shots_city.log`), pursuit trace with the camera on the stolen vehicle's real trace centroid (76 positions; PNG 2,928 colours, `shots_manifest.json`), the rebuilt Daylight citizen advisory (16/16 live-source cards; PNG 1,095 colours, `shots_rest.log`), and the `/ops` situation wall in the flagship aftermath (band eased to GREEN, plate GJ27EM9001 live in the Decision Queue; decode-verified non-blank PNG) — SwiftShader WebGL, distinct-colour readback + PNG reload decode (≥8 colours). Per-surface screen checks: §2.7's screens camera, **40/40** |
+| Interface evidence | **4 screenshots, all on the canonical command-deck at `:5173`** — God's-eye 3D city mid-chaos (38 entities, all five layers; PNG 2,781 colours, `shots_city.log`), pursuit trace with the camera on the stolen vehicle's real trace centroid (4 positions; PNG 2,942 colours, `shots_manifest.json`), the rebuilt Daylight citizen advisory (1/1 live-source cards; PNG 797 colours, `shots_rest.log`), and the `/ops` situation wall in the flagship aftermath (band eased to GREEN, plate GJ27EM9001 live in the Decision Queue; decode-verified non-blank PNG) — SwiftShader WebGL, distinct-colour readback + PNG reload decode (≥8 colours). Per-surface screen checks: §2.7's screens camera, **40/40** |
 
 Every decision, band transition, escalation, window and **every
 pending→approved transition** above was produced by the real stack or a
@@ -1749,3 +1837,17 @@ keyword_coverage 0.561 (§3, §13); the 04:09Z bench run with one
 history); the emulator's `X-Emulation-Replay` provenance
 rule and the ANPR `emulated_anpr`/`live_anpr` split (§2.9,
 `docs/GODS_EYE_INTEGRATION.md`). The backend is the sole source of truth.*
+
+*Revision v2.5 — Wave-3 pass (2026-10-18, IST), documentation added
+2026-10-19: the **degradation ledger** (oracle `ops/` module +
+`GET /api/v1/ops/degradation-taxonomy` + the deck's DegradationLedger
+panel on `/ops`), the **consistency-under-repetition gate**
+(`scripts/repetition_gate.sh` — full live gate vs `--fast` selftest), the
+clone's **full-system live smoke** (`scripts/argus_full_smoke.sh` with the
+original-stack read-only guard), and the **`-argus` image ownership
+split** (`infra/compose.argus-override.yml`), with the wave3-repetition /
+wave3-ledger tiers added to the §13 ladder. The Wave-1/2 material (novelty
+latch §3, tier-0 cache §3, support hatch + t0 foundation rung §6.1b,
+P90-robust routing + banded ETAs + model-drift panel §13) was already in
+place. No measurement figure elsewhere in this document was changed by
+this pass.*

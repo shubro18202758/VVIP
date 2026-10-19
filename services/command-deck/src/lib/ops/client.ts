@@ -18,6 +18,7 @@ import {
 	EMULATOR_BASE,
 	EMULATOR_PROXY_PATH,
 	ORACLE_V1,
+	DEGRADATION_TAXONOMY_API,
 	ENFORCEMENT_API,
 	DISPATCHES_API,
 	EVENTS_API,
@@ -30,6 +31,7 @@ import type {
 	BandEvidence,
 	CorridorEvent,
 	CrowdClass,
+	DegradationTaxonomy,
 	DispatchAuditEntry,
 	DispatchRecord,
 	EnforcementRecommendation,
@@ -1382,4 +1384,35 @@ export async function openPursuitEvent(
 	const eventId = resp.event_id ?? resp.eventId;
 	if (!eventId) throw new ApiDown('pursuit event created but no event_id returned');
 	return { eventId: String(eventId) };
+}
+
+// ─── Degradation ledger (decisions_log failure taxonomy) ─────────────────────
+
+/**
+ * GET /api/v1/ops/degradation-taxonomy — recurring degradation/failure
+ * causes mined from convoy-brain's decisions_log. Read-only; an empty log
+ * is a VALID honest answer (entries: []), never an error. Defensive parse
+ * per the additive-API contract: absent/partial fields degrade to their
+ * null-ish forms instead of throwing.
+ */
+export async function fetchDegradationTaxonomy(): Promise<DegradationTaxonomy> {
+	const resp = await request<Record<string, unknown>>(DEGRADATION_TAXONOMY_API);
+	const rows = (
+		Array.isArray(resp.entries) ? resp.entries : []
+	) as Array<Record<string, unknown>>;
+	const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+	return {
+		entries: rows.map((r) => ({
+			cause: typeof r.cause === 'string' ? r.cause : '?',
+			count: typeof r.count === 'number' ? r.count : 0,
+			firstSeen: num(r.first_seen),
+			lastSeen: num(r.last_seen),
+			sampleRef: typeof r.sample_ref === 'string' ? r.sample_ref : '—',
+		})),
+		contextsScanned: num(resp.contexts_scanned) ?? 0,
+		rowsScanned: num(resp.rows_scanned) ?? 0,
+		truncated: resp.truncated === true,
+		contextsSkippedCorrupt: num(resp.contexts_skipped_corrupt) ?? 0,
+		generatedAt: typeof resp.generated_at === 'string' ? resp.generated_at : null,
+	};
 }

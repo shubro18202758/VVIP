@@ -19,6 +19,12 @@ an operator alert — every transition is audit-logged via the decisions_log.
 
 Confidence gating: any answer with confidence < CONFIDENCE_FLOOR triggers a
 Gemma draft plus an operator alert instead of being acted on directly.
+Answers whose type carries no confidence (noul) are EXCLUDED from the
+aggregation — None means "not applicable", never 0.0 (calibrated
+2026-10-19: the previous None→0.0 coercion made every noul-bearing
+question set permanently low_confidence). CONFIDENCE_FLOOR defaults to 0.45
+(env VVIP_CONFIDENCE_FLOOR), calibrated against the live 27B's measured
+pre-movement confidences (0.5033 / 0.4696) — see config.py.
 
 Novelty latch (the complement of the confidence gate): a CONFIDENT answer
 whose situation has no similar memory (embedding /search best maxsim below
@@ -46,6 +52,21 @@ miss and today's flow runs unchanged. The similarity consult is fail-OPEN
 — memory outages never bench the tier — and the write side mirrors the
 read side: low-confidence, latched, and novel answers never enter the
 cache.
+
+Decision-memory feeder (the corpus half the gate reads): after a SERVED
+27B checkpoint (tier "decider" — low-confidence answers included, they
+are still served with a Gemma draft), the checkpoint's state document is
+upserted into the embedding corpus as kind=decision (ref_id mirrors the
+tier-0 key: movement/trigger/questions signature, so a re-decided
+situation refreshes one doc instead of duplicating rows). Without the
+feeder the corpus the gate searches never gains a decision doc and every
+live checkpoint is miss_novel forever, no matter how routine. The feeder
+runs AFTER the checkpoint's own /search — a situation's first occurrence
+can still be novel (Wave-1 latch semantics preserved); repeats become
+"on record". It records SITUATIONS, never answers: which answers may be
+served from the tier-0 cache stays gated exactly as above. Fail-open and
+fire-and-log like the rest of the memory machinery: a feeder outage
+counts a metric and never breaks a checkpoint.
 """
 
 from __future__ import annotations
@@ -64,6 +85,7 @@ from convoy_brain.config import (
     DECIDER_MIN_CHECKPOINT_INTERVAL_SEC,
     DECIDER_P95_DEGRADE_MS,
     DECIDER_PROBE_TIMEOUT_SEC,
+    DECISION_MEMORY_RECORD_TIMEOUT_SEC,
     NOVELTY_MEMO_TTL_SEC,
     NOVELTY_SEARCH_TIMEOUT_SEC,
     NOVELTY_SIMILARITY_FLOOR,
@@ -77,7 +99,7 @@ from convoy_brain.config import (
 )
 from convoy_brain.llm.decider_client import DeciderAnswer, DeciderClient, DeciderUnavailable
 from convoy_brain.memory.memory_client import MemoryClient, MemorySearchResult
-from convoy_brain.metrics import TIER0_CACHE_EVENTS, TIER0_LATENCY_SAVED_MS
+from convoy_brain.metrics import MEMORY_RECORD_EVENTS, TIER0_CACHE_EVENTS, TIER0_LATENCY_SAVED_MS
 
 logger = structlog.get_logger(__name__)
 
@@ -108,6 +130,16 @@ def _questions_signature(questions: dict[str, dict]) -> str:
     return hashlib.sha256(
         json.dumps(questions, sort_keys=True, default=str).encode("utf-8")
     ).hexdigest()
+
+
+def _round_conf(confidence: float | None) -> float | None:
+    """Audit-safe rounding that preserves absent confidence as None.
+
+    Noul answers carry no confidence (the readout head exposes none for
+    none-of-the-above likelihood); the audit row labels that honestly as
+    null instead of fabricating 0.0.
+    """
+    return round(confidence, 4) if confidence is not None else None
 
 
 @dataclass
@@ -440,9 +472,13 @@ class DeciderBrain:
         duration_ms = int((time.monotonic() - started) * 1000)
 
         # Confidence gating — low-confidence answers get a Gemma draft + alert.
+        # Answers whose type carries no confidence (noul: None) are EXCLUDED
+        # from the aggregation entirely — "not applicable" is neither a pass
+        # nor a fail (fixed 2026-10-19; previously None coerced to 0.0 made
+        # every noul-bearing question set permanently low_confidence).
         low_confidence = {
             name: ans for name, ans in answers.items()
-            if ans.confidence < self._confidence_floor
+            if ans.confidence is not None and ans.confidence < self._confidence_floor
         }
         needs_gemma_draft = bool(low_confidence)
         if needs_gemma_draft:
@@ -461,7 +497,9 @@ class DeciderBrain:
         # of trusted off-distribution. Never double-escalates: low-confidence
         # answers are already covered by the gate and only get an audit row.
         max_confidence = max(
-            (ans.confidence for ans in answers.values()), default=0.0
+            (ans.confidence for ans in answers.values()
+             if ans.confidence is not None),
+            default=0.0,
         )
         if self._memory_client is None:
             novelty = self._novelty_row("disabled_not_configured")
@@ -549,7 +587,7 @@ class DeciderBrain:
                         "type": ans.type,
                         "value": ans.value,
                         "probability": round(ans.probability, 4),
-                        "confidence": round(ans.confidence, 4),
+                        "confidence": _round_conf(ans.confidence),
                     }
                     for name, ans in answers.items()
                 },
@@ -573,6 +611,20 @@ class DeciderBrain:
                 origin_latency_ms=duration_ms,
             )
 
+        # Decision-memory feeder — upsert the SERVED situation into the
+        # corpus (kind=decision) so the gate/latch read side has something
+        # to recall on repeat traffic. tier "decider" means the 27B's answer
+        # was actually served (low-confidence ones too — they ship with a
+        # Gemma draft); withheld (novelty_latched) and fallback results are
+        # not decisions and never record. Runs AFTER this checkpoint's own
+        # /search — the first occurrence of a situation must still be able
+        # to read as novel. Fail-open: never raises, never benches.
+        if tier == "decider":
+            await self._record_decision_memory(
+                movement_id, trigger, state_doc, questions, answers,
+                needs_gemma_draft=needs_gemma_draft,
+            )
+
         audit = {
             "phase": "decider_checkpoint",
             "trigger": trigger,
@@ -586,7 +638,7 @@ class DeciderBrain:
                 name: {
                     "value": ans.value,
                     "probability": round(ans.probability, 4),
-                    "confidence": round(ans.confidence, 4),
+                    "confidence": _round_conf(ans.confidence),
                 }
                 for name, ans in answers.items()
             },
@@ -713,6 +765,84 @@ class DeciderBrain:
         if result.best_score is not None and result.best_score < self._novelty_floor:
             return self._novelty_row("novel", escalate=True, result=result, memo=memoized)
         return self._novelty_row("covered", result=result, memo=memoized)
+
+    # -- decision-memory feeder -----------------------------------------------------
+
+    async def _record_decision_memory(
+        self,
+        movement_id: str,
+        trigger: str,
+        state_doc: str,
+        questions: dict[str, dict],
+        answers: dict[str, DeciderAnswer],
+        *,
+        needs_gemma_draft: bool,
+    ) -> None:
+        """Upsert one served checkpoint's situation into the memory corpus.
+
+        The ref_id mirrors the tier-0 cache-key contract (movement, trigger,
+        canonical questions signature — deliberately NOT the raw state doc,
+        which embeds per-tick values): the embedding service upserts on
+        ``(kind, ref_id)``, so a re-decided situation refreshes one stable
+        doc (and its doc_id) instead of duplicating rows, keeping the
+        best_doc_id component of tier-0 keys stable across repeats. Never
+        raises; every outcome lands in the MEMORY_RECORD_EVENTS metric so a
+        dead feeder is visible without reading logs.
+        """
+        if self._memory_client is None:
+            MEMORY_RECORD_EVENTS.labels(outcome="skipped_no_client").inc()
+            return
+        record = getattr(self._memory_client, "record_decision", None)
+        if record is None:  # duck-typed fakes without a write side keep working
+            MEMORY_RECORD_EVENTS.labels(outcome="skipped_unconfigured").inc()
+            return
+        ref_id = (
+            f"decision:{movement_id}:{trigger}:"
+            f"{_questions_signature(questions)[:16]}"
+        )
+        metadata = {
+            "trigger": trigger,
+            "tier": "decider",
+            "needs_gemma_draft": needs_gemma_draft,
+            "min_confidence": _round_conf(min(
+                (a.confidence for a in answers.values()
+                 if a.confidence is not None),
+                default=None,
+            )),
+            "answers": {
+                name: {
+                    "type": a.type,
+                    "value": a.value,
+                    "probability": round(a.probability, 4),
+                    "confidence": _round_conf(a.confidence),
+                }
+                for name, a in answers.items()
+            },
+            "state_doc_sha256": hashlib.sha256(
+                state_doc.encode("utf-8")
+            ).hexdigest(),
+        }
+        try:
+            recorded = await asyncio.wait_for(
+                record(
+                    state_doc,
+                    movement_id=movement_id,
+                    ref_id=ref_id,
+                    title=f"decider {trigger} checkpoint",
+                    metadata=metadata,
+                ),
+                timeout=DECISION_MEMORY_RECORD_TIMEOUT_SEC,
+            )
+        except Exception as exc:  # the feeder must never break a checkpoint
+            MEMORY_RECORD_EVENTS.labels(outcome="error").inc()
+            logger.warning(
+                "decider_brain.memory_record_error", error=str(exc)[:200]
+            )
+            return
+        if recorded:
+            MEMORY_RECORD_EVENTS.labels(outcome="recorded").inc()
+        else:
+            MEMORY_RECORD_EVENTS.labels(outcome="error").inc()
 
     # -- tier-0 gate ----------------------------------------------------------------
 

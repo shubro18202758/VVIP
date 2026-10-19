@@ -1125,16 +1125,17 @@ const FIXTURE_DIRS = ['VVIP/services/command-deck/src', 'VVIP/frontend'];
 
 // the pytest check runs against a stub under selftest (the fixture carries
 // no service suites); the stub mirrors the live gate-venv collection the
-// real run performs: 240+22+12+113+94+574 = 1055.
+// real run performs: 2+262+22+12+113+94+633 = 1138.
 const PYTEST_STUB = {
-	total: 1055,
+	total: 1138,
 	perSuite: {
-		'VVIP/services/convoy-brain/tests': 240,
+		'VVIP/services/command-deck/tests': 2,
+		'VVIP/services/convoy-brain/tests': 262,
 		'VVIP/services/corridor-store/importer/tests': 22,
 		'VVIP/services/corridor-store/tests': 12,
 		'VVIP/services/embedding-service/tests': 113,
 		'VVIP/services/event-emulator/tests': 94,
-		'VVIP/services/traffic-oracle/tests': 574
+		'VVIP/services/traffic-oracle/tests': 633
 	}
 };
 
@@ -1198,15 +1199,15 @@ const MUTATIONS = [
 		desc: 'DECK.md quotes the earlier run\'s 72-position trace everywhere',
 		apply(c, fx) {
 			const p = path.join(fx, DECK);
-			writeFileSync(p, readFileSync(p, 'utf8').replaceAll('76-position trace', '72-position trace'));
+			writeFileSync(p, readFileSync(p, 'utf8').replaceAll('4-position trace', '72-position trace'));
 		}
 	},
 	{
 		id: 'pixel-proofs-match-shot-logs',
-		desc: 'DECK.md quotes an unbacked 2,776-colour city proof (log says 2,778)',
+		desc: 'DECK.md quotes an unbacked 2,776-colour city proof (log says 2,781)',
 		apply(c, fx) {
 			const p = path.join(fx, DECK);
-			writeFileSync(p, readFileSync(p, 'utf8').replace('2,778-colour', '2,776-colour'));
+			writeFileSync(p, readFileSync(p, 'utf8').replace('2,781-colour', '2,776-colour'));
 		}
 	},
 	{
@@ -1286,15 +1287,15 @@ const MUTATIONS = [
 		desc: 'DECK.md quotes the old 875-pytest total',
 	apply(c, fx) {
 		const p = path.join(fx, DECK);
-		writeFileSync(p, readFileSync(p, 'utf8').replace('1055 pytest', '875 pytest'));
+		writeFileSync(p, readFileSync(p, 'utf8').replace('1138 pytest', '875 pytest'));
 	}
 	},
 	{
 		id: 'showcase-artifacts-single-run',
-		desc: 'DECK.md drops the pursuit re-run stamp (blends two runs as one)',
+		desc: 'DECK.md cites a stale showcase run stamp (the 14:29Z degraded run)',
 		apply(c, fx) {
 			const p = path.join(fx, DECK);
-			writeFileSync(p, readFileSync(p, 'utf8').replace('2026-10-13T18:07Z', '2026-10-13T13:28Z'));
+			writeFileSync(p, readFileSync(p, 'utf8').replace('2026-10-18T15:01Z', '2026-10-18T14:29Z'));
 		}
 	},
 	{
@@ -1314,10 +1315,10 @@ const MUTATIONS = [
 	},
 	{
 		id: 'adjacent-docs-match-artifacts',
-		desc: 'TECHNICAL_DOCS.md regresses to the earlier run\'s R_SPD_SEGMENT ×4',
+		desc: 'TECHNICAL_DOCS.md regresses to the earlier run\'s R_SPD_SEGMENT ×5',
 		apply(c, fx) {
 			const p = path.join(fx, TECH_DOCS);
-			writeFileSync(p, readFileSync(p, 'utf8').replace('`R_SPD_SEGMENT` \u00d73', '`R_SPD_SEGMENT` \u00d74'));
+			writeFileSync(p, readFileSync(p, 'utf8').replace('`R_SPD_SEGMENT` \u00d74', '`R_SPD_SEGMENT` \u00d75'));
 		}
 	},
 	{

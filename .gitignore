@@ -44,6 +44,17 @@ yarn-debug.log*
 # the sanctioned home per the models-local policy — never committed)
 models-local/
 
+# Repetition-gate run workdirs — scripts/repetition_gate.sh mkdir -p's
+# WORKROOT="$VVIP_DIR/showcase/repetition" and every run drops a
+# <timestamp>Z-r<rounds>-<pid>/ dir (baseline.json, container snapshots,
+# round projections). Machine output, never a deliverable.
+showcase/repetition/
+
+# Test-run artifacts (screens-verify manifest + PNG shots under
+# tests/artifacts/screens/; anything a future gate writes there) —
+# regenerated per run, never committed.
+tests/artifacts/
+
 # Vite cache
 .vite/
 

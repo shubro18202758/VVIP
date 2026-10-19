@@ -21,6 +21,16 @@
  * design — the ladder exists for exactly this); in dev the vite proxy
  * intercepts these prefixes before SvelteKit sees them, so this hook is the
  * prod path only.
+ *
+ * AUTHORITY PINNING (security contract): WHATWG URL parsing lets a
+ * protocol-relative path (`//host/...`, or the backslash spelling `\/host/`
+ * — special schemes treat `\` as `/`) OVERRIDE the base's authority, which
+ * would turn this proxy into an open relay. The request path is therefore
+ * untrusted input: after building the upstream URL we assert its origin is
+ * still the rule's fixed loopback target and refuse with 400 otherwise
+ * (regression: /api/convoy//127.0.0.1:8091/health once fetched the oracle
+ * through the brain rule — live-confirmed, fixed 2026-10-19; covered by
+ * tests/ops-guard.entry.ts).
  */
 
 import type { Handle } from '@sveltejs/kit';
@@ -66,7 +76,18 @@ export const handle: Handle = async ({ event, resolve }) => {
 	if (!rule) return resolve(event);
 
 	const suffix = rule.strip ? event.url.pathname.slice(rule.prefix.length) : event.url.pathname;
-	const upstream = new URL(`${suffix}${event.url.search}`, rule.target);
+	const base = new URL(rule.target);
+	const upstream = new URL(`${suffix}${event.url.search}`, base);
+	// The request path is untrusted input: a protocol-relative suffix
+	// (`//host/...`) overrides the base authority under WHATWG URL parsing.
+	// Whatever parsing did with it, the upstream origin must still be the
+	// rule's fixed loopback target — refuse anything that escaped it.
+	if (upstream.origin !== base.origin) {
+		return new Response(
+			JSON.stringify({ detail: 'deck proxy: refused authority-override path' }),
+			{ status: 400, headers: { 'content-type': 'application/json' } },
+		);
+	}
 
 	const headers = new Headers(event.request.headers);
 	headers.delete('host'); // fetch sets the upstream host

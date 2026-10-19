@@ -45,13 +45,19 @@ class DeciderUnavailable(Exception):
 
 @dataclass
 class DeciderAnswer:
-    """One typed answer with its probability and confidence."""
+    """One typed answer with its probability and confidence.
+
+    ``confidence`` is None when the answer type carries none (noul — the
+    readout head exposes no confidence for none-of-the-above likelihood);
+    such answers are EXCLUDED from confidence-floor aggregation in the
+    decider, never treated as 0.0 ("failing") or as passing.
+    """
 
     name: str
     type: str
     value: Any
     probability: float = 0.0
-    confidence: float = 0.0
+    confidence: float | None = 0.0
     distribution: list[dict[str, Any]] = field(default_factory=list)
 
 
@@ -210,19 +216,32 @@ class DeciderClient:
             raw = answers_raw.get(name)
             if not isinstance(raw, dict):
                 raise DeciderUnavailable(f"/decide response missing answer for {name!r}")
+            # Confidence coercion bug (fixed 2026-10-19): the model-host
+            # returns confidence=None for noul answers ("autojev noul answers
+            # carry no confidence" — model_host/decider_runtime.py). Squashing
+            # None to 0.0 made every noul-bearing question set permanently
+            # "low_confidence" below the floor, mislabeling every live
+            # pre-movement checkpoint and blocking the tier-0 write side.
+            # None now means "not applicable" and flows through; the decider
+            # EXCLUDES such answers from confidence aggregation rather than
+            # treating unknown as either passing or failing.
+            raw_confidence = raw.get("confidence")
             answers[name] = DeciderAnswer(
                 name=name,
                 type=spec["type"],
                 value=raw.get("value"),
                 probability=float(raw.get("probability") or 0.0),
-                confidence=float(raw.get("confidence") or 0.0),
+                confidence=(
+                    float(raw_confidence) if raw_confidence is not None else None
+                ),
                 distribution=raw.get("distribution") or [],
             )
 
+        gated = [a.confidence for a in answers.values() if a.confidence is not None]
         logger.info(
             "decider_client.decide",
             questions=list(questions),
             latency_ms=body.get("latency_ms"),
-            min_confidence=min(a.confidence for a in answers.values()),
+            min_confidence=min(gated) if gated else None,
         )
         return answers

@@ -137,6 +137,17 @@ const en: Pack = {
 	dossierAdvisory: 'advisory preview',
 	dossierWindow: 'window',
 
+	// ── Degradation ledger ─────────────────────────────────────────────
+	ledgerTitle: 'Degradation Ledger',
+	ledgerSub: 'recurring failures mined from the decisions_log audit trail',
+	ledgerEmpty: 'No degradation on record — the audit log is honest about being empty.',
+	ledgerEmptyHint: 'every checkpoint answered through its intended tier; nothing withheld, nothing fell back',
+	ledgerTimes: (n) => `${n}×`,
+	ledgerFirstSeen: (t) => `first ${t}`,
+	ledgerSampleRef: 'sample',
+	ledgerScanLine: (rows, contexts) => `${rows} audit rows across ${contexts} movements`,
+	ledgerTruncated: 'scan truncated — more movements on record than the ledger reads',
+
 	// ── Common ─────────────────────────────────────────────────────────
 	updatedAgo: (s) => `updated ${s}s ago`,
 	labelLive: 'live',
@@ -272,6 +283,17 @@ const hi: Pack = {
 	dossierAdvisory: 'सलाह पूर्वावलोकन',
 	dossierWindow: 'समय-खिड़की',
 
+	// ── डिग्रेडेशन लेजर ────────────────────────────────────────────────
+	ledgerTitle: 'डिग्रेडेशन लेजर',
+	ledgerSub: 'decisions_log ऑडिट रिकॉर्ड से खनित आवर्ती विफलताएँ',
+	ledgerEmpty: 'कोई डिग्रेडेशन दर्ज नहीं — ऑडिट लॉग खाली होना ईमानदारी से बताता है।',
+	ledgerEmptyHint: 'हर चेकपॉइंट अपने निर्धारित टियर से उत्तर दिया; कुछ रोका नहीं गया, कुछ गिरा नहीं',
+	ledgerTimes: (n) => `${n}×`,
+	ledgerFirstSeen: (t) => `पहला ${t}`,
+	ledgerSampleRef: 'नमूना',
+	ledgerScanLine: (rows, contexts) => `${contexts} आंदोलनों की ${rows} ऑडिट पंक्तियाँ`,
+	ledgerTruncated: 'स्कैन कटा — लेजर जितना पढ़ता है उससे अधिक आंदोलन दर्ज हैं',
+
 	// ── सामान्य ─────────────────────────────────────────────────────────
 	updatedAgo: (s) => `${s} से पहले अपडेट`,
 	labelLive: 'लाइव',
@@ -406,6 +428,17 @@ const gu: Pack = {
 	dossierAuditNarrative: 'ઑડિટ વિવરણ',
 	dossierAdvisory: 'સલાહ પૂર્વાવલોકન',
 	dossierWindow: 'સમય-વિન્ડો',
+
+	// ── ડિગ્રેડેશન લેજર ──────────────────────────────────────────────────
+	ledgerTitle: 'ડિગ્રેડેશન લેજર',
+	ledgerSub: 'decisions_log ઑડિટ રેકોર્ડમાંથી ખોદેલી પુનરાવર્તિત નિષ્ફળતાઓ',
+	ledgerEmpty: 'કોઈ ડિગ્રેડેશન નોંધાયું નથી — ઑડિટ લોગ ખાલી હોવાનું પ્રામાણિકપણે બતાવે છે.',
+	ledgerEmptyHint: 'દરેક ચેકપોઇન્ટે પોતાના નિર્ધારિત ટિયરથી જવાબ આપ્યો; કંઈ રોકાયું નહીં, કંઈ પડ્યું નહીં',
+	ledgerTimes: (n) => `${n}×`,
+	ledgerFirstSeen: (t) => `પ્રથમ ${t}`,
+	ledgerSampleRef: 'નમૂનો',
+	ledgerScanLine: (rows, contexts) => `${contexts} આંદોલનોની ${rows} ઑડિટ પંક્તિઓ`,
+	ledgerTruncated: 'સ્કેન કાપ્યું — લેજર જેટલું વાંચે છે તેથી વધુ આંદોલનો નોંધાયેલા છે',
 
 	// ── સામાન્ય ─────────────────────────────────────────────────────────
 	updatedAgo: (s) => `${s} પહેલાં અપડેટ`,
