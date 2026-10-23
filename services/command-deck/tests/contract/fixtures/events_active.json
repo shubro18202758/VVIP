@@ -1,0 +1,36 @@
+{
+	"events": [
+		{
+			"event_id": "4508d86d-566b-438f-8414-b3d67fd7e6e4",
+			"event_kind": "vehicle_pursuit",
+			"protection_class": "none",
+			"crowd_class": "LOW",
+			"title": "PURSUIT — stolen GJ27EM9001 (FIR 4401/2026, Kalupur PS)",
+			"description": "God's Eye Morning: operator-opened pursuit of a FIR-named stolen vehicle after an approved e-challan recommendation and emulated ANPR sightings. Vehicles only (C6); interception plan assists the operator.",
+			"status": "planning",
+			"movement_id": null,
+			"planned_start": null,
+			"planned_end": null,
+			"metadata": {
+				"fir": "FIR 4401/2026, Kalupur PS",
+				"opened_by": "Duty Officer R. Mehta (God's Eye Morning)",
+				"vehicle_id": "1b94e9d2-7e11-4174-a735-7dd3be3189cf",
+				"recommendation_id": "e91d4591-390a-4c55-bcb0-ffd10c769c20"
+			},
+			"zone_geojson": null,
+			"routes": [
+				{
+					"label": "old-city sweep belt",
+					"segment_ids": [
+						1012,
+						1015,
+						1005,
+						1013
+					]
+				}
+			],
+			"phases": [],
+			"inputs_key": "adaptive:inputs:4508d86d-566b-438f-8414-b3d67fd7e6e4"
+		}
+	]
+}

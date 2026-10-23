@@ -734,6 +734,39 @@ def router_fixture(with_quantiles=False, robust_routing=None, producer_rows=Fals
     return router, forecaster
 
 
+class KspGraphDB(FakeGraphDB):
+    """FakeGraphDB whose k-shortest-paths repeat the MIP optimum."""
+
+    def __init__(self, *args, paths):
+        super().__init__(*args)
+        self._paths = paths
+        self.k_requested: list[int] = []
+
+    async def k_shortest_paths(self, origin, destination, k):
+        self.k_requested.append(k)
+        return [[{"node": n} for n in path] for path in self._paths[:k]]
+
+
+class TestCandidateDeduplication:
+    async def test_identical_candidates_are_returned_once(self):
+        router, _ = router_fixture(with_quantiles=False)
+        seg_rows = router._graph_db._pool._conn._seg_rows
+        adj_rows = router._graph_db._pool._conn._adj_rows
+        graph = KspGraphDB(
+            seg_rows, adj_rows, [1, 2, 3, 4],
+            paths=[[1, 2, 4], [1, 2, 4], [1, 3, 4]],  # KSP #1 == MIP optimum
+        )
+        router._graph_db = graph
+        candidates = await router.find_routes(1, 4, max_candidates=3)
+        paths = [tuple(c.segment_ids) for c in candidates]
+        assert paths.count((1, 2, 4)) == 1
+        assert set(paths) == {(1, 2, 4), (1, 3, 4)}
+        assert len(paths) == len(set(paths))
+        # one extra KSP path is asked for so de-duplication still leaves
+        # max_candidates distinct routes when the graph has them
+        assert graph.k_requested == [3]
+
+
 class TestCorridorRouterRobust:
     async def test_no_quantile_stream_preserves_today_behaviour(self):
         router, forecaster = router_fixture(with_quantiles=False)
@@ -898,6 +931,7 @@ class TestPredictEtaBand:
         assert "eta_band" not in body
         assert body["eta_band_reason"] == "no_quantile_stream"
         assert body["eta_seconds"] == 600.0  # point payload untouched
+        assert "eta_point_in_band" not in body and "eta_band_basis" not in body
 
     def test_non_monotone_provider_degrades_with_label(self):
         stream = {
@@ -915,7 +949,9 @@ class TestPredictEtaBand:
         assert "eta_band" not in body
         assert body["eta_band_reason"] == "non_monotonic:2"
 
-    def test_fallback_branch_never_gets_a_band(self):
+    def test_band_is_independent_of_the_point_model(self):
+        # The band needs only the quantile stream + lengths: an unfitted
+        # HistGBT (model=fallback) no longer suppresses it.
         stream = {1: make_row(40.0, 50.0, 60.0, 0.1, 0.2, 0.4)}
         pool = FakeBandPool([{"segment_id": 1, "length_m": 1000.0}])
         client = self._client(UnfittedPredictor(), make_band_provider(stream), pool)
@@ -923,8 +959,47 @@ class TestPredictEtaBand:
             "/api/v1/predict/eta", json={**ETA_PAYLOAD, "segment_ids": [1]}
         )
         body = resp.json()
-        assert set(body) == {"eta_seconds", "model"}
         assert body["model"] == "fallback"
+        assert body["eta_band"] == body["eta_band_seconds"]
+        band = body["eta_band_seconds"]
+        assert band["p10_sec"] == pytest.approx(travel_sec(1000, 60), abs=0.1)
+        assert band["p90_sec"] == pytest.approx(travel_sec(1000, 40), abs=0.1)
+        assert "eta_band_reason" not in body
+
+    def test_band_basis_and_point_agreement_are_labelled(self):
+        # The point (request length/speed features) and the band (live
+        # per-segment forecast) stand on different inputs: the response says
+        # so, and whether the point lies inside the band, so a caller never
+        # shows "ETA 450 s (band 364-401 s)" unexplained.
+        stream = {1: make_row(40.0, 50.0, 60.0, 0.1, 0.2, 0.4)}
+        pool = FakeBandPool([{"segment_id": 1, "length_m": 1000.0}])
+        client = self._client(UnfittedPredictor(), make_band_provider(stream), pool)
+        inside = client.post(
+            "/api/v1/predict/eta",
+            json={**ETA_PAYLOAD, "route_length_m": 1000.0, "segment_ids": [1]},
+        ).json()
+        assert inside["eta_band_basis"] == "live_segment_forecast"
+        assert inside["eta_seconds"] == pytest.approx(72.0, abs=0.1)  # 1 km @ 50
+        assert inside["eta_point_in_band"] is True
+        outside = client.post(
+            "/api/v1/predict/eta", json={**ETA_PAYLOAD, "segment_ids": [1]}
+        ).json()  # 300 m point vs a 1 km segment band
+        assert outside["eta_point_in_band"] is False
+        assert outside["eta_seconds"] < outside["eta_band_seconds"]["p10_sec"]
+
+    def test_fallback_without_a_stream_labels_the_band_reason(self):
+        client = self._client(UnfittedPredictor())  # no provider, no pool
+        body = client.post(
+            "/api/v1/predict/eta", json={**ETA_PAYLOAD, "segment_ids": [1]}
+        ).json()
+        assert body["model"] == "fallback"
+        assert body["eta_band_reason"] == "no_quantile_stream"
+        assert "eta_band_seconds" not in body
+
+    def test_fallback_without_segment_ids_stays_point_only(self):
+        client = self._client(UnfittedPredictor())
+        body = client.post("/api/v1/predict/eta", json=ETA_PAYLOAD).json()
+        assert set(body) == {"eta_seconds", "model"}
 
     def test_no_band_fields_without_segment_ids(self):
         client = self._client(FittedPredictor())
@@ -1037,15 +1112,35 @@ class TestForecastQuantilesProvider:
 
 class TestGatePurity:
     def test_leaf_imports_without_heavy_stacks(self):
-        # Under the gate venv torch/onnxruntime are absent; importing the
-        # leaf, the producer-contract module and the integrations at
-        # module scope (file top) is the proof — a heavy import anywhere
-        # in that chain would raise ModuleNotFoundError before this runs.
+        # Importing the leaf, the producer-contract module and the
+        # integrations (this file's module-scope imports) loads no torch,
+        # onnxruntime or gymnasium.  Probed in a FRESH interpreter: the gate
+        # venv carries gymnasium for the RL environment tests, which import
+        # it earlier in the same session, so this session's sys.modules
+        # says nothing about this chain.
+        import os
+        import subprocess
         import sys
+        from pathlib import Path
 
-        assert "torch" not in sys.modules
-        assert "onnxruntime" not in sys.modules
-        assert "gymnasium" not in sys.modules
+        probe = (
+            "import sys\n"
+            "import traffic_oracle.adaptive.protocol_params_gen\n"
+            "import traffic_oracle.optimize.corridor_router\n"
+            "import traffic_oracle.optimize.mip_solver\n"
+            "import traffic_oracle.optimize.quantile_objective\n"
+            "import traffic_oracle.predict.forecast_quantiles\n"
+            "print(sorted(m for m in ('torch', 'onnxruntime', 'gymnasium')"
+            " if m in sys.modules))\n"
+        )
+        src = Path(__file__).resolve().parents[1] / "src"
+        out = subprocess.run(
+            [sys.executable, "-c", probe],
+            capture_output=True, text=True, timeout=120,
+            env={**os.environ, "PYTHONPATH": str(src)},
+        )
+        assert out.returncode == 0, out.stderr
+        assert out.stdout.strip() == "[]"
 
     def test_leaf_source_stays_pure(self):
         import traffic_oracle.optimize.quantile_objective as leaf

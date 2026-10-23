@@ -87,7 +87,8 @@ export interface TrafficPrediction {
 	horizonMin: number;
 	predictedSpeedKmh: number;
 	predictedCongestionIdx: number;
-	confidence: number;
+	/** Model confidence 0..1; null when the forecaster reports none (never invented). */
+	confidence: number | null;
 }
 
 export interface TrafficAnomaly {

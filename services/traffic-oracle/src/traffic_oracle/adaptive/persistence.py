@@ -72,10 +72,16 @@ class AsyncpgPersister:
                 error=str(exc),
             )
 
-    async def log_params(self, record: dict) -> None:
-        """Append one row to adaptive.param_overrides (all values bound)."""
+    async def log_params(self, record: dict) -> bool | None:
+        """Append one row to adaptive.param_overrides (all values bound).
+
+        Returns True when the row landed, False when it did not (the
+        service then re-attempts it on its next decision — rows are written
+        only on change, so a dropped one would leave a decision change
+        unaudited), None when persistence is disabled (no pool).
+        """
         if self._pool is None:
-            return
+            return None
         query = "INSERT INTO adaptive.param_overrides (movement_id, vvip_class, situation_class, params, source, shadow_eval, evidence, protection_class, published_at) VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7::jsonb, $8, NOW())"  # noqa: E501
         movement_id = str(record["movement_id"])
         vvip_class = str(record["vvip_class"])
@@ -104,6 +110,8 @@ class AsyncpgPersister:
                 movement_id=record.get("movement_id"),
                 error=str(exc),
             )
+            return False
+        return True
 
 
 class NullPersister:
@@ -112,8 +120,9 @@ class NullPersister:
     async def log_situation(self, record: dict) -> None:
         _ = record
 
-    async def log_params(self, record: dict) -> None:
+    async def log_params(self, record: dict) -> bool | None:
         _ = record
+        return None
 
 
 __all__ = ["AsyncpgPersister", "NullPersister"]

@@ -20,7 +20,14 @@ Real-life-grade mechanisms (each labelled, each falsifiable via replay):
 * **Rolling closures**: each route segment closes ``advance_closure_sec``
   before convoy entry and reopens after the tail passes — full, partial, or
   signal-hold policy. Public queues build, discharge at saturation flow, and
-  recovery is measured.
+  recovery is measured against a PAIRED no-closure counterfactual (same
+  seed, same event schedule, same demand): the corridor has recovered once
+  every simulated segment's queue is back within ε of the counterfactual's
+  and its speed within 10 % of it.  A peak-hour corridor that is
+  oversaturated with or without the closure no longer "recovers" at the
+  horizon by construction — when the closure's excess queue never
+  dissipates inside the horizon the run says ``censored: true`` and
+  ``recovery_sec`` is the (lower-bound) horizon remainder.
 * **Determinism**: one :class:`SeededRng` per replication, derived
   blake2b(seed, replication) — same seed in, byte-identical metrics out.
 
@@ -52,7 +59,7 @@ from traffic_oracle.simulation.network import SimNetwork, default_network
 from traffic_oracle.simulation.rng import SeededRng, derive_seed
 from traffic_oracle.simulation.tod import (
     WeatherState,
-    infer_weather,
+    infer_weather_at,
     time_of_day_demand,
     weather_speed_factor,
 )
@@ -70,6 +77,14 @@ _QUEUE_VEH_THRESHOLD = 0.5
 _VEHICLE_SPACING_M = 7.0         # matches frozen scenario_sim.py:30
 _TAIL_BUFFER_SEC = 30.0          # convoy tail clearance after last vehicle
 _ESCORT_FF_FRACTION = 0.95       # convoy uses ~free-flow on its closed corridor
+
+# Recovery vs the paired no-closure counterfactual (labelled tolerances):
+# queue within max(0.5 veh, 5 % of the counterfactual queue) and speed at
+# least 90 % of the counterfactual speed, on every simulated segment.
+_RECOVERY_QUEUE_EPS_VEH = 0.5
+_RECOVERY_QUEUE_REL = 0.05
+_RECOVERY_SPEED_FRACTION = 0.90
+RECOVERY_BASIS = "paired_no_closure"
 
 VALID_CLOSURE_TYPES = ("full_closure", "partial_closure", "signal_hold")
 _CLOSURE_CAPACITY_FACTOR = {
@@ -116,6 +131,12 @@ class SimulationConfig:
     tail_buffer_sec: float = _TAIL_BUFFER_SEC
     # Capacity scale fitted by /api/v1/simulate/replay (1.0 until calibrated).
     capacity_scale: float = 1.0
+    # Per-road-class scales from the same fit; a class without one uses
+    # ``capacity_scale`` (the median of the fitted classes).
+    class_capacity_scale: dict[str, float] = field(default_factory=dict)
+
+    def scale_for(self, road_class: str) -> float:
+        return float(self.class_capacity_scale.get(road_class, self.capacity_scale))
 
 
 @dataclass
@@ -137,6 +158,11 @@ class ReplicationResult:
     forecast_feedback: dict[int, dict[int, dict[str, float]]] = field(
         default_factory=dict
     )
+    # True when the closure's effect had NOT dissipated by the horizon:
+    # recovery_sec is then a censored lower bound, never a measurement.
+    censored: bool = False
+    route_segments_modelled: int = 0
+    route_segments_requested: int = 0
 
     def to_dict(self) -> dict:
         d = {
@@ -153,6 +179,10 @@ class ReplicationResult:
             "n_events": self.n_events,
             "n_ambulances_delayed": self.n_ambulances_delayed,
             "recovered": self.recovered,
+            "censored": self.censored,
+            "recovery_basis": RECOVERY_BASIS,
+            "route_segments_modelled": self.route_segments_modelled,
+            "route_segments_requested": self.route_segments_requested,
             "seed": self.seed,
             "events": self.events[:24],  # cap the audit trail per run
         }
@@ -199,101 +229,56 @@ def _forecast_multiplier(shape: dict[int, dict[str, float]] | None, t_sec: float
     return max(0.4, min(2.2, 0.55 + 1.35 * idx_at(t_sec)))
 
 
-def run_replication(
+@dataclass
+class _ArmOutcome:
+    """One simulated arm (closure policy applied, or the counterfactual)."""
+
+    states: dict[int, _SegState]
+    total_disruption_vh: float
+    max_queue_veh: float
+    forecast_feedback: dict[int, dict[int, dict[str, float]]]
+    recovered_at: float | None
+    queue_traj: list[dict[int, float]]
+    speed_traj: list[dict[int, float]]
+
+
+def _run_arm(
     *,
-    replication: int,
     network: SimNetwork,
-    route_segment_ids: list[int],
-    departure_time: datetime,
+    route_set: set[int],
+    sim_ids: list[int],
+    closure_windows: dict[int, tuple[float, float]],
     closure_policy: ClosurePolicy,
+    schedule: EventSchedule,
+    departure_time: datetime,
     horizon_sec: float,
-    seed: int,
-    config: SimulationConfig | None = None,
-    forecast_shapes: ForecastShapes | None = None,
-    weather: WeatherState | None = None,
-    event_config: EventConfig | None = None,
-    scheduled_events: list[ScheduledEvent] | None = None,
-    adjacency: dict[int, set[int]] | None = None,
-) -> ReplicationResult:
-    """Run one seeded replication of the corridor twin."""
-    cfg = config or SimulationConfig()
+    cfg: SimulationConfig,
+    forecast_shapes: ForecastShapes,
+    weather_ff: float,
+    closures_enabled: bool,
+    record: bool,
+    counterfactual: _ArmOutcome | None,
+    last_closure_end: float,
+    route: list[int],
+) -> _ArmOutcome:
+    """The point-queue tick loop for one arm (see module docstring).
+
+    ``closures_enabled=False`` is the paired no-closure counterfactual: the
+    same events, demand and seed with every closure factor at 1.0.  With a
+    ``counterfactual`` supplied, recovery is the first tick at/after the
+    last closure end where every simulated segment is back within the
+    recovery tolerances of the counterfactual at the same tick; the arm
+    then stops accumulating (the disruption period is over).
+    """
     dt = cfg.dt_sec
-    weather = weather or infer_weather(departure_time.date(), departure_time.hour)
-    event_config = event_config or EventConfig()
-    forecast_shapes = forecast_shapes or {}
+    states: dict[int, _SegState] = {}
+    for sid in sim_ids:
+        st = _SegState(seg_id=sid, on_route=sid in route_set)
+        window = closure_windows.get(sid)
+        if window is not None:
+            st.closure_start, st.closure_end = window
+        states[sid] = st
 
-    rng = SeededRng(derive_seed(seed, "replication", replication))
-
-    route = [sid for sid in route_segment_ids if network.get(sid) is not None]
-    if not route:
-        empty = ReplicationResult(
-            replication=replication,
-            total_disruption_vehicle_hours=0.0,
-            max_queue_length_m=0.0,
-            avg_closure_duration_sec=0.0,
-            convoy_transit_time_sec=0.0,
-            recovery_sec=0.0,
-            ambulance_delay_sec=0.0,
-            seed=seed,
-        )
-        return empty
-
-    # Simulated set: route + 1-hop shell (diverted/spilled traffic) + any
-    # scheduled event segments. Shell queues count toward disruption.
-    sim_ids: list[int] = list(route)
-    seen = set(route)
-    if adjacency:
-        for sid in route:
-            for nbr in adjacency.get(sid, ()):  # type: ignore[union-attr]
-                if nbr in network.segments and nbr not in seen:
-                    sim_ids.append(nbr)
-                    seen.add(nbr)
-    for ev in scheduled_events or []:
-        if ev.segment_id in network.segments and ev.segment_id not in seen:
-            sim_ids.append(ev.segment_id)
-            seen.add(ev.segment_id)
-
-    states: dict[int, _SegState] = {
-        sid: _SegState(seg_id=sid, on_route=sid in route) for sid in sim_ids
-    }
-
-    schedule: EventSchedule = sample_events(
-        rng, network, sim_ids, horizon_sec, departure_time, event_config,
-        weather, scheduled_events,
-    )
-
-    weather_ff = weather_speed_factor(weather)
-
-    # ── convoy schedule (precomputed — deterministic on a closed corridor) ──
-    # The convoy travels its own closed corridor at min(policy speed,
-    # weather-adjusted free-flow), so entry/exit times per segment are known
-    # upfront and each segment's closure activates advance_closure_sec BEFORE
-    # entry — the queue-buildup window the rolling-closure policy is about.
-    convoy_entry_t: dict[int, float] = {}
-    convoy_exit_t_by_seg: dict[int, float] = {}
-    entry_t = 0.0
-    for sid in route:
-        seg = network.require(sid)
-        ff_convoy = seg.free_flow_kmh * weather_ff * _ESCORT_FF_FRACTION
-        v_convoy = max(8.0, min(cfg.convoy_speed_kmh, ff_convoy))
-        cross_sec = seg.length_m / (v_convoy * 1000.0 / 3600.0)
-        exit_t = entry_t + cross_sec
-        convoy_entry_t[sid] = entry_t
-        convoy_exit_t_by_seg[sid] = exit_t
-        st = states[sid]
-        st.closure_start = max(0.0, entry_t - closure_policy.advance_closure_sec)
-        st.closure_end = exit_t + cfg.tail_buffer_sec
-        entry_t = exit_t
-    convoy_exit_t: float | None = convoy_exit_t_by_seg[route[-1]]
-    closure_durations = [
-        states[sid].closure_end - states[sid].closure_start  # type: ignore[operator]
-        for sid in route
-    ]
-    last_closure_end = max(
-        (states[sid].closure_end or 0.0) for sid in route
-    )
-
-    # ── main tick loop ────────────────────────────────────────────────
     n_steps = int(math.ceil(horizon_sec / dt))
     total_disruption_vh = 0.0
     max_queue_veh = 0.0
@@ -302,6 +287,8 @@ def run_replication(
         int(round(h * 60.0 / dt)): h for h in FORECAST_HORIZONS
     }
     recovered_at: float | None = None
+    queue_traj: list[dict[int, float]] = []
+    speed_traj: list[dict[int, float]] = []
 
     for step in range(n_steps):
         t = step * dt
@@ -321,22 +308,26 @@ def run_replication(
             # Event effects
             lanes_open = seg.lanes
             cap_factor = 1.0
-            green = seg.green_ratio
             extra_demand = 0.0
             speed_cap: float | None = None
             for ev in active_by_seg.get(sid, ()):
                 lanes_open = max(1, lanes_open - ev.lanes_blocked)
                 cap_factor *= ev.capacity_factor
-                green *= ev.green_ratio_factor
+                # A signal fault cuts the approach's effective green; the
+                # green ratio lives inside seg.capacity_veh_h, so it scales
+                # capacity directly (it used to be computed and dropped).
+                if seg.signalized:
+                    cap_factor *= ev.green_ratio_factor
                 extra_demand += ev.extra_demand_veh_h
                 if ev.speed_cap_kmh is not None:
                     speed_cap = (
                         min(speed_cap, ev.speed_cap_kmh) if speed_cap else ev.speed_cap_kmh
                     )
 
-            # Convoy closure effect
+            # Convoy closure effect (never in the counterfactual arm)
             closed = (
-                st.on_route
+                closures_enabled
+                and st.on_route
                 and st.closure_start is not None
                 and st.closure_start <= t
                 and (st.closure_end is None or t < st.closure_end)
@@ -350,7 +341,7 @@ def run_replication(
                 * (lanes_open / seg.lanes)
                 * cap_factor
                 * closure_factor
-                * cfg.capacity_scale
+                * cfg.scale_for(seg.road_class)
             )
             capacity = max(capacity, 0.0)
 
@@ -391,6 +382,10 @@ def run_replication(
             moving_delay_veh_h = outflow * max(0.0, traverse_h - traverse_ff_h)
             total_disruption_vh += queue_delay_veh_h + moving_delay_veh_h
 
+        if record:
+            queue_traj.append({sid: states[sid].queue_veh for sid in sim_ids})
+            speed_traj.append({sid: states[sid].speed_now_kmh for sid in sim_ids})
+
         # ── forecast feedback capture at DSTGAT knots ────────────────
         if step in ff_capture_steps:
             h = ff_capture_steps[step]
@@ -403,21 +398,155 @@ def run_replication(
                     "congestion_idx": round(cong, 3),
                 }
 
-        # ── recovery check after last closure ────────────────────────
-        if recovered_at is None and t >= last_closure_end:
+        # ── recovery vs the paired counterfactual, after the last closure ──
+        if (
+            counterfactual is not None
+            and recovered_at is None
+            and t >= last_closure_end
+            and step < len(counterfactual.queue_traj)
+        ):
+            cf_q = counterfactual.queue_traj[step]
+            cf_v = counterfactual.speed_traj[step]
             if all(
-                states[s].queue_veh < _QUEUE_VEH_THRESHOLD
-                and states[s].speed_now_kmh
-                >= 0.85 * network.require(s).free_flow_kmh * weather_ff
+                abs(states[s].queue_veh - cf_q[s])
+                <= max(_RECOVERY_QUEUE_EPS_VEH, _RECOVERY_QUEUE_REL * cf_q[s])
+                and states[s].speed_now_kmh >= _RECOVERY_SPEED_FRACTION * cf_v[s]
                 for s in sim_ids
             ):
                 recovered_at = t
+                break
 
-        if convoy_exit_t is not None and recovered_at is not None:
-            break
+    return _ArmOutcome(
+        states=states,
+        total_disruption_vh=total_disruption_vh,
+        max_queue_veh=max_queue_veh,
+        forecast_feedback=forecast_feedback,
+        recovered_at=recovered_at,
+        queue_traj=queue_traj,
+        speed_traj=speed_traj,
+    )
 
-    # Horizon-censored recovery
-    if recovered_at is None:
+
+def run_replication(
+    *,
+    replication: int,
+    network: SimNetwork,
+    route_segment_ids: list[int],
+    departure_time: datetime,
+    closure_policy: ClosurePolicy,
+    horizon_sec: float,
+    seed: int,
+    config: SimulationConfig | None = None,
+    forecast_shapes: ForecastShapes | None = None,
+    weather: WeatherState | None = None,
+    event_config: EventConfig | None = None,
+    scheduled_events: list[ScheduledEvent] | None = None,
+    adjacency: dict[int, set[int]] | None = None,
+) -> ReplicationResult:
+    """Run one seeded replication of the corridor twin.
+
+    Two arms share one seeded event schedule: the no-closure
+    counterfactual (recorded per tick) and the closure policy under
+    evaluation, whose recovery is measured against it.
+    """
+    cfg = config or SimulationConfig()
+    weather = weather or infer_weather_at(departure_time)
+    event_config = event_config or EventConfig()
+    forecast_shapes = forecast_shapes or {}
+
+    rng = SeededRng(derive_seed(seed, "replication", replication))
+
+    route = [sid for sid in route_segment_ids if network.get(sid) is not None]
+    if not route:
+        empty = ReplicationResult(
+            replication=replication,
+            total_disruption_vehicle_hours=0.0,
+            max_queue_length_m=0.0,
+            avg_closure_duration_sec=0.0,
+            convoy_transit_time_sec=0.0,
+            recovery_sec=0.0,
+            ambulance_delay_sec=0.0,
+            seed=seed,
+            route_segments_modelled=0,
+            route_segments_requested=len(route_segment_ids),
+        )
+        return empty
+
+    # Simulated set: route + 1-hop shell (diverted/spilled traffic) + any
+    # scheduled event segments. Shell queues count toward disruption.
+    sim_ids: list[int] = list(route)
+    seen = set(route)
+    if adjacency:
+        for sid in route:
+            for nbr in adjacency.get(sid, ()):  # type: ignore[union-attr]
+                if nbr in network.segments and nbr not in seen:
+                    sim_ids.append(nbr)
+                    seen.add(nbr)
+    for ev in scheduled_events or []:
+        if ev.segment_id in network.segments and ev.segment_id not in seen:
+            sim_ids.append(ev.segment_id)
+            seen.add(ev.segment_id)
+
+    schedule: EventSchedule = sample_events(
+        rng, network, sim_ids, horizon_sec, departure_time, event_config,
+        weather, scheduled_events,
+    )
+
+    weather_ff = weather_speed_factor(weather)
+
+    # ── convoy schedule (precomputed — deterministic on a closed corridor) ──
+    # The convoy travels its own closed corridor at min(policy speed,
+    # weather-adjusted free-flow), so entry/exit times per segment are known
+    # upfront and each segment's closure activates advance_closure_sec BEFORE
+    # entry — the queue-buildup window the rolling-closure policy is about.
+    closure_windows: dict[int, tuple[float, float]] = {}
+    convoy_exit_t_by_seg: dict[int, float] = {}
+    entry_t = 0.0
+    for sid in route:
+        seg = network.require(sid)
+        ff_convoy = seg.free_flow_kmh * weather_ff * _ESCORT_FF_FRACTION
+        v_convoy = max(8.0, min(cfg.convoy_speed_kmh, ff_convoy))
+        cross_sec = seg.length_m / (v_convoy * 1000.0 / 3600.0)
+        exit_t = entry_t + cross_sec
+        convoy_exit_t_by_seg[sid] = exit_t
+        closure_windows[sid] = (
+            max(0.0, entry_t - closure_policy.advance_closure_sec),
+            exit_t + cfg.tail_buffer_sec,
+        )
+        entry_t = exit_t
+    convoy_exit_t = convoy_exit_t_by_seg[route[-1]]
+    closure_durations = [end - start for start, end in closure_windows.values()]
+    last_closure_end = max(end for _start, end in closure_windows.values())
+
+    arm_kwargs: dict[str, Any] = {
+        "network": network,
+        "route_set": set(route),
+        "sim_ids": sim_ids,
+        "closure_windows": closure_windows,
+        "closure_policy": closure_policy,
+        "schedule": schedule,
+        "departure_time": departure_time,
+        "horizon_sec": horizon_sec,
+        "cfg": cfg,
+        "forecast_shapes": forecast_shapes,
+        "weather_ff": weather_ff,
+        "last_closure_end": last_closure_end,
+        "route": route,
+    }
+    counterfactual = _run_arm(
+        closures_enabled=False, record=True, counterfactual=None, **arm_kwargs
+    )
+    main = _run_arm(
+        closures_enabled=True, record=False, counterfactual=counterfactual,
+        **arm_kwargs,
+    )
+    states = main.states
+    recovered_at = main.recovered_at
+
+    # Recovery relative to the counterfactual; censored when the closure's
+    # effect never dissipated inside the horizon (a lower bound, labelled).
+    censored = recovered_at is None
+    if censored:
         recovery_sec = max(0.0, horizon_sec - last_closure_end)
     else:
         recovery_sec = max(0.0, recovered_at - last_closure_end)
@@ -445,7 +574,7 @@ def run_replication(
             ):
                 wait = (st.closure_end if st.closure_end is not None else horizon_sec) - t_arr
                 # Queue discharge head after reopening, capped at 10 min.
-                cap_veh_h = seg.capacity_veh_h * cfg.capacity_scale
+                cap_veh_h = seg.capacity_veh_h * cfg.scale_for(seg.road_class)
                 discharge = min(st.max_queue_veh / max(cap_veh_h, 1.0) * 3600.0, 600.0)
                 delay = wait + 0.35 * discharge
             elif st.max_queue_veh > 2.0 and t_arr <= last_closure_end:
@@ -471,7 +600,7 @@ def run_replication(
             st.closure_end is None or t_arr < st.closure_end
         ):
             wait = (st.closure_end if st.closure_end is not None else horizon_sec) - t_arr
-            cap_veh_h = seg.capacity_veh_h * cfg.capacity_scale
+            cap_veh_h = seg.capacity_veh_h * cfg.scale_for(seg.road_class)
             discharge = min(st.max_queue_veh / max(cap_veh_h, 1.0) * 3600.0, 600.0)
             delay = wait + 0.35 * discharge
         elif st.max_queue_veh > 2.0 and t_arr <= last_closure_end:
@@ -484,20 +613,23 @@ def run_replication(
 
     return ReplicationResult(
         replication=replication,
-        total_disruption_vehicle_hours=total_disruption_vh,
-        max_queue_length_m=max_queue_veh * cfg.queue_spacing_m,
+        total_disruption_vehicle_hours=main.total_disruption_vh,
+        max_queue_length_m=main.max_queue_veh * cfg.queue_spacing_m,
         avg_closure_duration_sec=(
             sum(closure_durations) / len(closure_durations) if closure_durations else 0.0
         ),
-        convoy_transit_time_sec=(convoy_exit_t if convoy_exit_t is not None else horizon_sec),
+        convoy_transit_time_sec=convoy_exit_t,
         recovery_sec=recovery_sec,
         ambulance_delay_sec=ambulance_delay_sec,
         events=[e.to_dict() for e in schedule.events],
         n_events=len(schedule.events),
         n_ambulances_delayed=n_amb,
-        recovered=recovered_at is not None,
+        recovered=not censored,
         seed=seed,
-        forecast_feedback=forecast_feedback,
+        forecast_feedback=main.forecast_feedback,
+        censored=censored,
+        route_segments_modelled=len(route),
+        route_segments_requested=len(route_segment_ids),
     )
 
 
@@ -576,11 +708,19 @@ def shapes_from_forecaster(
             continue
         norm: dict[int, dict[str, float]] = {}
         for h, vals in horizons.items():
-            if isinstance(vals, dict) and "congestion_idx" in vals:
-                norm[int(h)] = {
-                    "speed_kmh": float(vals.get("speed_kmh", 0.0) or 0.0),
-                    "congestion_idx": float(vals.get("congestion_idx", 0.33) or 0.33),
-                }
+            if not isinstance(vals, dict) or vals.get("congestion_idx") is None:
+                continue
+            # Explicit None checks: a true 0.0 congestion (free flow) used to
+            # read as 0.33 through ``x or 0.33``.
+            try:
+                cong = float(vals["congestion_idx"])
+                speed_raw = vals.get("speed_kmh")
+                speed = float(speed_raw) if speed_raw is not None else 0.0
+            except (TypeError, ValueError):
+                continue
+            if not (math.isfinite(cong) and math.isfinite(speed)):
+                continue
+            norm[int(h)] = {"speed_kmh": speed, "congestion_idx": cong}
         if norm:
             shapes[int(sid)] = norm
     return shapes

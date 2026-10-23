@@ -14,11 +14,48 @@ class FeedSource(str, enum.Enum):
     FLEET_GPS = "fleet_gps"
     CROWDSOURCE = "crowdsource"
 
+    @property
+    def db_value(self) -> str:
+        """The ``traffic.observations.source`` CHECK vocabulary (001).
+
+        The enum value mirrors the Rust ``FeedSource`` name, but the
+        observations CHECK spells the government feed ``'government'`` —
+        writing ``'government_traffic'`` violates it, so every DB writer
+        goes through this explicit map, never ``.value``.
+        """
+        return _FEED_SOURCE_DB_VALUES[self]
+
+
+_FEED_SOURCE_DB_VALUES: dict[FeedSource, str] = {
+    FeedSource.GOVERNMENT_TRAFFIC: "government",
+    FeedSource.MAPPING_API: "mapping_api",
+    FeedSource.FLEET_GPS: "fleet_gps",
+    FeedSource.CROWDSOURCE: "crowdsource",
+}
+
+#: Wire ordinals (signal-ingress pipeline/batch.rs ``source`` column; the
+#: event-emulator nats_seam uses the same table) → FeedSource.
+FEED_SOURCE_ORDINALS: dict[int, FeedSource] = {
+    0: FeedSource.GOVERNMENT_TRAFFIC,
+    1: FeedSource.MAPPING_API,
+    2: FeedSource.FLEET_GPS,
+    3: FeedSource.CROWDSOURCE,
+}
+
 
 class DataQuality(str, enum.Enum):
     REAL = "real"
     ANOMALOUS = "anomalous"
     SYNTHETIC = "synthetic"
+
+
+#: Wire ordinals (Rust ``DataQuality::as_u8``) → DataQuality.  The enum
+#: values ARE the ``traffic.observations.data_quality`` CHECK vocabulary (003).
+DATA_QUALITY_ORDINALS: dict[int, DataQuality] = {
+    0: DataQuality.REAL,
+    1: DataQuality.ANOMALOUS,
+    2: DataQuality.SYNTHETIC,
+}
 
 
 class TrafficObservation(BaseModel):

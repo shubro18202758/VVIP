@@ -18,6 +18,9 @@ Coverage:
       seeded-but-empty Valkey, a populated scan (contexts/rows counts,
       corrupt-payload skipping, truncation flag), and consistency with
       the pure module over the same seed.
+    * the scanner reads contexts with batched MGET (one round trip per
+      100 keys, never one GET per movement) and is shared with the city
+      feed (``scan_contexts`` / ``read_contexts``).
 
 Everything here is pure python (stdlib + fastapi/httpx only) — the file
 runs under the gate venv with PYTHONPATH=src, same pattern as
@@ -446,20 +449,32 @@ pytest.importorskip("httpx")
 from httpx import ASGITransport, AsyncClient  # noqa: E402
 
 from traffic_oracle.__main__ import create_app  # noqa: E402
-from traffic_oracle.ops.router import CONTEXT_KEY_PREFIX, MAX_CONTEXTS  # noqa: E402
+from traffic_oracle.ops.router import (  # noqa: E402
+    CONTEXT_KEY_PREFIX,
+    MAX_CONTEXTS,
+    read_contexts,
+    scan_contexts,
+)
 
 
 class FakeLedgerValkey:
-    """Duck-typed valkey client: just scan_iter + get over a dict store."""
+    """Duck-typed valkey client: scan_iter + mget (+ get) over a dict store."""
 
     def __init__(self, payloads: dict[str, str] | None = None) -> None:
         self._payloads = dict(payloads or {})
+        self.get_calls = 0
+        self.mget_batches: list[int] = []
 
     def seed_context(self, movement_id: str, context: dict) -> None:
         self._payloads[f"{CONTEXT_KEY_PREFIX}{movement_id}"] = json.dumps(context)
 
     async def get(self, key: str) -> str | None:
+        self.get_calls += 1
         return self._payloads.get(key)
+
+    async def mget(self, keys: list[str]) -> list[str | None]:
+        self.mget_batches.append(len(keys))
+        return [self._payloads.get(k) for k in keys]
 
     def scan_iter(self, match: str = "*", count: int = 10) -> Any:
         prefix = match.rstrip("*")
@@ -552,3 +567,31 @@ class TestDegradationTaxonomyEndpoint:
         body = res.json()
         assert body["truncated"] is True
         assert body["contexts_scanned"] == MAX_CONTEXTS
+
+    async def test_scan_is_batched_mget_not_per_key_get(self):
+        valkey = FakeLedgerValkey()
+        for i in range(250):
+            valkey.seed_context(f"m-{i:04d}", _context(f"m-{i:04d}", [latched(ts=float(i))]))
+        app = create_app()
+        app.state.adaptive_valkey = valkey
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
+            res = await c.get("/api/v1/ops/degradation-taxonomy")
+        assert res.status_code == 200
+        assert res.json()["contexts_scanned"] == 250
+        assert valkey.get_calls == 0
+        assert valkey.mget_batches == [100, 100, 50]
+
+    async def test_shared_scanner_returns_whole_payloads(self):
+        valkey = FakeLedgerValkey()
+        valkey.seed_context("m-1", _context("m-1", [latched(ts=1.0, movement_id="m-1")]))
+        valkey._payloads[f"{CONTEXT_KEY_PREFIX}m-lost-id"] = json.dumps({"decisions_log": []})
+        valkey._payloads[f"{CONTEXT_KEY_PREFIX}m-bad"] = "{not json"
+        contexts, truncated, corrupt = await scan_contexts(valkey)
+        assert truncated == 0 and corrupt == 1
+        by_id = dict(contexts)
+        assert by_id["m-1"]["vvip_class"] == "Z+"          # the full payload, not just rows
+        assert by_id["m-lost-id"]["decisions_log"] == []   # key names the subject
+        picked, corrupt = await read_contexts(
+            valkey, [f"{CONTEXT_KEY_PREFIX}m-1", f"{CONTEXT_KEY_PREFIX}gone"])
+        assert [m for m, _ in picked] == ["m-1"] and corrupt == 0
+

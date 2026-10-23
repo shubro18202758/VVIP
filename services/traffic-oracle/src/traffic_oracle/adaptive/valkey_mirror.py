@@ -2,7 +2,12 @@
 
 Keys published (contract C4 + decider cadence trigger #3):
 
-    adaptive:params:{movement_id}   params JSON, TTL 30 s
+    adaptive:params:{movement_id}   params JSON, TTL 30 s — written by the
+                                    situation-engine loop's decision path
+                                    when the decision changes, and re-SET
+                                    with the same payload every ~10 s so
+                                    the key lapses only when the loop does
+                                    (never by a GET /adaptive/params reader)
     situation:changed               JSON notification on every effective
                                     situation_class transition, TTL 60 s
 

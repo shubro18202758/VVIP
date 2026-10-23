@@ -66,12 +66,13 @@ _BASE_DEMAND_VEH_PER_H_PER_LANE: dict[str, float] = {
 # Saturation flow per lane (veh/h/lane) — capacity side of v/c.
 _SATURATION_FLOW_VEH_PER_H_PER_LANE = 1800.0
 
-# Market-adjacent segments (old-city bazaar corridors in the seed).
-_MARKET_SEGMENTS = frozenset({1005, 1012, 1013, 1038})  # Relief, Gandhi, Tilak, Kankaria
+# Market-adjacent segments (old-city bazaar corridors in the seed): Relief,
+# Gandhi, Swami Vivekananda, Kankaria.
+_MARKET_SEGMENTS = frozenset({1005, 1012, 1013, 1038})
 # Low-lying / underpass-prone segments: river-crossing corridor plus the
-# Kalupur railway-underpass approach on the Gandhinagar Highway (labelled
-# assumption — monsoon waterlogging concentrates here).
-_LOW_LYING_SEGMENTS = frozenset({1001, 1002, 1006, 1007, 1015, 1024, 1039})
+# Kalupur station approach (Station Road 1014) — labelled assumption:
+# monsoon waterlogging concentrates here.
+_LOW_LYING_SEGMENTS = frozenset({1001, 1002, 1006, 1007, 1015, 1014, 1039})
 # Stadium-adjacent segment for match spillover.
 _STADIUM_SEGMENTS = frozenset({1032})
 
@@ -277,11 +278,12 @@ def default_network() -> SimNetwork:
     """Seed network, or a minimal fallback if the seed file is absent."""
     if _SEED_RELATIVE.exists():
         return from_seed_sql(_SEED_RELATIVE)
+    # The seed's own values for the Ashram Road spine (OpenStreetMap, WP-20).
     return from_rows([
-        {"segment_id": 1001, "road_name": "Ashram Road (South)", "road_class": "trunk",
-         "lanes": 6, "speed_limit_kmh": 60, "length_m": 1800.0, "signalized": True},
-        {"segment_id": 1002, "road_name": "Ashram Road (North)", "road_class": "trunk",
-         "lanes": 6, "speed_limit_kmh": 60, "length_m": 2900.0, "signalized": True},
-        {"segment_id": 1009, "road_name": "Sabarmati Ashram Road", "road_class": "secondary",
-         "lanes": 4, "speed_limit_kmh": 40, "length_m": 1100.0, "signalized": False},
+        {"segment_id": 1001, "road_name": "Ashram Road (South)", "road_class": "primary",
+         "lanes": 4, "speed_limit_kmh": 60, "length_m": 462.0, "signalized": True},
+        {"segment_id": 1002, "road_name": "Ashram Road (North)", "road_class": "primary",
+         "lanes": 4, "speed_limit_kmh": 60, "length_m": 1565.0, "signalized": True},
+        {"segment_id": 1009, "road_name": "Ashram Road (Sabarmati Ashram)", "road_class": "primary",
+         "lanes": 4, "speed_limit_kmh": 40, "length_m": 2660.0, "signalized": True},
     ])

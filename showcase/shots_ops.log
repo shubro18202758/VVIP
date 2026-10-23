@@ -1,0 +1,30 @@
+{
+  "chrome": "/home/sandy050405/.cache/puppeteer/chrome/linux_arm-153.0.8010.36/chrome-linux-arm64/chrome",
+  "origin": "http://127.0.0.1:5273",
+  "pursuitTitle": "pending",
+  "shots": {
+    "opsWall": {
+      "checks": {
+        "phase-ready": {
+          "ok": true,
+          "detail": "phase=ready"
+        },
+        "imagery": {
+          "ok": true,
+          "detail": "imagery=photoreal attempt=1"
+        },
+        "decision-queue": {
+          "ok": true,
+          "detail": "2 queue card(s)"
+        },
+        "png-nonblank": {
+          "ok": true,
+          "detail": "png colours=7268 opaque=100.0%"
+        }
+      },
+      "file": "showcase_ops_wall.png"
+    }
+  },
+  "operatorGate": "on (signed in)"
+}
+CANVAS SHOTS: OK

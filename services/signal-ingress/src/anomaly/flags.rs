@@ -1,4 +1,4 @@
-use crate::TrafficObservation;
+use crate::{DataQuality, TrafficObservation};
 
 /// Individual anomaly flag types detected by the Tier-1 inline detector.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -21,12 +21,23 @@ pub enum AnomalyFlag {
     SpatialMismatch,
 }
 
-/// Severity classification for anomaly flags.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Severity classification for anomaly flags (ordered Low < Medium < High).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Severity {
     Low,
     Medium,
     High,
+}
+
+impl Severity {
+    /// Vocabulary of the traffic.anomaly_log severity CHECK.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Low => "low",
+            Self::Medium => "medium",
+            Self::High => "high",
+        }
+    }
 }
 
 impl AnomalyFlag {
@@ -38,6 +49,8 @@ impl AnomalyFlag {
         }
     }
 
+    /// Wire name; exactly the traffic.anomaly_log anomaly_type vocabulary
+    /// (contract C-H).
     pub fn name(self) -> &'static str {
         match self {
             Self::FutureTimestamp => "future_timestamp",
@@ -58,6 +71,10 @@ pub struct AnomalyResult {
     pub flags: Vec<AnomalyFlag>,
     pub is_anomalous: bool,
     pub confidence: f32,
+    /// The observation's data quality BEFORE the detector relabelled it
+    /// `Anomalous` (None when it was not flagged): a flag raised on the
+    /// simulated feed stays traceable to `Synthetic` (C-H extension).
+    pub feed_quality: Option<DataQuality>,
 }
 
 impl AnomalyResult {
@@ -81,6 +98,30 @@ impl AnomalyResult {
             flags,
             is_anomalous,
             confidence,
+            feed_quality: None,
         }
+    }
+
+    /// Record the quality the observation carried before it was flagged
+    /// (the detector calls this right before relabelling it `Anomalous`).
+    pub fn with_feed_quality(mut self, quality: DataQuality) -> Self {
+        self.feed_quality = Some(quality);
+        self
+    }
+
+    /// Highest severity among the flags (None when clean).
+    pub fn severity(&self) -> Option<Severity> {
+        self.flags.iter().map(|f| f.severity()).max()
+    }
+
+    /// Flag names in detection order, without duplicates.
+    pub fn flag_names(&self) -> Vec<&'static str> {
+        let mut names: Vec<&'static str> = Vec::with_capacity(self.flags.len());
+        for f in &self.flags {
+            if !names.contains(&f.name()) {
+                names.push(f.name());
+            }
+        }
+        names
     }
 }

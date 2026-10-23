@@ -50,7 +50,7 @@
 
 	.sm {
 		padding: 1px var(--v-space-2);
-		font-size: 10px;
+		font-size: var(--v-text-2xs);
 	}
 
 	.b-GREEN {

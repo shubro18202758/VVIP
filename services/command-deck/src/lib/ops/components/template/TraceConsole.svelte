@@ -4,11 +4,13 @@
 	 * filter over the REAL decision-audit ledger (decisions_log through the
 	 * ops audit ladder): typed chips per audit level, mono machine rows,
 	 * act-rail human rows — the same FeedItem contract the /ops stream
-	 * uses, so there is ONE audit renderer, not two.
+	 * uses, so there is ONE audit renderer, not two. Row text and evidence
+	 * payloads mask plates unless a named duty officer is on console (C6).
 	 */
 	import FeedItem from '$lib/primitives/FeedItem.svelte';
 	import { ops } from '$lib/ops/store.svelte';
 	import { t } from '$lib/i18n/strings';
+	import { displayDetail, displayText } from '$lib/gods-eye/plates';
 	import type { AuditEntry } from '$lib/ops/types';
 
 	type Level = AuditEntry['level'] | 'all';
@@ -30,6 +32,17 @@
 	const rows = $derived(
 		(filter === 'all' ? ops.audit : ops.audit.filter((a) => a.level === filter)).slice(-40).reverse(),
 	);
+
+	/**
+	 * The actor as this narrow console shows it: the mcp: tool prefix dropped
+	 * and a long officer label cut to fit (the row text names the officer in
+	 * full) — a 40-character name must never squeeze the row's text into a
+	 * one-letter column.
+	 */
+	function railActor(actor: string): string {
+		const a = actor.startsWith('mcp:') ? actor.slice(4) : actor;
+		return a.length > 26 ? `${a.slice(0, 25)}…` : a;
+	}
 
 	function actorKind(a: AuditEntry): 'human' | 'machine' {
 		if (a.source === 'operator' || a.actor === 'operator') return 'human';
@@ -67,11 +80,11 @@
 				{#each rows as entry (entry.id)}
 					<FeedItem
 						ts={entry.ts}
-						actor={entry.actor.startsWith('mcp:') ? entry.actor.slice(4) : entry.actor}
+						actor={railActor(entry.actor)}
 						actorKind={actorKind(entry)}
 						level={entry.level}
-						text={entry.text}
-						detail={entry.detail}
+						text={displayText(entry.text, ops.officerOn)}
+						detail={displayDetail(entry.detail, ops.officerOn)}
 						lang={ops.lang}
 					/>
 				{/each}
@@ -82,9 +95,10 @@
 
 <style>
 	.console {
+		/* clear of the cockpit's right rail when it is open (--float-right) */
 		position: absolute;
-		right: var(--v-space-3);
-		bottom: var(--v-space-3);
+		right: var(--float-right, var(--v-space-3));
+		bottom: var(--float-bottom, var(--v-space-3));
 		width: 360px;
 		max-width: calc(100vw - 48px);
 		display: flex;
@@ -170,7 +184,7 @@
 	.empty {
 		margin: 0;
 		font-size: var(--v-text-2xs);
-		color: var(--v-ink-4);
+		color: var(--v-ink-3);
 	}
 
 	.mono {

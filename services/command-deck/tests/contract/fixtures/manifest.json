@@ -1,0 +1,100 @@
+{
+	"about": "Recorded oracle payloads for tests/contract/run.mjs. origin 'live' = verbatim GET from the oracle (re-record with --record); the *.contract.json files are contract C-C shapes populated from real rows (DB read-only), standing in for routes WP-02 has not deployed on the live oracle yet.",
+	"contract_fixtures": {
+		"cameras.contract.json": "C-C GET /api/v1/cameras — EM-CAM-01..04 at their corridor.vehicle_sightings centroids; counts as of recording (sightings are days old → 0 reads/hits in 15 min)",
+		"event_audit.contract.json": "C-C GET /api/v1/events/{id}/audit FeedItems for pursuit 4508d86d — from enforcement_recommendations e91d4591 audit_tail + the stolen_vehicle ANPR hit",
+		"overrides.contract.json": "C-C GET /api/v1/adaptive/overrides — adaptive.param_overrides rows 322/323",
+		"units.contract.json": "GET /api/v1/units — JR-EM-01 on scene (frozen from the 2026-10-22 recording; --record never writes it)",
+		"vehicle_sightings.contract.json": "GET /api/v1/vehicles/{id}/sightings — the 4 EM-CAM reads of GJ27EM9001 (frozen; the trace-ladder fallback)",
+		"vehicle_trace.contract.json": "GET /api/v1/vehicles/{id}/trace — the pre-WP-16 404 'no sightings' answer the trace ladder falls back from (frozen)"
+	},
+	"recorded_at": "2026-10-22T13:30:43.932Z",
+	"recorded_from": "http://127.0.0.1:8091",
+	"fixtures": {
+		"/api/v1/vehicles": {
+			"file": "vehicles.json",
+			"status": 200,
+			"origin": "live"
+		},
+		"/api/v1/signals/state": {
+			"file": "signals_state.json",
+			"status": 200,
+			"origin": "live"
+		},
+		"/api/v1/units": {
+			"file": "units.contract.json",
+			"status": 200,
+			"origin": "contract"
+		},
+		"/api/v1/cameras": {
+			"file": "cameras.live.json",
+			"status": 404,
+			"origin": "live"
+		},
+		"/api/v1/events/active": {
+			"file": "events_active.json",
+			"status": 200,
+			"origin": "live"
+		},
+		"/api/v1/signals/plans": {
+			"file": "signals_plans.json",
+			"status": 200,
+			"origin": "live"
+		},
+		"/api/v1/adaptive/situation_log?event_id=4508d86d-566b-438f-8414-b3d67fd7e6e4&limit=120": {
+			"file": "situation_log_pursuit.json",
+			"status": 200,
+			"origin": "live"
+		},
+		"/api/v1/adaptive/situation_log?event_id=3ef08290-66d8-511b-a25a-3d2967c79985&limit=120": {
+			"file": "situation_log_rath_yatra.json",
+			"status": 200,
+			"origin": "live"
+		},
+		"/api/v1/corridor/summary": {
+			"file": "corridor_summary.json",
+			"status": 200,
+			"origin": "live"
+		},
+		"/api/v1/vehicles/1b94e9d2-7e11-4174-a735-7dd3be3189cf/trace?window_sec=900": {
+			"file": "vehicle_trace.contract.json",
+			"status": 404,
+			"origin": "contract"
+		},
+		"/api/v1/vehicles/1b94e9d2-7e11-4174-a735-7dd3be3189cf/sightings?limit=8": {
+			"file": "vehicle_sightings.contract.json",
+			"status": 200,
+			"origin": "contract"
+		},
+		"/api/v1/events/4508d86d-566b-438f-8414-b3d67fd7e6e4/interception-plan?max_cost_sec=600": {
+			"file": "interception_plan.json",
+			"status": 200,
+			"origin": "live"
+		},
+		"/api/v1/events/4508d86d-566b-438f-8414-b3d67fd7e6e4/audit?limit=50": {
+			"file": "event_audit.live.json",
+			"status": 404,
+			"origin": "live"
+		},
+		"/api/v1/adaptive/overrides?limit=50": {
+			"file": "overrides.live.json",
+			"status": 404,
+			"origin": "live"
+		},
+		"/api/v1/signals/history?limit=20": {
+			"file": "signals_history.json",
+			"status": 200,
+			"origin": "live"
+		},
+		"/api/v1/movements/active": {
+			"file": "movements_active.json",
+			"status": 200,
+			"origin": "live"
+		},
+		"/api/v1/adaptive/status": {
+			"file": "adaptive_status.json",
+			"status": 200,
+			"origin": "live"
+		}
+	}
+}

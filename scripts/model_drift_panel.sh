@@ -97,11 +97,18 @@
 #   --baseline PATH   # alternate baseline file
 #   --fixtures  DIR   # offline: canned responses (selftest machinery)
 #
-# Endpoints are FIXED INTERNAL PLATFORM CONSTANTS (VVIP/models/configs/
+# Endpoints are FIXED INTERNAL PLATFORM CONSTANTS (models-config/configs/
 # veer_models.yaml `services:` + infra/compose.argus-override.yml), overridable
-# via the standard env vars. Outbound HTTP from this script is http/https
-# only; no URL coming from external input is ever fetched — only these
-# constants (same posture as smoke_models.sh).
+# via the standard env vars — MODEL_HOST_URL / LLAMA_BASE_URL /
+# EMBEDDING_SERVICE_URL / TRAFFIC_ORACLE_URL, or just the ports under
+# scripts/veer_env.sh's names (MODEL_HOST_PORT, LLAMA_PORT, EMBEDDING_PORT,
+# ORACLE_PORT; live defaults 8083/8084/8085/8091). Outbound HTTP from this
+# script is http/https only; no URL coming from external input is ever
+# fetched — only these constants (same posture as smoke_models.sh).
+# WRITES, disclosed: the embeddings probe upserts its 2 stable marker docs
+# (drift-panel:7f3a:a/b) into the :8085 store, which is shared with the live
+# stack — a private sandbox must not run the live panel against :8085 (its
+# --selftest needs no network at all).
 
 set -uo pipefail
 
@@ -109,10 +116,10 @@ SCRIPT_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SO
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BASELINE_DEFAULT="$SCRIPT_DIR/drift_baseline.json"
 
-MODEL_HOST_URL="${MODEL_HOST_URL:-http://127.0.0.1:8083}"
-LLAMA_BASE_URL="${LLAMA_BASE_URL:-http://127.0.0.1:8084}"
-EMBEDDING_SERVICE_URL="${EMBEDDING_SERVICE_URL:-http://127.0.0.1:8085}"
-TRAFFIC_ORACLE_URL="${TRAFFIC_ORACLE_URL:-http://127.0.0.1:8091}"
+MODEL_HOST_URL="${MODEL_HOST_URL:-http://127.0.0.1:${MODEL_HOST_PORT:-8083}}"
+LLAMA_BASE_URL="${LLAMA_BASE_URL:-http://127.0.0.1:${LLAMA_PORT:-8084}}"
+EMBEDDING_SERVICE_URL="${EMBEDDING_SERVICE_URL:-http://127.0.0.1:${EMBEDDING_PORT:-8085}}"
+TRAFFIC_ORACLE_URL="${TRAFFIC_ORACLE_URL:-http://127.0.0.1:${ORACLE_PORT:-8091}}"
 
 # scheme guard: http/https only (config constants; rejects anything else early)
 url_scheme_ok() {

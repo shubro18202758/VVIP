@@ -1,0 +1,142 @@
+{
+	"event_id": "4508d86d-566b-438f-8414-b3d67fd7e6e4",
+	"vehicle_id": "1b94e9d2-7e11-4174-a735-7dd3be3189cf",
+	"latest_sighting": {
+		"sighting_id": "921aa179-e2c4-5065-8dda-b12a9555bcad",
+		"plate": "GJ27EM9001",
+		"t": "2026-10-18T15:19:59.301446+00:00",
+		"position": [
+			72.573251,
+			23.02397
+		],
+		"speed_kmh": 112,
+		"heading": 78,
+		"source": "emulated_anpr"
+	},
+	"seed_segment_id": 1015,
+	"max_cost_sec": 600,
+	"interception_junctions": [
+		{
+			"junction_id": 3,
+			"junction_type": "signal",
+			"signal_control": true,
+			"position": [
+				72.5798,
+				23.0254
+			],
+			"graph_cost_sec": 0,
+			"choke_weight": 0.9,
+			"score": 0.9
+		},
+		{
+			"junction_id": 2,
+			"junction_type": "roundabout",
+			"signal_control": false,
+			"position": [
+				72.5714,
+				23.0225
+			],
+			"graph_cost_sec": 0,
+			"choke_weight": 0.6,
+			"score": 0.6
+		},
+		{
+			"junction_id": 6,
+			"junction_type": "signal",
+			"signal_control": true,
+			"position": [
+				72.565,
+				23.035
+			],
+			"graph_cost_sec": 72.3,
+			"choke_weight": 0.9,
+			"score": 0.012275
+		},
+		{
+			"junction_id": 5,
+			"junction_type": "intersection",
+			"signal_control": true,
+			"position": [
+				72.59,
+				23.018
+			],
+			"graph_cost_sec": 69.3,
+			"choke_weight": 0.7,
+			"score": 0.009954
+		},
+		{
+			"junction_id": 1,
+			"junction_type": "intersection",
+			"signal_control": true,
+			"position": [
+				72.578,
+				23.035
+			],
+			"graph_cost_sec": 72.3,
+			"choke_weight": 0.7,
+			"score": 0.009547
+		},
+		{
+			"junction_id": 7,
+			"junction_type": "intersection",
+			"signal_control": true,
+			"position": [
+				72.5802,
+				23.0607
+			],
+			"graph_cost_sec": 167.8,
+			"choke_weight": 0.7,
+			"score": 0.004148
+		},
+		{
+			"junction_id": 9,
+			"junction_type": "intersection",
+			"signal_control": true,
+			"position": [
+				72.5293,
+				23.0327
+			],
+			"graph_cost_sec": 174.2,
+			"choke_weight": 0.7,
+			"score": 0.003995
+		},
+		{
+			"junction_id": 15,
+			"junction_type": "intersection",
+			"signal_control": false,
+			"position": [
+				72.6006,
+				23.0251
+			],
+			"graph_cost_sec": 203.7,
+			"choke_weight": 0.7,
+			"score": 0.00342
+		},
+		{
+			"junction_id": 4,
+			"junction_type": "roundabout",
+			"signal_control": false,
+			"position": [
+				72.562,
+				23.03
+			],
+			"graph_cost_sec": 174.8,
+			"choke_weight": 0.6,
+			"score": 0.003414
+		},
+		{
+			"junction_id": 8,
+			"junction_type": "signal",
+			"signal_control": true,
+			"position": [
+				72.61,
+				23.03
+			],
+			"graph_cost_sec": 288.7,
+			"choke_weight": 0.9,
+			"score": 0.003106
+		}
+	],
+	"method": "pgr_drivingDistance over corridor.road_graph from the latest sighting's nearest segment, junctions scored by choke_weight / (1 + graph_cost_sec), tie-break junction_id",
+	"note": "pursuits are human-initiated (C6); this plan assists the operator, it never dispatches on its own"
+}

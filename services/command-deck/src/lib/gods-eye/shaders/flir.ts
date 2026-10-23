@@ -1,14 +1,23 @@
 /**
- * FLIR (White-Hot / Black-Hot thermal) sensor post-process stage.
+ * FLIR (White-Hot / Black-Hot / Ironbow thermal) sensor post-process stage.
  *
  * PORTED FROM gods-eye-view (https://github.com/bilawalsidhu/gods-eye-view),
  * MIT License © bilawalsidhu, src/styles/thermal.js — the thermal fragment
  * shader's temperature mapping, Ironbow palette, coherent temporal noise,
  * hot-spot bloom, sensor pixelation, lens vignette, crosshair HUD and scale
- * bar. Source-level port, not a fork. Trimmed for Veer's ONE sensor mode:
- * the 7-segment digit renderer and frame counter are dropped (the HUD chip
- * shows the sensor state in DOM, not GLSL) and the bloom kernel shrunk to
- * 3x3 so software WebGL (SwiftShader) stays usable on the demo box.
+ * bar. Source-level port, not a fork. Trimmed for Veer:
+ *   - the 7-segment digit renderer and frame counter are dropped (the HUD
+ *     chip shows the sensor state in DOM, not GLSL);
+ *   - the soft IR blur is 3 taps (centre + two diagonal neighbours) and the
+ *     hot-spot bloom reuses those same taps — 3 texture reads per pixel
+ *     instead of 35, so software WebGL (SwiftShader) stays usable;
+ *   - the circular lens mask, lens shading and the GLSL HUD are gated by
+ *     the `lens` uniform: the cinematic /gods-eye route keeps the optics,
+ *     wall embeds ('/' and '/ops') render the full frame without them.
+ *
+ * The sensor look is OPT-IN: the canvas default is COMMAND (raw render, no
+ * stage), because a luminance-mapped scene erases the colour semantics the
+ * layers carry (band, earmark, agency, congestion ramp).
  *
  * Uniforms (defaults follow gev thermal.js):
  *   intensity    (0-1) — blend of the sensor look over the raw render
@@ -17,6 +26,7 @@
  *   mode         (0-1) — 0 = White-Hot, 1 = Black-Hot (step at 0.5)
  *   pixelation   (1-6) — sensor resolution grid size
  *   palette      (0-1) — 0 = monochrome FLIR, 1 = Ironbow "Predator" ramp
+ *   lens         (0-1) — 1 = optics mask + shading + GLSL HUD, 0 = full frame
  *   time         (s)   — driven by the canvas for coherent noise drift
  */
 
@@ -35,6 +45,7 @@ export const FLIR_SHADER: SensorShader = {
 		mode: { default: 0.0, min: 0, max: 1, label: 'WHOT/BHOT' },
 		pixelation: { default: 1.5, min: 1, max: 6, label: 'Pixelation' },
 		palette: { default: 0.0, min: 0, max: 1, label: 'Ironbow' },
+		lens: { default: 1.0, min: 0, max: 1, label: 'Lens mask' },
 	},
 	fragmentShader: /* glsl */ `
 		uniform sampler2D colorTexture;
@@ -46,7 +57,10 @@ export const FLIR_SHADER: SensorShader = {
 		uniform float mode;
 		uniform float pixelation;
 		uniform float palette;
+		uniform float lens;
 		in vec2 v_textureCoordinates;
+
+		const vec3 LUMA = vec3(0.299, 0.587, 0.114);
 
 		// ── Ironbow "Predator" thermal palette (gev thermal.js) ──
 		vec3 ironbow(float t) {
@@ -107,19 +121,26 @@ export const FLIR_SHADER: SensorShader = {
 			return clamp(h + v, 0.0, 1.0);
 		}
 
+		// Luminance → mapped temperature (White-Hot / Black-Hot applied).
+		float sensorTemp(vec3 c, float sens, float isBlackHot) {
+			float t = clamp((dot(c, LUMA) - (0.5 - sens * 0.5)) / sens, 0.0, 1.0);
+			return mix(t, 1.0 - t, isBlackHot);
+		}
+
 		void main() {
 			vec2 uv = v_textureCoordinates;
 			vec2 dims = colorTextureDimensions;
 			vec2 texel = 1.0 / dims;
 			vec2 hudUV = uv;
 
-			// ── Circular vignette mask (FLIR optics field of view) ──
+			// ── Circular vignette mask (FLIR optics field of view) — only
+			//    with the lens on; wall embeds keep the full frame ──
 			vec2 centered = uv * 2.0 - 1.0;
 			float aspect = dims.x / dims.y;
 			centered.x *= aspect;
 			float radius = length(centered);
-			float lensMask = pow(1.0 - smoothstep(0.6, 1.05, radius), 0.7);
-			float lensShading = max(1.0 - radius * radius * 0.25, 0.0);
+			float lensMask = mix(1.0, pow(1.0 - smoothstep(0.6, 1.05, radius), 0.7), lens);
+			float lensShading = mix(1.0, max(1.0 - radius * radius * 0.25, 0.0), lens);
 			if (lensMask < 0.001) {
 				out_FragColor = vec4(vec3(0.0), 1.0);
 				return;
@@ -130,22 +151,16 @@ export const FLIR_SHADER: SensorShader = {
 			vec2 snappedUV = floor(uv * dims / pixSize) * pixSize / dims;
 			uv = mix(uv, snappedUV, intensity);
 
-			// ── Soft IR blur (thermal diffraction) ──
-			vec3 blurred = vec3(0.0);
-			float totalWeight = 0.0;
-			for (int y = -2; y <= 2; y++) {
-				for (int x = -2; x <= 2; x++) {
-					float w = exp(-0.5 * float(x * x + y * y) / 2.0);
-					blurred += texture(colorTexture, uv + vec2(float(x), float(y)) * texel * 1.5).rgb * w;
-					totalWeight += w;
-				}
-			}
-			blurred /= totalWeight;
-			vec4 original = texture(colorTexture, uv);
-			vec3 src = mix(original.rgb, blurred, 0.6 * intensity);
+			// ── Soft IR blur (thermal diffraction): 3 taps ──
+			vec2 diag = texel * 1.5;
+			vec3 t0 = texture(colorTexture, uv).rgb;
+			vec3 t1 = texture(colorTexture, uv + diag).rgb;
+			vec3 t2 = texture(colorTexture, uv - diag).rgb;
+			vec3 blurred = t0 * 0.5 + (t1 + t2) * 0.25;
+			vec3 src = mix(t0, blurred, 0.6 * intensity);
 
 			// ── Luminance → temperature mapping ──
-			float luma = dot(src, vec3(0.299, 0.587, 0.114));
+			float luma = dot(src, LUMA);
 			float sens = mix(0.25, 1.0, sensitivity);
 			float temp = clamp((luma - (0.5 - sens * 0.5)) / sens, 0.0, 1.0);
 
@@ -155,29 +170,18 @@ export const FLIR_SHADER: SensorShader = {
 			float contour = smoothstep(0.04, 0.06, bandLine);
 			temp *= mix(1.0, contour * 0.85 + 0.15, 0.3 * intensity);
 
-			// ── White-Hot / Black-Hot ──
+			// ── White-Hot / Black-Hot / Ironbow ──
 			float isBlackHot = step(0.5, mode);
 			float thermal = mix(temp, 1.0 - temp, isBlackHot);
 			vec3 mono = vec3(thermal);
 			vec3 iron = ironbow(temp);
 			vec3 thermalColor = mix(mono, iron, palette);
 
-			// ── Hot-spot bloom (3x3 kernel — SwiftShader-friendly) ──
-			float bloomSample = 0.0;
-			float bloomWeight = 0.0;
-			for (int y = -1; y <= 1; y++) {
-				for (int x = -1; x <= 1; x++) {
-					vec2 offset = vec2(float(x), float(y)) * texel * 3.0;
-					float sLuma = dot(texture(colorTexture, uv + offset).rgb, vec3(0.299, 0.587, 0.114));
-					float sMapped = clamp((sLuma - (0.5 - sens * 0.5)) / sens, 0.0, 1.0);
-					float sFinal = mix(sMapped, 1.0 - sMapped, isBlackHot);
-					float w = exp(-0.5 * float(x * x + y * y) / 2.0);
-					float hotness = smoothstep(0.6, 1.0, sFinal);
-					bloomSample += hotness * w;
-					bloomWeight += w;
-				}
-			}
-			bloomSample /= bloomWeight;
+			// ── Hot-spot bloom from the same 3 taps (no extra reads) ──
+			float bloomSample =
+				smoothstep(0.6, 1.0, sensorTemp(t0, sens, isBlackHot)) * 0.5 +
+				smoothstep(0.6, 1.0, sensorTemp(t1, sens, isBlackHot)) * 0.25 +
+				smoothstep(0.6, 1.0, sensorTemp(t2, sens, isBlackHot)) * 0.25;
 			thermalColor += bloomSample * bloom * 0.8;
 
 			// ── Coherent temporal noise (drifting cloud) ──
@@ -185,7 +189,7 @@ export const FLIR_SHADER: SensorShader = {
 			float noise = fbm(noiseCoord);
 			thermalColor += (noise - 0.5) * 0.08 * intensity;
 
-			// ── HUD: label marker + crosshair + right-edge scale bar ──
+			// ── HUD: label marker + crosshair + right-edge scale bar (lens only) ──
 			float hud = 0.0;
 			vec2 labelArea = (hudUV - vec2(0.02, 0.92)) / vec2(0.08, 0.04);
 			if (labelArea.x >= 0.0 && labelArea.x <= 1.0 && labelArea.y >= 0.0 && labelArea.y <= 1.0) {
@@ -198,13 +202,15 @@ export const FLIR_SHADER: SensorShader = {
 					step(0.2, modeArea.y) * step(modeArea.y, 0.8) * 0.4;
 			}
 			hud += crosshair(hudUV) * 0.7;
+			hud *= lens;
 			float barX = step(0.94, hudUV.x) * step(hudUV.x, 0.955);
 			float barY = step(0.15, hudUV.y) * step(hudUV.y, 0.85);
-			float bar = barX * barY;
+			float bar = barX * barY * lens;
 			if (bar > 0.0) {
 				float barGrad = (hudUV.y - 0.15) / 0.7;
 				float barVal = mix(barGrad, 1.0 - barGrad, isBlackHot);
-				thermalColor = mix(thermalColor, vec3(barVal), bar * 0.9);
+				vec3 barColor = mix(vec3(barVal), ironbow(barGrad), palette);
+				thermalColor = mix(thermalColor, barColor, bar * 0.9);
 			}
 			thermalColor += hud * 0.6 * intensity;
 
@@ -212,7 +218,7 @@ export const FLIR_SHADER: SensorShader = {
 			thermalColor *= lensShading;
 			thermalColor *= lensMask;
 			thermalColor = clamp(thermalColor, 0.0, 1.0);
-			vec3 finalColor = mix(original.rgb, thermalColor, intensity);
+			vec3 finalColor = mix(t0, thermalColor, intensity);
 			finalColor *= mix(1.0, lensMask, intensity);
 			out_FragColor = vec4(finalColor, 1.0);
 		}

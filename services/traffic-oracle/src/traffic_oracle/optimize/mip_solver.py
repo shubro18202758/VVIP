@@ -4,7 +4,16 @@ Formulates convoy routing as a constrained optimization problem:
 - Binary edge variables x[i,j] ∈ {0,1}
 - Flow conservation constraints
 - Width constraints (convoy needs 7m clearance)
-- Multi-objective: minimize travel time + disruption - security + complexity
+- Multi-objective: minimize travel time + disruption + insecurity + complexity
+
+Every edge cost is STRICTLY POSITIVE: security enters as a penalty on
+``100 − security`` (never as a reward), so a disjoint cycle can never lower
+the objective and an optimal solution is a simple origin→destination path.
+(The old ``−security`` reward made short secure edges negative-cost: under
+free-flow forecasts 25 of 38 solves activated disjoint subtours.)  The
+returned path is reconstructed by walking active edges from the origin and
+is REJECTED unless it reaches the destination; a feasible-but-not-optimal
+(timeout) solution carrying stray cycles has them discarded and logged.
 
 Timeout: 2 seconds. Falls back to shortest path if CP-SAT exceeds limit.
 """
@@ -13,7 +22,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-import numpy as np
 import structlog
 from ortools.sat.python import cp_model
 
@@ -21,7 +29,9 @@ from traffic_oracle.runtime.memory_profiler import profile_memory
 
 logger = structlog.get_logger(__name__)
 
-# Road class security scores (higher = more secure for convoy)
+# Road class security scores (higher = more secure for convoy); the
+# objective penalises the shortfall ``SECURITY_MAX - score`` per edge.
+SECURITY_MAX = 100
 ROAD_CLASS_SECURITY = {
     "motorway": 100,
     "trunk": 85,
@@ -128,7 +138,6 @@ class ConvoyMIPSolver:
             return None
 
         nodes = sorted(all_nodes)
-        node_idx = {n: i for i, n in enumerate(nodes)}
 
         # Build CP-SAT model
         model = cp_model.CpModel()
@@ -155,6 +164,7 @@ class ConvoyMIPSolver:
         time_costs = {}
         disruption_costs = {}
         security_scores = {}
+        security_penalties = {}
 
         for src, tgt in valid_edges:
             attrs = segment_attrs.get(src, {})
@@ -173,10 +183,10 @@ class ConvoyMIPSolver:
             disruption = congestion * volume_proxy.get(road_class, 2.0) * travel_sec
             disruption_costs[(src, tgt)] = int(disruption * SCALE)
 
-            # Security score (higher = better)
-            security_scores[(src, tgt)] = int(
-                ROAD_CLASS_SECURITY.get(road_class, 30) * SCALE
-            )
+            # Security score (higher = better) and its non-negative penalty
+            security = ROAD_CLASS_SECURITY.get(road_class, 30)
+            security_scores[(src, tgt)] = int(security * SCALE)
+            security_penalties[(src, tgt)] = int(max(0, SECURITY_MAX - security) * SCALE)
 
         # Robust (P90) overlay: quantile-derived cost tables supplied by the
         # router replace the time/disruption terms of the objective.  The
@@ -215,26 +225,20 @@ class ConvoyMIPSolver:
             obj_time_weight = w["time"]
             obj_disruption_weight = w["disruption"]
 
-        # Objective: minimize weighted combination
-        objective_terms = []
+        # Objective: minimize weighted combination.  Each edge's coefficient
+        # is a sum of non-negative terms plus a floor of 1, so it is strictly
+        # positive whatever the weights — no cycle can ever pay for itself.
+        edge_coeffs: dict[tuple[int, int], int] = {}
         for edge in valid_edges:
-            if edge in x:
-                objective_terms.append(
-                    int(obj_time_weight * SCALE) * obj_time_costs[edge] * x[edge]
-                )
-                objective_terms.append(
-                    int(obj_disruption_weight * SCALE)
-                    * obj_disruption_costs[edge]
-                    * x[edge]
-                )
-                objective_terms.append(
-                    -int(w["security"] * SCALE) * security_scores[edge] * x[edge]
-                )
-                objective_terms.append(
-                    int(w["complexity"] * SCALE) * x[edge]
-                )
+            edge_coeffs[edge] = max(
+                1,
+                int(obj_time_weight * SCALE) * obj_time_costs[edge]
+                + int(obj_disruption_weight * SCALE) * obj_disruption_costs[edge]
+                + int(w["security"] * SCALE) * security_penalties[edge]
+                + int(w["complexity"] * SCALE),
+            )
 
-        model.Minimize(sum(objective_terms))
+        model.Minimize(sum(edge_coeffs[e] * x[e] for e in valid_edges if e in x))
 
         # Optional duration constraint
         if max_duration_sec is not None:
@@ -251,6 +255,23 @@ class ConvoyMIPSolver:
             # Extract path
             active_edges = [(s, t) for (s, t), var in x.items() if solver.Value(var)]
             path = self._reconstruct_path(active_edges, origin, destination)
+            if not path or path[-1] != destination:
+                logger.warning(
+                    "mip_solver.path_rejected",
+                    reason="does_not_reach_destination",
+                    origin=origin,
+                    destination=destination,
+                    active_edges=len(active_edges),
+                )
+                return None
+            path_edges = set(zip(path, path[1:], strict=False))
+            stray = [e for e in active_edges if e not in path_edges]
+            if stray:
+                logger.warning(
+                    "mip_solver.subtours_discarded",
+                    stray_edges=len(stray),
+                    status="optimal" if status == cp_model.OPTIMAL else "feasible",
+                )
 
             total_time = sum(
                 time_costs.get((path[i], path[i + 1]), 0)
@@ -290,12 +311,16 @@ class ConvoyMIPSolver:
                 time_sec=round(total_time, 1),
             )
 
+            # Objective of the RETURNED path (equals the solver's value when
+            # no stray cycle was active).
+            objective = sum(edge_coeffs[e] for e in path_edges)
+
             return MIPSolution(
                 segment_ids=path,
                 total_time_sec=total_time,
                 disruption_score=disruption,
                 security_score=security,
-                objective_value=solver.ObjectiveValue() / (SCALE * SCALE),
+                objective_value=objective / (SCALE * SCALE),
                 solve_status=status_str,
                 total_time_q_sec=total_time_q,
                 disruption_q=disruption_q_total,
@@ -308,19 +333,36 @@ class ConvoyMIPSolver:
     def _reconstruct_path(
         edges: list[tuple[int, int]], origin: int, destination: int
     ) -> list[int]:
-        """Reconstruct ordered path from active edge set."""
-        adj: dict[int, int] = {}
+        """Simple origin→destination path through the active edge set.
+
+        Depth-first over ALL active successors (a node may have several
+        when stray cycles are active), so a cycle through a path node can
+        no longer truncate the route.  Returns the partial walk from the
+        origin when no path reaches the destination — callers must check
+        ``path[-1] == destination``.
+        """
+        adj: dict[int, list[int]] = {}
         for src, tgt in edges:
-            adj[src] = tgt
+            adj.setdefault(src, []).append(tgt)
+        for successors in adj.values():
+            successors.sort()
 
         path = [origin]
-        current = origin
-        visited = {origin}
-        while current != destination and current in adj:
-            nxt = adj[current]
-            if nxt in visited:
-                break
+        on_path = {origin}
+        dead: set[int] = set()
+        iters = {origin: iter(adj.get(origin, ()))}
+        while path and path[-1] != destination:
+            node = path[-1]
+            nxt = next(
+                (n for n in iters[node] if n not in on_path and n not in dead),
+                None,
+            )
+            if nxt is None:
+                dead.add(node)
+                on_path.discard(node)
+                path.pop()
+                continue
             path.append(nxt)
-            visited.add(nxt)
-            current = nxt
-        return path
+            on_path.add(nxt)
+            iters[nxt] = iter(adj.get(nxt, ()))
+        return path if path else [origin]

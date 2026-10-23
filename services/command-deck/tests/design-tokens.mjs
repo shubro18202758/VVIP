@@ -1,8 +1,14 @@
 /**
- * Design-token gate — three suites, zero browser:
+ * Design-token gate — four suites, zero browser:
  *
  *   1. PARITY      tokens.css ↔ tokens.ts: identical variable key sets and
  *                  values for BOTH themes (extend both files together).
+ *   1b. CONTRAST   every TEXT ink (ink-1/2/3) reaches WCAG AA 4.5:1 on the
+ *                  canvas, surface-1 and surface-2 of its theme; the CTA
+ *                  fill (daylight act-2) carries paper text at ≥ 4.5:1; the
+ *                  act text ink reads on its surfaces; and the type floor
+ *                  holds (operator ≥ 12 px, public meta ≥ 13 px). ink-4 is
+ *                  for rules and hairlines only — never asserted as text.
  *   2. HEX SWEEP   no hex literal outside the two token files on every
  *                  surface that is on the token system today (Svelte
  *                  <style> blocks included — what eslint cannot parse).
@@ -128,6 +134,50 @@ const valueDiff = (a, b, label) => {
 };
 valueDiff(cssCommand, tsCommand, 'command');
 valueDiff(cssDaylight, tsDaylight, 'daylight');
+
+// ── 1b. CONTRAST (WCAG relative luminance) ──────────────────────────────
+
+function luminance(hex) {
+	const m = /^#([0-9a-f]{6})$/i.exec(hex ?? '');
+	if (!m) return null;
+	const c = [0, 2, 4].map((i) => parseInt(m[1].slice(i, i + 2), 16) / 255);
+	const lin = c.map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
+	return 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2];
+}
+
+function contrast(a, b) {
+	const la = luminance(a);
+	const lb = luminance(b);
+	if (la == null || lb == null) return null;
+	return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+}
+
+const AA = 4.5;
+for (const [theme, vars] of [
+	['command', cssCommand],
+	['daylight', cssDaylight],
+]) {
+	const fails = [];
+	for (const ink of ['--v-ink-1', '--v-ink-2', '--v-ink-3']) {
+		for (const bg of ['--v-canvas', '--v-surface-1', '--v-surface-2']) {
+			const r = contrast(vars.get(ink), vars.get(bg));
+			if (r == null || r < AA) fails.push(`${ink} on ${bg} = ${r == null ? 'n/a' : r.toFixed(2)}`);
+		}
+	}
+	const act = contrast(vars.get('--v-act-text'), vars.get('--v-surface-1'));
+	if (act == null || act < AA) fails.push(`--v-act-text on --v-surface-1 = ${act?.toFixed(2) ?? 'n/a'}`);
+	ok(`contrast: ${theme} text inks ≥ ${AA}:1 on canvas / surface-1 / surface-2`, fails.length === 0, fails.join(' | ') || 'AA');
+}
+const cta = contrast(cssDaylight.get('--v-act-2'), cssDaylight.get('--v-paper'));
+ok('contrast: daylight CTA fill (act-2) carries paper text ≥ 4.5:1', cta != null && cta >= AA, cta?.toFixed(2) ?? 'n/a');
+
+const px = (v) => (v && /^\d+(\.\d+)?px$/.test(v) ? Number.parseFloat(v) : NaN);
+const floorFails = [];
+for (const k of ['--v-text-2xs', '--v-text-xs', '--v-text-sm']) {
+	if (!(px(cssCommand.get(k)) >= 12)) floorFails.push(`command ${k}=${cssCommand.get(k)}`);
+	if (!(px(cssDaylight.get(k)) >= 13)) floorFails.push(`daylight ${k}=${cssDaylight.get(k)}`);
+}
+ok('type floor: operator text ≥ 12 px, public meta ≥ 13 px', floorFails.length === 0, floorFails.join(' | ') || 'floors hold');
 
 // ── 2. HEX SWEEP ────────────────────────────────────────────────────────
 //

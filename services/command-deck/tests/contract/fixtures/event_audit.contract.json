@@ -1,0 +1,41 @@
+{
+	"event_id": "4508d86d-566b-438f-8414-b3d67fd7e6e4",
+	"items": [
+		{
+			"id": "anpr:921aa179-e2c4-5065-8dda-b12a9555bcad",
+			"t": "2026-10-18T15:19:59.301446+00:00",
+			"kind": "anpr",
+			"urns": ["sighting:921aa179-e2c4-5065-8dda-b12a9555bcad", "camera:EM-CAM-02", "vehicle:1b94e9d2-7e11-4174-a735-7dd3be3189cf"],
+			"actor": null,
+			"actor_kind": "system",
+			"text": "ANPR hit stolen_vehicle — GJ27EM9001 at EM-CAM-02, 112 km/h heading 78°",
+			"source": "emulated",
+			"severity": "critical",
+			"props": { "camera_id": "EM-CAM-02", "hit": "stolen_vehicle" }
+		},
+		{
+			"id": "enforcement_recommendations:e91d4591-390a-4c55-bcb0-ffd10c769c20:1",
+			"t": "2026-10-18T15:00:04.422902+00:00",
+			"kind": "enforcement",
+			"urns": ["recommendation:e91d4591-390a-4c55-bcb0-ffd10c769c20", "vehicle:1b94e9d2-7e11-4174-a735-7dd3be3189cf"],
+			"actor": "Duty Officer R. Mehta (God's Eye Morning)",
+			"actor_kind": "human",
+			"text": "e-challan approved per FIR 4401/2026, Kalupur PS — speed evidence reviewed",
+			"source": "emulated",
+			"severity": "info",
+			"props": { "rule_id": "R_SPD_SEGMENT", "action": "decision:approved" }
+		},
+		{
+			"id": "enforcement_recommendations:e91d4591-390a-4c55-bcb0-ffd10c769c20:0",
+			"t": "2026-10-18T15:00:04.407992+00:00",
+			"kind": "enforcement",
+			"urns": ["recommendation:e91d4591-390a-4c55-bcb0-ffd10c769c20", "vehicle:1b94e9d2-7e11-4174-a735-7dd3be3189cf"],
+			"actor": "traffic-oracle",
+			"actor_kind": "machine",
+			"text": "R_SPD_SEGMENT recommendation created (pending) — deterministic rule evaluation",
+			"source": "emulated",
+			"severity": "info",
+			"props": { "rule_id": "R_SPD_SEGMENT", "action": "created:pending" }
+		}
+	]
+}

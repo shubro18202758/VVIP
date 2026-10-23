@@ -14,14 +14,22 @@ export interface NavItem {
 	glyph: string;
 }
 
-/** Operator surfaces (command theme). */
+/**
+ * Operator surfaces (command theme). VEER CITY COMMAND — the fused God's-eye
+ * picture of the whole city — leads; the VVIP corridor module ('/') is one
+ * module of it, the situation wall the decision desk around the same canvas.
+ * The design sheet (/design) is a developer page: its nav entry shows only
+ * under the vite dev server (the route itself stays — smokes use it).
+ */
+const DEV_BUILD: boolean = import.meta.env?.DEV === true;
+
 export const DECK_NAV: readonly NavItem[] = [
+	{ href: '/gods-eye', key: 'nav_city_command', glyph: '◎' },
 	{ href: '/', key: 'nav_dashboard', glyph: '◈' },
 	{ href: '/ops', key: 'nav_ops', glyph: '⬢' },
-	{ href: '/gods-eye', key: 'nav_gods_eye', glyph: '◎' },
 	{ href: '/comms', key: 'nav_comms', glyph: '✎' },
 	{ href: '/chat', key: 'nav_chat', glyph: '◇' },
-	{ href: '/design', key: 'nav_design', glyph: '▤' }
+	...(DEV_BUILD ? [{ href: '/design', key: 'nav_design', glyph: '▤' }] : [])
 ];
 
 /** Citizen/driver surfaces (daylight theme) — linked from the operator rail. */

@@ -124,7 +124,16 @@ class TestToolAliases:
                 "find_corridor_routes": "find_convoy_routes",
                 "plan_event_diversions": "plan_diversions",
                 "evaluate_event_scenarios": "evaluate_scenarios",
-                "get_active_corridor_events": "get_live_traffic",
             }
         for alias, canonical in aliases.items():
             assert canonical in ADVERTISED_TOOLS, (alias, canonical)
+
+    def test_active_events_is_a_real_tool_not_a_live_traffic_alias(self):
+        import convoy_brain.mcp.server as srv
+
+        assert "get_active_corridor_events" in ADVERTISED_TOOLS
+        assert "get_active_corridor_events" not in srv.TOOL_ALIASES
+        assert normalize_tool_name("get_active_corridor_events") == "get_active_corridor_events"
+        assert _select("Which corridor events are active right now?") == (
+            "get_active_corridor_events"
+        )

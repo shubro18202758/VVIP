@@ -13,55 +13,94 @@ from convoy_brain.memory.convoy_context import ConvoyContext
 from convoy_brain.workflows.live_escort import run_live_escort_workflow
 from convoy_brain.workflows.post_clearance import run_post_clearance_workflow
 from convoy_brain.workflows.pre_movement import run_pre_movement_workflow
-from conftest import FakeContextStore, FakeExecutor
+from conftest import (
+    DESTINATION,
+    NETWORK,
+    ORIGIN,
+    FakeContextStore,
+    FakeExecutor,
+    bbox_handler,
+    details_handler,
+)
 from test_agents import StubBridge
 from test_orchestrator import ScriptDecider
 
 
+LIVE_ROWS = [{"segment_id": 1001, "congestion_idx": 0.3, "speed_kmh": 50}]
+
 ROUTES = {
-    "query_segments_in_bbox": lambda args: {"segments": [{"segment_id": 1001}]},
-    "get_live_traffic": {"segments": [{"segment_id": 1001, "congestion_idx": 0.3, "speed_kmh": 50}]},
-    "predict_traffic_flow": {"forecasts": []},
+    "query_segments_in_bbox": bbox_handler(NETWORK),
+    # Oracle shape ("observations") plus the legacy key live_escort still reads.
+    "get_live_traffic": {"observations": LIVE_ROWS, "segments": LIVE_ROWS},
+    "predict_traffic_flow": {"predictions": {}},
     "find_convoy_routes": {"routes": [
-        {"route_id": "r1", "segment_ids": [1001, 1002],
-         "scores": {"time": 0.3, "disruption": 0.2, "security": 0.8, "complexity": 0.3}},
+        {"route_id": "r1", "segment_ids": [1001, 1002, 1004],
+         "total_distance_m": 3100.0, "estimated_time_sec": 260,
+         "disruption_score": 12.0, "security_score": 88.0, "composite_score": 4.2},
     ]},
-    "query_segment_details": {"segment_id": 1001, "lanes": 8},
+    "query_segment_details": details_handler(NETWORK),
     "plan_diversions": {"diversions": [{"segment_id": 1001, "advance_sec": 100,
                                         "closure_type": "full", "estimated_queue_m": 250}]},
-    "evaluate_scenarios": {"scenarios": [{"scenario_id": "s1", "disruption_vehicle_hours": 12.5}]},
+    "evaluate_scenarios": {"results": [{"scenario_id": "r1",
+                                        "total_disruption_vehicle_hours": 12.5}]},
     "get_historical_pattern": {"segments": []},
 }
 
 
+class TaskBridge:
+    """Tactical double keyed by the payload's ``task`` (agents run concurrently,
+    so reply order is not a contract)."""
+
+    def __init__(self, replies: dict[str, object] | None = None, fail: bool = False):
+        self.replies = replies or {}
+        self.fail = fail
+        self.tasks: list[str] = []
+
+    async def generate(self, system_prompt, user_prompt, json_mode=True,
+                       suppress_thinking=True, **kwargs):
+        try:
+            task = json.loads(user_prompt).get("task", "?")
+        except ValueError:
+            task = "repair"
+        self.tasks.append(task)
+        if self.fail or task not in self.replies:
+            from convoy_brain.llm.llama_bridge import LlamaUnavailable
+
+            raise LlamaUnavailable("no scripted reply for " + task)
+        reply = self.replies[task]
+        return reply if isinstance(reply, str) else json.dumps(reply)
+
+
+GREEN = {"overall_status": "green",
+         "congestion_summary": {"avg_congestion_idx": 0.2, "peak_congestion_idx": 0.3},
+         "risk_segments": [], "trend": "stable", "recommendation": "proceed",
+         "confidence": "high"}
+
+
 class TestPreMovement:
     async def test_full_pipeline_approves_compliant_route(self, fake_store):
-        bridge = StubBridge(replies=[
-            # traffic analyst
-            json.dumps({"overall_status": "green",
-                        "congestion_summary": {"avg_congestion_idx": 0.2, "peak_congestion_idx": 0.3},
-                        "risk_segments": [], "trend": "stable",
-                        "recommendation": "proceed", "confidence": "high"}),
-            # route planner
-            json.dumps({"primary_route": {"route_id": "r1", "segment_ids": [1001, 1002],
-                                          "score": 0.8, "reason": "best"},
-                        "alternate_routes": [], "rejected_routes": [],
-                        "overall_reasoning": "lowest disruption", "confidence": "high"}),
-            # security liaison
-            json.dumps({"compliant": True, "violations": [], "warnings": [],
-                        "recommendations": [], "security_score": 0.9, "confidence": "high"}),
-            # diversion coordinator
-            json.dumps({"directives": [{"segment_id": 1001, "action": "activate",
-                                        "agency": "traffic_police", "timing_sec": 120,
-                                        "detail": "x"}],
-                        "queue_alerts": [], "overall_status": "planned",
-                        "confidence": "high"}),
-        ])
+        bridge = TaskBridge({
+            "assess_corridor_conditions": GREEN,
+            "analyze_and_rank_routes": {
+                "primary_route": {"route_id": "r1", "segment_ids": [1001, 1002, 1004],
+                                  "score": 0.8, "reason": "best: 3 segments in 4.3 min"},
+                "alternate_routes": [], "rejected_routes": [],
+                "overall_reasoning": "lowest disruption: r1 runs 3 segments in 4.3 min",
+                "confidence": "high"},
+            "validate_route_security": {
+                "compliant": True, "violations": [], "warnings": [],
+                "recommendations": [], "security_score": 0.9, "confidence": "high"},
+            "generate_activation_directives": {
+                "directives": [{"segment_id": 1001, "action": "activate",
+                                "agency": "traffic_police", "timing_sec": 180,
+                                "detail": "x"}],
+                "queue_alerts": [], "overall_status": "planned", "confidence": "high"},
+        })
         executor = FakeExecutor(routes=ROUTES)
         recommendation = await run_pre_movement_workflow(
             movement_id="mv1",
-            origin=(72.55, 23.02),
-            destination=(72.60, 23.05),
+            origin=ORIGIN,
+            destination=DESTINATION,
             vvip_class="Z+",
             planned_departure="2026-10-12T08:00:00+05:30",
             bridge=bridge,
@@ -71,71 +110,90 @@ class TestPreMovement:
         assert recommendation["status"] == "approved"
         assert recommendation["security_compliant"] is True
         assert recommendation["primary_route"]["route_id"] == "r1"
+        assert recommendation["primary_route"]["estimated_time_sec"] == 260
+        assert recommendation["primary_route"]["reason"] == "best: 3 segments in 4.3 min"
+        reasoning = recommendation["overall_reasoning"]
+        assert reasoning.startswith("lowest disruption: r1 runs 3 segments")
+        assert "Basis: Z+ lane floor 6 lanes — the primary meets it" in reasoning
         assert recommendation["confidence"] == "high"
+        assert recommendation["corridor_status"] == "green"
+        assert set(bridge.tasks) == {
+            "assess_corridor_conditions", "analyze_and_rank_routes",
+            "validate_route_security", "generate_activation_directives",
+        }
         ctx = fake_store.contexts["mv1"]
         assert ctx.status == "approved"
         assert ctx.selected_route_id == "r1"
-        # scenario evaluation ran on the numeric tier
-        assert ("evaluate_scenarios", {"scenarios": [
-            {"route_id": "r1", "segment_ids": [1001, 1002],
-             "departure_time": "2026-10-12T08:00:00+05:30"},
-        ]}) in [(name, args) for name, args in executor.calls]
+        assert ctx.active_diversions == ["1001"]
+        # scenario evaluation ran on the numeric tier with the oracle's keys
+        scenario_calls = [a for n, a in executor.calls if n == "evaluate_scenarios"]
+        assert scenario_calls == [{"scenarios": [{
+            "scenario_id": "r1", "route_id": "r1", "route_segment_ids": [1001, 1002, 1004],
+            "route_name": "primary: West Arterial → Bypass",
+            "departure_time": "2026-10-12T08:00:00+05:30",
+        }]}]
+        assert recommendation["scenario_comparison"]["best"] == "r1"
+
+    async def test_a_figure_free_narration_gives_way_to_the_ranking(self, fake_store):
+        """'The primary route has the highest score…' (seen live) names no
+        figure: the operator reads the deterministic ranking instead."""
+        bridge = TaskBridge({
+            "analyze_and_rank_routes": {
+                "primary_route": {"route_id": "r1", "reason": "best: 3 segments in 4.3 min"},
+                "alternate_routes": [], "rejected_routes": [],
+                "overall_reasoning": "The primary route has the highest score.",
+                "confidence": "high"},
+        })
+        recommendation = await run_pre_movement_workflow(
+            movement_id="mv-generic", origin=ORIGIN, destination=DESTINATION,
+            vvip_class="Z", planned_departure="2026-10-12T08:00:00+05:30",
+            bridge=bridge, executor=FakeExecutor(routes=ROUTES), context_store=fake_store,
+        )
+        assert recommendation["routing_tier"] == "gemma"
+        # a per-route reason WITH figures stays on its route
+        assert recommendation["primary_route"]["reason"] == "best: 3 segments in 4.3 min"
+        assert recommendation["overall_reasoning"].startswith("Ranked 1 distinct candidate(s)")
+        assert "highest score." not in recommendation["overall_reasoning"]
 
     async def test_security_retry_then_conditional(self, fake_store):
-        replies = [
-            # analyst
-            json.dumps({"overall_status": "green", "congestion_summary": {},
-                        "risk_segments": [], "trend": "stable", "recommendation": "x",
-                        "confidence": "medium"}),
-            # planner (first)
-            json.dumps({"primary_route": {"route_id": "r1", "segment_ids": [1001]},
-                        "alternate_routes": [], "rejected_routes": [],
-                        "overall_reasoning": "x", "confidence": "medium"}),
-            # security: non-compliant with violation on 1001
-            json.dumps({"compliant": False,
-                        "violations": [{"segment_id": 1001, "rule": "ROAD_WIDTH",
-                                        "detail": "2 lanes", "severity": "critical"}],
-                        "warnings": [], "recommendations": [],
-                        "security_score": 0.1, "confidence": "low"}),
-            # planner (retry, avoid 1001)
-            json.dumps({"primary_route": {"route_id": "r2", "segment_ids": [1002]},
-                        "alternate_routes": [], "rejected_routes": [],
-                        "overall_reasoning": "avoided", "confidence": "medium"}),
-            # security (retry): still failing
-            json.dumps({"compliant": False,
-                        "violations": [{"segment_id": 1002, "rule": "ROAD_WIDTH",
-                                        "detail": "narrow", "severity": "critical"}],
-                        "warnings": [], "recommendations": [],
-                        "security_score": 0.1, "confidence": "low"}),
-            # diversions
-            json.dumps({"directives": [], "queue_alerts": [],
-                        "overall_status": "none", "confidence": "low"}),
-        ]
-        bridge = StubBridge(replies=replies)
-        executor = FakeExecutor(routes=ROUTES)
+        routes = dict(ROUTES)
+        # Every candidate crosses 4-lane 1003; a re-route avoiding it still
+        # finds only 4-lane roads -> conditional with the best set kept.
+        routes["find_convoy_routes"] = lambda args: {"routes": [
+            {"route_id": "r1" if not args["avoid_segments"] else "r2",
+             "segment_ids": [1001, 1002, 1003] if not args["avoid_segments"]
+             else [1001, 1002, 1003, 1004],
+             "estimated_time_sec": 300, "total_distance_m": 3000.0},
+        ]}
+        executor = FakeExecutor(routes=routes)
         recommendation = await run_pre_movement_workflow(
             movement_id="mv2",
-            origin=(72.55, 23.02), destination=(72.60, 23.05),
-            vvip_class="Z", planned_departure="2026-10-12T08:00:00+05:30",
-            bridge=bridge, executor=executor, context_store=fake_store,
+            origin=ORIGIN, destination=DESTINATION,
+            vvip_class="Z+", planned_departure="2026-10-12T08:00:00+05:30",
+            bridge=TaskBridge(fail=True), executor=executor, context_store=fake_store,
         )
-        # retried once, then proceeded with warnings
         assert recommendation["status"] == "conditional"
+        assert recommendation["primary_route"] is not None
+        assert [v["segment_id"] for v in recommendation["security_violations"]] == [1003]
+        assert "No fully compliant route" in recommendation["overall_reasoning"]
         find_calls = [a for n, a in executor.calls if n == "find_convoy_routes"]
-        assert find_calls[1]["avoid_segments"] == [1001]
+        assert find_calls[1]["avoid_segments"] == [1003]
 
     async def test_decider_checkpoint_recorded(self, fake_store):
-        bridge = StubBridge(fail=True)  # heuristics everywhere is fine
         executor = FakeExecutor(routes=ROUTES)
         recommendation = await run_pre_movement_workflow(
             movement_id="mv3",
-            origin=(72.55, 23.02), destination=(72.60, 23.05),
+            origin=ORIGIN, destination=DESTINATION,
             vvip_class="Y", planned_departure="2026-10-12T08:00:00+05:30",
-            bridge=bridge, executor=executor, context_store=fake_store,
+            bridge=TaskBridge(fail=True), executor=executor, context_store=fake_store,
             decider_brain=DeciderBrain(ScriptDecider(confidence=0.9)),
         )
         assert recommendation["decider_checkpoint"]["tier"] == "decider"
         assert recommendation["decider_checkpoint"]["trigger"] == "pre_movement"
+        rows = fake_store.contexts["mv3"].decisions_log
+        assert [r["phase"] for r in rows if r.get("phase") == "decider_checkpoint"] == [
+            "decider_checkpoint"
+        ]
 
     async def test_adaptive_params_fail_closed(self, fake_store, tmp_path):
         # Adaptive endpoint absent -> baseline everywhere; Z floor = 120.
@@ -144,11 +202,10 @@ class TestPreMovement:
             client=httpx.AsyncClient(transport=httpx.MockTransport(
                 lambda request: httpx.Response(500))),
         )
-        bridge = StubBridge(fail=True)
-        captured: dict = {}
+        captured: list[dict] = []
 
         def plan(args):
-            captured.update(args)
+            captured.append(dict(args))
             return {"diversions": []}
 
         routes = dict(ROUTES)
@@ -156,12 +213,12 @@ class TestPreMovement:
         executor = FakeExecutor(routes=routes)
         await run_pre_movement_workflow(
             movement_id="mv4",
-            origin=(72.55, 23.02), destination=(72.60, 23.05),
+            origin=ORIGIN, destination=DESTINATION,
             vvip_class="Z", planned_departure="2026-10-12T08:00:00+05:30",
-            bridge=bridge, executor=executor, context_store=fake_store,
+            bridge=TaskBridge(fail=True), executor=executor, context_store=fake_store,
             adaptive_client=adaptive,
         )
-        assert captured["advance_closure_sec"] == 120  # fail-closed + protocol floor
+        assert captured and all(c["advance_closure_sec"] == 120 for c in captured)
 
 
 class TestLiveEscort:

@@ -11,7 +11,9 @@
 	import EmptyState from '$lib/primitives/EmptyState.svelte';
 	import { ops } from '$lib/ops/store.svelte';
 	import { t } from '$lib/i18n/strings';
+	import { tOps } from '$lib/i18n/strings.ops';
 	import { USE_CASES, useCaseById } from '$lib/ops/usecases';
+	import { istClock } from '$lib/ops/format';
 	import type { ClosureType } from '$lib/ops/types';
 
 	const CLOSURE_TYPES: ClosureType[] = ['full_closure', 'partial_closure', 'signal_hold'];
@@ -126,9 +128,13 @@
 			</tbody>
 		</table>
 		<p class="meta mono">
-			{#if ops.twinResult.calibrated != null}calibrated={String(ops.twinResult.calibrated)} · {/if}
-			{#if ops.twinResult.forecastCoupling}forecast_coupling={ops.twinResult.forecastCoupling} · {/if}
-			{new Date(ops.twinResult.fetchedAt).toLocaleTimeString()}
+			{#if ops.twinResult.calibrated != null}
+				<span title={`calibrated=${String(ops.twinResult.calibrated)}`}>{tOps(ops.lang, ops.twinResult.calibrated ? 'twinCalibratedYes' : 'twinCalibratedNo')}</span> ·
+			{/if}
+			{#if ops.twinResult.forecastCoupling}
+				<span title={`forecast_coupling=${ops.twinResult.forecastCoupling}`}>{tOps(ops.lang, 'twinForecastCoupling', ops.twinResult.forecastCoupling)}</span> ·
+			{/if}
+			{istClock(ops.twinResult.fetchedAt)} IST
 		</p>
 	{:else if !ops.twinRunning}
 		<EmptyState title="Run a comparison to see both twin arms." />
@@ -152,7 +158,7 @@
 
 	.controls label span {
 		font-size: var(--v-text-2xs);
-		color: var(--v-ink-4);
+		color: var(--v-ink-3);
 	}
 
 	.controls select,
@@ -186,7 +192,7 @@
 	.cached {
 		margin: 0 0 var(--v-space-1);
 		font-size: var(--v-text-2xs);
-		color: var(--v-ink-4);
+		color: var(--v-ink-3);
 	}
 
 	.results {
@@ -200,7 +206,7 @@
 		font-weight: var(--v-weight-status);
 		letter-spacing: var(--v-tracking-status);
 		text-transform: uppercase;
-		color: var(--v-ink-4);
+		color: var(--v-ink-3);
 		padding: var(--v-space-1) var(--v-space-2);
 		border-bottom: 1px solid var(--v-line-2);
 	}
@@ -231,7 +237,7 @@
 	.meta {
 		margin: var(--v-space-2) 0 0;
 		font-size: var(--v-text-2xs);
-		color: var(--v-ink-4);
+		color: var(--v-ink-3);
 	}
 
 	.mono {

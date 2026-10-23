@@ -1,0 +1,192 @@
+{
+  "generated_by": "scripts/poi_route_matrix.py",
+  "attribution": "routes over Veer's road network on OpenStreetMap — (c) OpenStreetMap contributors, ODbL 1.0",
+  "vvip_class": "Z+",
+  "max_snap_m": 600.0,
+  "matrix": {
+    "pairs": 182,
+    "ok": 182,
+    "same": 0,
+    "rejected": 0,
+    "empty": 0,
+    "far_snap": 0,
+    "compliant": 0,
+    "conditional": 182
+  },
+  "poi_snaps": [
+    {
+      "name": "Sarkhej–Ashram South",
+      "lon": 72.5714,
+      "lat": 23.0225,
+      "segment_id": 1006,
+      "road_name": "Riverfront Road (West)",
+      "snap_m": 2.7
+    },
+    {
+      "name": "Lal Darwaja",
+      "lon": 72.5813,
+      "lat": 23.0264,
+      "segment_id": 1005,
+      "road_name": "Relief Road",
+      "snap_m": 1.9
+    },
+    {
+      "name": "Ellis Bridge / CG Road",
+      "lon": 72.562,
+      "lat": 23.03,
+      "segment_id": 1003,
+      "road_name": "CG Road (South)",
+      "snap_m": 299.2
+    },
+    {
+      "name": "Sabarmati Riverfront",
+      "lon": 72.578,
+      "lat": 23.035,
+      "segment_id": 1007,
+      "road_name": "Riverfront Road (East)",
+      "snap_m": 242.8
+    },
+    {
+      "name": "Sabarmati Ashram",
+      "lon": 72.5802,
+      "lat": 23.0607,
+      "segment_id": 1041,
+      "road_name": "Chimanbhai Patel Flyover (Ashram Road–Motera)",
+      "snap_m": 207.3
+    },
+    {
+      "name": "Narendra Modi Stadium",
+      "lon": 72.5957,
+      "lat": 23.0916,
+      "segment_id": 1032,
+      "road_name": "Motera Stadium Road",
+      "snap_m": 553.3
+    },
+    {
+      "name": "Drive-In Road",
+      "lon": 72.5293,
+      "lat": 23.0464,
+      "segment_id": 1011,
+      "road_name": "Drive-In Road",
+      "snap_m": 0.8
+    },
+    {
+      "name": "Prahlad Nagar",
+      "lon": 72.512,
+      "lat": 23.0065,
+      "segment_id": 1020,
+      "road_name": "Prahlad Nagar Road",
+      "snap_m": 1.8
+    },
+    {
+      "name": "Satellite",
+      "lon": 72.5191,
+      "lat": 23.0279,
+      "segment_id": 1019,
+      "road_name": "Satellite Road",
+      "snap_m": 1.9
+    },
+    {
+      "name": "Kalupur Railway Station",
+      "lon": 72.6005,
+      "lat": 23.027,
+      "segment_id": 1049,
+      "road_name": "Sarangpur Road (Kalupur–Astodia)",
+      "snap_m": 14.7
+    },
+    {
+      "name": "Naroda",
+      "lon": 72.6428,
+      "lat": 23.0649,
+      "segment_id": 1030,
+      "road_name": "Naroda Road",
+      "snap_m": 4.9
+    },
+    {
+      "name": "Kankaria Lake",
+      "lon": 72.5994,
+      "lat": 23.0094,
+      "segment_id": 1038,
+      "road_name": "Kankaria Road",
+      "snap_m": 0.4
+    },
+    {
+      "name": "SVPI Airport",
+      "lon": 72.6221,
+      "lat": 23.072,
+      "segment_id": 1029,
+      "road_name": "Domestic Airport Road (Hansol)",
+      "snap_m": 3.5
+    },
+    {
+      "name": "Science City",
+      "lon": 72.4978,
+      "lat": 23.0813,
+      "segment_id": 1037,
+      "road_name": "Science City Road",
+      "snap_m": 1.5
+    }
+  ],
+  "compliant": null,
+  "compliant_reason": "no routed pair has a Z+ primary that meets the lane floor on this network: every best route crosses a road whose lanes (OpenStreetMap, or the seed's value where OSM tags none) are below it — each plan is honestly conditional",
+  "conditional": {
+    "origin": {
+      "name": "Sarkhej–Ashram South",
+      "lon": 72.5714,
+      "lat": 23.0225,
+      "snap_m": 14.2
+    },
+    "destination": {
+      "name": "Lal Darwaja",
+      "lon": 72.5813,
+      "lat": 23.0264,
+      "snap_m": 4.5
+    },
+    "origin_segment": 1001,
+    "destination_segment": 1015,
+    "segment_ids": [
+      1001,
+      1015
+    ],
+    "road_names": [
+      "Ashram Road (South)",
+      "Nehru Bridge Road"
+    ],
+    "distance_m": 1597.7,
+    "route_tier": "conditional",
+    "why": "shortest pair whose best Z+ route cannot meet the lane floor — the planner keeps it as conditional and says 'No fully compliant route:'"
+  },
+  "escort_demo": {
+    "origin": {
+      "name": "SVPI Airport",
+      "lon": 72.6221,
+      "lat": 23.072,
+      "snap_m": 3.5
+    },
+    "destination": {
+      "name": "Narendra Modi Stadium",
+      "lon": 72.5957,
+      "lat": 23.0916,
+      "snap_m": 553.3
+    },
+    "origin_segment": 1029,
+    "destination_segment": 1032,
+    "segment_ids": [
+      1029,
+      1028,
+      1048,
+      1010,
+      1032
+    ],
+    "road_names": [
+      "Domestic Airport Road (Hansol)",
+      "Airport Road (North)",
+      "Indira Bridge (Airport–Motera)",
+      "SH71 (Bhat–Motera Road)",
+      "Motera Stadium Road"
+    ],
+    "distance_m": 13029.4,
+    "route_tier": "conditional",
+    "why": "the airport-to-stadium journey: short, one river crossing (Indira Bridge Road)"
+  }
+}

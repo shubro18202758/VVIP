@@ -1,0 +1,86 @@
+{
+	"degradation": {
+		"degradation_tier": "FULL",
+		"decider_checkpoints_paused": false,
+		"adaptive_params_forced_baseline": false,
+		"thresholds": {
+			"decider_slow_ms": 3000,
+			"decider_recover_ms": 2000,
+			"degrade_confirm": 2,
+			"recover_confirm": 5,
+			"min_dwell_sec": 30
+		},
+		"roles": {
+			"decider": {
+				"last_ok": null,
+				"last_latency_ms": 0,
+				"slow_streak": 0,
+				"healthy_streak": 0,
+				"outage": false
+			},
+			"gemma": {
+				"last_ok": null,
+				"last_latency_ms": 0,
+				"slow_streak": 0,
+				"healthy_streak": 0,
+				"outage": false
+			}
+		},
+		"audit_trail": []
+	},
+	"movements": {
+		"366c82ac-cec3-4b2c-bd66-8b45f70bc7d7": {
+			"vvip_class": "Z+",
+			"effective_class": null,
+			"situation_code": null,
+			"severity_score": null,
+			"observation_count": 0,
+			"red_sustained_sec": 0
+		},
+		"5485188a-599e-47f1-ad95-e8841d0c24eb": {
+			"vvip_class": "Z",
+			"effective_class": null,
+			"situation_code": null,
+			"severity_score": null,
+			"observation_count": 0,
+			"red_sustained_sec": 0
+		},
+		"ad892ed0-3251-4220-a0a0-73e6d00a01ef": {
+			"vvip_class": "Z",
+			"effective_class": null,
+			"situation_code": null,
+			"severity_score": null,
+			"observation_count": 0,
+			"red_sustained_sec": 0
+		},
+		"c03cb1bf-d50a-463b-b49e-e9e42837ef0e": {
+			"vvip_class": "Z",
+			"effective_class": null,
+			"situation_code": null,
+			"severity_score": null,
+			"observation_count": 0,
+			"red_sustained_sec": 0
+		},
+		"default": {
+			"vvip_class": "X",
+			"effective_class": null,
+			"situation_code": null,
+			"severity_score": null,
+			"observation_count": 0,
+			"red_sustained_sec": 0
+		},
+		"e59c23a4-05f8-42dd-9340-a435a81f13bf": {
+			"vvip_class": "Z",
+			"effective_class": null,
+			"situation_code": null,
+			"severity_score": null,
+			"observation_count": 0,
+			"red_sustained_sec": 0
+		}
+	},
+	"last_shadow_eval": {
+		"status": "unavailable",
+		"detail": "shadow_eval_not_required"
+	},
+	"service": "ok"
+}

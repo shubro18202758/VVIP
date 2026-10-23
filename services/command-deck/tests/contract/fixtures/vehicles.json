@@ -1,0 +1,25 @@
+{
+	"vehicles": [
+		{
+			"vehicle_id": "1b94e9d2-7e11-4174-a735-7dd3be3189cf",
+			"plate": "GJ27EM9001",
+			"vehicle_class": "car",
+			"earmark_state": "flagged",
+			"earmark_reason": "STOLEN VEHICLE reported — FIR 4401/2026, Kalupur PS; God's Eye Morning flagship",
+			"lawful_basis": "stolen_vehicle_fir",
+			"retention_until": "2026-11-17T14:57:19.065631+00:00",
+			"last_sighting": {
+				"t": "2026-10-18T15:19:59.301446+00:00",
+				"position": [
+					72.573251,
+					23.02397
+				],
+				"source": "emulated_anpr",
+				"camera_id": "EM-CAM-02",
+				"matched_plate_hit": "stolen_vehicle"
+			},
+			"source": "emulated_anpr"
+		}
+	],
+	"source": "emulated_anpr"
+}

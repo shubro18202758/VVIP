@@ -1,0 +1,8 @@
+{
+	"total_segments": 0,
+	"avg_speed_kmh": 0,
+	"avg_congestion_idx": 0,
+	"congested_segments": 0,
+	"critical_segments": 0,
+	"status": "green"
+}

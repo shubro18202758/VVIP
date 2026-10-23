@@ -34,7 +34,10 @@
 	/* ink */
 	--v-ink-1: #e8eef8;
 	--v-ink-2: #9aa7bd;
-	--v-ink-3: #5f6c85;
+	/* ink-3: the dimmest TEXT ink — ≥ 4.5:1 on canvas, surface-1 and
+	 * surface-2 (asserted by tests/design-tokens.mjs); ink-4 is for rules,
+	 * hairlines and non-text marks only. */
+	--v-ink-3: #7d8aa5;
 	--v-ink-4: #39455c;
 
 	/* human-act orange — the single "a human must act" color; never fills
@@ -73,11 +76,13 @@
 	/* type */
 	--v-font-ui: Inter, 'Noto Sans', 'Noto Sans Devanagari', 'Noto Sans Gujarati', system-ui,
 		sans-serif;
-	--v-font-display: Outfit, Inter, 'Noto Sans', 'Noto Sans Devanagari', system-ui, sans-serif;
+	--v-font-display: Outfit, Inter, 'Noto Sans', 'Noto Sans Devanagari', 'Noto Sans Gujarati', system-ui,
+		sans-serif;
 	--v-font-mono: 'JetBrains Mono', 'Noto Sans Mono', ui-monospace, monospace;
-	--v-text-2xs: 10px;
-	--v-text-xs: 11px;
-	--v-text-sm: 12px;
+	/* 12 px floor: every operator surface is read on a projector wall */
+	--v-text-2xs: 12px;
+	--v-text-xs: 12px;
+	--v-text-sm: 13px;
 	--v-text-base: 13px; /* OPERATOR base */
 	--v-text-md: 16px;
 	--v-text-lg: 20px;
@@ -143,7 +148,7 @@
 
 	--v-ink-1: #1a1f2e;
 	--v-ink-2: #4a5468;
-	--v-ink-3: #7a8399;
+	--v-ink-3: #5b6478; /* ≥ 4.5:1 on paper, canvas and sink (asserted) */
 	--v-ink-4: #98a0b3;
 
 	--v-act: #ea580c;
@@ -176,11 +181,13 @@
 	/* type */
 	--v-font-ui: Inter, 'Noto Sans', 'Noto Sans Devanagari', 'Noto Sans Gujarati', system-ui,
 		sans-serif;
-	--v-font-display: Outfit, Inter, 'Noto Sans', 'Noto Sans Devanagari', system-ui, sans-serif;
+	--v-font-display: Outfit, Inter, 'Noto Sans', 'Noto Sans Devanagari', 'Noto Sans Gujarati', system-ui,
+		sans-serif;
 	--v-font-mono: 'JetBrains Mono', 'Noto Sans Mono', ui-monospace, monospace;
-	--v-text-2xs: 10px;
-	--v-text-xs: 11px;
-	--v-text-sm: 12px;
+	/* 13 px floor for public meta text (phones in daylight) */
+	--v-text-2xs: 13px;
+	--v-text-xs: 13px;
+	--v-text-sm: 14px;
 	--v-text-base: 16px; /* CITIZEN base */
 	--v-text-md: 16px;
 	--v-text-lg: 20px;

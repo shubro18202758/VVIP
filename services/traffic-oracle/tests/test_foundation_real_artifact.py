@@ -13,13 +13,14 @@ adapter directly) — are otherwise never validated TOGETHER. Here the REAL
 forecaster and the full ladder runs end-to-end:
 
     - the real loader engages (adapter installed, foundation_loaded event);
-    - warm-up calls degrade loudly to the heuristic rung, point-only;
-    - the 12th in-support call engages the foundation rung and its rows
-      carry the exact wave-2 contract quantiles, passing the consumer
-      validator (validated_bands: p10 <= p50 <= p90 per field, finite);
+    - a cold window degrades loudly to the heuristic rung, point-only;
+    - once the time-binned window holds 12 observed 5-min steps (what the
+      ingest history feed writes) the foundation rung answers — on its
+      worker thread — and its rows carry the exact wave-2 contract
+      quantiles, passing the consumer validator (validated_bands:
+      p10 <= p50 <= p90 per field, finite);
     - the shared cache stores POINT-ONLY JSON (no quantiles riding it);
-    - same-window determinism is bitwise (consecutive predict() calls
-      differ by design — the rolling window grows one sample per call);
+    - same-window determinism is bitwise;
     - a present-but-CORRUPT artifact disables the rung loudly without
       bricking the forecaster (with the real runtime this exercises the
       onnxruntime InvalidProtobuf failure path).
@@ -52,10 +53,17 @@ pytestmark = pytest.mark.skipif(
 )
 
 
+#: Fixed wall clock (mid-bin) the forecaster reads; the window is filled
+#: with one sample per 5-min bin ending at it.
+BIN_MS = 300_000
+NOW_MS = 1_792_000_200 * 1000 + 100 * BIN_MS + BIN_MS // 2
+
+
 class Obs:
     def __init__(self, speed: float) -> None:
         self.speed_kmh = speed
         self.congestion_idx = 0.3
+        self.data_quality = "real"
 
 
 class FakeClient:
@@ -81,7 +89,14 @@ def make_forecaster(path) -> FlowForecaster:
         cache=FakeCache({100: Obs(50.0)}),
         config=SimpleNamespace(max_nodes=8, lookback_steps=12, in_features=8),
         foundation_model_path=str(path),
+        clock_ms=lambda: NOW_MS,
     )
+
+
+def warm_window(forecaster, steps: int, speed: float = 50.0) -> None:
+    window = forecaster.history_window
+    for i in range(steps):
+        window.record(100, NOW_MS - (steps - 1 - i) * BIN_MS, speed)
 
 
 class TestRealLoaderInsideForecaster:
@@ -97,17 +112,17 @@ class TestRealLoaderInsideForecaster:
         forecaster = make_forecaster(ARTIFACT)
 
         # Warm-up: short window -> loud degrade to the heuristic rung.
+        warm_window(forecaster, MIN_CONTEXT_STEPS - 1)
         first = await forecaster.predict([100])
         assert forecaster.last_degradation_reason == (
             "foundation_input:history_too_short"
         )
         assert forecaster.last_forecast_rung == "heuristic"
         assert set(first[100][5]) == {"speed_kmh", "congestion_idx"}  # point-only
-        for _ in range(MIN_CONTEXT_STEPS - 1):
-            await forecaster.predict([100])
 
-        # 12th in-support call: the foundation rung answers with the
+        # 12 observed 5-min steps: the foundation rung answers with the
         # contract quantiles through the REAL graph.
+        warm_window(forecaster, MIN_CONTEXT_STEPS)
         result = await forecaster.predict([100])
         assert forecaster.last_forecast_rung == "foundation"
         assert forecaster.last_degradation_reason is None
@@ -128,10 +143,11 @@ class TestRealLoaderInsideForecaster:
         assert cached.startswith('{"speed_kmh":')
 
         # Same-window determinism (frozen window -> bitwise identical).
-        window = forecaster._foundation_window.history([100])
+        window = forecaster.history_window.history([100], now_ms=NOW_MS)
         assert forecaster._foundation_adapter.forecast(window) == (
             forecaster._foundation_adapter.forecast(window)
         )
+        forecaster.close()
 
     async def test_corrupt_artifact_fails_open_with_real_runtime(self, tmp_path):
         corrupt = tmp_path / "corrupt_t0.onnx"

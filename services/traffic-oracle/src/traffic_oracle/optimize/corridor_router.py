@@ -198,9 +198,16 @@ class CorridorRouter:
                         "length_m": r["length_m"],
                     }
 
+                # Directed edges: corridor.road_graph, the graph the KSP
+                # alternatives below route on (012: every edge is stored
+                # forwards, reverse_cost = -1).  The raw segment_adjacency
+                # table still lists the physical movements the view
+                # excludes — e.g. Station Road 1014 -> Gandhi Road 1012 at
+                # J15, the END of one-way Gandhi Road — and the MIP planned
+                # on it drove the convoy up one-way roads the wrong way.
                 adj_rows = await conn.fetch("""
-                    SELECT from_segment_id, to_segment_id
-                    FROM corridor.segment_adjacency
+                    SELECT source AS from_segment_id, target AS to_segment_id
+                    FROM corridor.road_graph
                 """)
                 edges = [(r["from_segment_id"], r["to_segment_id"]) for r in adj_rows]
 
@@ -263,10 +270,12 @@ class CorridorRouter:
                 robust=robust,
             ))
 
-        # 2. K-shortest path alternatives via pgRouting
+        # 2. K-shortest path alternatives via pgRouting (k = max_candidates:
+        #    KSP #1 usually repeats the MIP optimum and is de-duplicated
+        #    below, so this still leaves max_candidates distinct routes)
         if self._graph_db:
             k_paths = await self._graph_db.k_shortest_paths(
-                origin_segment, destination_segment, k=max_candidates - 1
+                origin_segment, destination_segment, k=max_candidates
             )
             for path_rows in k_paths:
                 path_nodes = [r["node"] for r in path_rows if r["node"] > 0]
@@ -280,6 +289,20 @@ class CorridorRouter:
                         robust=robust,
                     ))
 
+        # De-duplicate identical paths (the MIP optimum is usually also KSP
+        # #1): the first occurrence wins — MIP before KSP, KSP in rank
+        # order — so a "choice" of N candidates is N distinct routes.
+        unique: list[RouteCandidate] = []
+        seen_paths: set[tuple[int, ...]] = set()
+        for candidate in candidates:
+            path = tuple(candidate.segment_ids)
+            if path in seen_paths:
+                continue
+            seen_paths.add(path)
+            unique.append(candidate)
+        dropped = len(candidates) - len(unique)
+        candidates = unique
+
         # Score and sort
         candidates.sort(key=lambda c: c.composite_score)
 
@@ -288,6 +311,7 @@ class CorridorRouter:
             origin=origin_segment,
             dest=destination_segment,
             candidates=len(candidates),
+            duplicates_dropped=dropped,
         )
         return candidates[:max_candidates]
 

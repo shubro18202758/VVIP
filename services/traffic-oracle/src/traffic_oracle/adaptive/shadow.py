@@ -28,6 +28,12 @@ class TwinRun:
     is_stub: bool
     ambulance_delay_sec: float = 0.0
     convoy_transit_time_sec: float = 0.0
+    #: Why the twin is (not) calibrated, in operator words (C5 additive
+    #: ``calibration.reason``) — quoted in an uncalibrated refusal.
+    calibration_reason: str | None = None
+    #: Route segments the twin network actually simulated (None = the
+    #: producer did not say).  Zero means the comparison is vacuous.
+    route_segments_modelled: int | None = None
 
     @classmethod
     def from_payload(cls, payload: dict) -> TwinRun:
@@ -36,6 +42,16 @@ class TwinRun:
         Accepts either the full ``{runs: [...], calibrated: bool}`` body
         (aggregating the mean over replications) or a single run dict.
         """
+        calibration = payload.get("calibration")
+        reason = (
+            calibration.get("reason") if isinstance(calibration, dict) else None
+        )
+        coverage = payload.get("route_coverage")
+        modelled = (
+            int(coverage["modelled"])
+            if isinstance(coverage, dict) and coverage.get("modelled") is not None
+            else None
+        )
         if "runs" in payload:
             runs = payload["runs"]
             if not runs:
@@ -56,6 +72,8 @@ class TwinRun:
                     float(r.get("convoy_transit_time_sec", 0.0)) for r in runs
                 )
                 / n,
+                calibration_reason=str(reason) if reason else None,
+                route_segments_modelled=modelled,
             )
         return cls(
             total_disruption_vehicle_hours=float(
@@ -67,6 +85,8 @@ class TwinRun:
             convoy_transit_time_sec=float(
                 payload.get("convoy_transit_time_sec", 0.0)
             ),
+            calibration_reason=str(reason) if reason else None,
+            route_segments_modelled=modelled,
         )
 
 
@@ -133,9 +153,22 @@ class ShadowEvaluator:
                 "twin_is_stub",
             )
         if not baseline_run.calibrated or not candidate_run.calibrated:
+            # The refusal names WHY (e.g. "no field observations — simulated
+            # feed only"): a simulated feed never field-calibrates the twin.
+            reason = baseline_run.calibration_reason or candidate_run.calibration_reason
             return ShadowEvalOutcome(
                 ShadowEvalStatus.UNAVAILABLE,
-                "twin_not_calibrated",
+                f"twin_not_calibrated: {reason}" if reason else "twin_not_calibrated",
+            )
+        if 0 in (
+            baseline_run.route_segments_modelled,
+            candidate_run.route_segments_modelled,
+        ):
+            # Both arms simulated nothing of the route: a 0 vh vs 0 vh
+            # "no regression" would be a vacuous pass.
+            return ShadowEvalOutcome(
+                ShadowEvalStatus.UNAVAILABLE,
+                "twin_route_not_modelled",
             )
 
         allowed = max(

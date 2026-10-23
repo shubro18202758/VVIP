@@ -7,13 +7,15 @@
 	 * mono chip — a hollow state cannot hide).
 	 *
 	 * Chrome's own data: global search over the nav index ('/' focuses,
-	 * Enter jumps, Escape clears) and the language switch.
+	 * Enter jumps, Escape clears), the language switch and — only when the
+	 * deck runs the opt-in operator gate — the duty-officer sign-in.
 	 */
 	import { goto } from '$app/navigation';
 	import { SUPPORTED, t } from '$lib/i18n/strings';
 	import type { Band } from '$lib/design/tokens';
 	import BandChip from '$lib/primitives/BandChip.svelte';
 	import { NAV_INDEX } from './nav';
+	import OperatorSignIn from './OperatorSignIn.svelte';
 
 	interface Props {
 		band: Band | null;
@@ -93,7 +95,7 @@
 		{/if}
 	</div>
 
-	<div class="lang" role="group" aria-label="language">
+	<div class="lang" role="group" aria-label={t(lang, 'shell_language')}>
 		{#each SUPPORTED as s (s.code)}
 			<button
 				type="button"
@@ -110,6 +112,8 @@
 			{t(lang, 'shell_share')}
 		</button>
 	{/if}
+
+	<OperatorSignIn {lang} />
 </header>
 
 <style>
@@ -139,7 +143,7 @@
 	.band-pending {
 		font-family: var(--v-font-mono);
 		font-size: var(--v-text-2xs);
-		color: var(--v-ink-4);
+		color: var(--v-ink-3);
 		border: 1px dashed var(--v-line-2);
 		border-radius: var(--v-radius-chip);
 		padding: 1px var(--v-space-2);
@@ -179,8 +183,8 @@
 	.search-note {
 		position: absolute;
 		right: var(--v-space-1);
-		font-size: 10px;
-		color: var(--v-ink-4);
+		font-size: var(--v-text-2xs);
+		color: var(--v-ink-3);
 		border: 1px solid var(--v-line-1);
 		border-radius: var(--v-radius-chip);
 		padding: 0 var(--v-space-1);

@@ -19,8 +19,8 @@ fn now_ms() -> i64 {
 fn make_obs(segment_id: &str, timestamp_ms: i64, speed: f32, congestion: f32) -> TrafficObservation {
     TrafficObservation {
         timestamp_ms,
-        lon: 77.2090,
-        lat: 28.6139,
+        lon: 72.5747,
+        lat: 23.02875,
         segment_id: segment_id.to_string(),
         speed_kmh: speed,
         congestion_index: congestion,
@@ -424,21 +424,21 @@ fn detector_flags_negative_speed() {
 #[test]
 fn detector_flags_invalid_longitude() {
     let mut det = AnomalyDetector::new(AnomalyConfig::default());
-    let result = det.check(make_obs_at_coords(999.0, 28.6, 50.0));
+    let result = det.check(make_obs_at_coords(999.0, 23.03, 50.0));
     assert!(result.flags.contains(&AnomalyFlag::SpatialMismatch));
 }
 
 #[test]
 fn detector_flags_invalid_latitude() {
     let mut det = AnomalyDetector::new(AnomalyConfig::default());
-    let result = det.check(make_obs_at_coords(77.0, -95.0, 50.0));
+    let result = det.check(make_obs_at_coords(72.57, -95.0, 50.0));
     assert!(result.flags.contains(&AnomalyFlag::SpatialMismatch));
 }
 
 #[test]
 fn detector_allows_valid_coordinates() {
     let mut det = AnomalyDetector::new(AnomalyConfig::default());
-    let result = det.check(make_obs_at_coords(77.2090, 28.6139, 50.0));
+    let result = det.check(make_obs_at_coords(72.5747, 23.02875, 50.0));
     assert!(!result.flags.contains(&AnomalyFlag::SpatialMismatch));
 }
 
@@ -459,6 +459,74 @@ fn detector_preserves_real_quality_when_clean() {
     if result.flags.is_empty() {
         assert_eq!(result.observation.data_quality, DataQuality::Real);
     }
+}
+
+// ─── C-H extension: the pre-flag quality survives the relabel ────────────────
+
+fn synthetic_obs(segment_id: &str, timestamp_ms: i64, speed: f32) -> TrafficObservation {
+    TrafficObservation {
+        data_quality: DataQuality::Synthetic,
+        source: FeedSource::Crowdsource,
+        ..make_obs(segment_id, timestamp_ms, speed, 0.3)
+    }
+}
+
+#[test]
+fn flagged_synthetic_reading_keeps_its_feed_quality() {
+    let mut det = AnomalyDetector::new(AnomalyConfig::default());
+    let result = det.check(synthetic_obs("seg_1", now_ms() + 120_000, 50.0));
+    assert!(result.flags.contains(&AnomalyFlag::FutureTimestamp));
+    // relabelled for the batch plane ...
+    assert_eq!(result.observation.data_quality, DataQuality::Anomalous);
+    // ... but the simulated origin is kept, not erased
+    assert_eq!(result.feed_quality, Some(DataQuality::Synthetic));
+}
+
+#[test]
+fn flagged_real_reading_records_real_as_its_feed_quality() {
+    let mut det = AnomalyDetector::new(AnomalyConfig::default());
+    let result = det.check(make_obs("seg_1", now_ms() - 600_000, 50.0, 0.3));
+    assert!(result.flags.contains(&AnomalyFlag::StaleData));
+    assert_eq!(result.feed_quality, Some(DataQuality::Real));
+}
+
+#[test]
+fn clean_reading_has_no_feed_quality() {
+    let mut det = AnomalyDetector::new(AnomalyConfig::default());
+    let result = det.check(synthetic_obs("seg_1", now_ms(), 50.0));
+    assert!(result.flags.is_empty());
+    assert_eq!(result.observation.data_quality, DataQuality::Synthetic);
+    assert_eq!(result.feed_quality, None);
+}
+
+#[test]
+fn anomaly_event_publishes_feed_quality_beside_the_relabelled_quality() {
+    use signal_ingress::normalize::schema_align::{AnomalyEvent, assess};
+
+    let mut det = AnomalyDetector::new(AnomalyConfig::default());
+    let result = assess(&mut det, synthetic_obs("seg_1", now_ms() + 120_000, 50.0));
+    let doc = serde_json::to_value(AnomalyEvent::from_result(&result).expect("flagged")).unwrap();
+    // the existing C-H keys are unchanged for current consumers
+    assert_eq!(doc["data_quality"], "Anomalous");
+    assert_eq!(doc["segment_id"], "seg_1");
+    assert!(doc["anomaly_flags"].as_array().unwrap().contains(&"future_timestamp".into()));
+    // the additive key carries the simulated origin (serde enum spelling)
+    assert_eq!(doc["feed_quality"], "Synthetic");
+}
+
+#[test]
+fn anomaly_event_omits_feed_quality_when_unknown() {
+    use signal_ingress::normalize::schema_align::AnomalyEvent;
+
+    let flagged = AnomalyResult::compute(
+        TrafficObservation {
+            data_quality: DataQuality::Anomalous,
+            ..make_obs("seg_1", now_ms(), 50.0, 0.3)
+        },
+        vec![AnomalyFlag::SpeedJump],
+    );
+    let doc = serde_json::to_value(AnomalyEvent::from_result(&flagged).unwrap()).unwrap();
+    assert!(doc.get("feed_quality").is_none(), "{doc}");
 }
 
 // ─── Cross-segment isolation ─────────────────────────────────────────────────

@@ -6,6 +6,10 @@ NATS Arrow only), so live demos on the inputs path are emulator-fed by
 design — declared property, contract C3.  The doc body matches the reader
 shape EXACTLY; provenance rides a separate sidecar key the reader never
 touches, so the doc itself stays byte-identical to a real feed's.
+
+The client is created lazily and kept even when the first PING fails (a
+lost boot race): its connection pool reconnects on the next command, so
+the seam heals on its own and :meth:`probe` reports the real state.
 """
 
 from __future__ import annotations
@@ -58,6 +62,10 @@ class ValkeySeam:
             ),
             ex=self._ttl_sec,
         )
+
+    async def probe(self) -> bool:
+        """A real PING (raises on a dead link; the caller reports False)."""
+        return bool(await self._client.ping())
 
     async def close(self) -> None:
         await self._client.aclose()

@@ -15,31 +15,37 @@
     "compliant": { "type": "boolean" },
     "violations": {
       "type": "array",
+      "maxItems": 6,
       "items": {
         "type": "object",
         "additionalProperties": false,
         "required": ["segment_id", "rule", "detail", "severity"],
         "properties": {
           "segment_id": { "type": "integer" },
-          "rule": { "type": "string" },
-          "detail": { "type": "string" },
+          "rule": { "type": "string", "maxLength": 32 },
+          "detail": { "type": "string", "maxLength": 120 },
           "severity": { "type": "string", "enum": ["low", "medium", "high", "critical"] }
         }
       }
     },
     "warnings": {
       "type": "array",
+      "maxItems": 4,
       "items": {
         "type": "object",
         "additionalProperties": false,
         "required": ["segment_id", "concern"],
         "properties": {
           "segment_id": { "type": "integer" },
-          "concern": { "type": "string" }
+          "concern": { "type": "string", "maxLength": 120 }
         }
       }
     },
-    "recommendations": { "type": "array", "items": { "type": "string" } },
+    "recommendations": {
+      "type": "array",
+      "maxItems": 3,
+      "items": { "type": "string", "maxLength": 120 }
+    },
     "security_score": { "type": "number" },
     "confidence": { "type": "string", "enum": ["high", "medium", "low"] }
   }

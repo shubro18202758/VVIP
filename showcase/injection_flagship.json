@@ -1,1 +1,44 @@
-{"run_id":19,"status":"completed","movement_id":"3ef08290-66d8-511b-a25a-3d2967c79985","use_case_id":"rath_yatra_monsoon_ambulance","seed":202506271,"t0_anchor":"2026-10-18T14:57:19.138112+00:00","clock_scale":30.0,"delivery":{"frames":736,"delivered":736,"failed":0,"skipped":0,"late":0}}
+{
+ "run_id": 27,
+ "use_case_id": "rath_yatra_monsoon_ambulance",
+ "status": "completed",
+ "reason": null,
+ "event_id": "c7073ae6-56ae-5048-8bdc-d826d8da5ddc",
+ "movement_id": "c7073ae6-56ae-5048-8bdc-d826d8da5ddc",
+ "event_status": "completed",
+ "seed": 202506271,
+ "clock_scale": 30.0,
+ "progress": {
+  "frame": 761,
+  "total": 761,
+  "delivered": 761,
+  "failed": 0,
+  "skipped": 0,
+  "late": 0
+ },
+ "delivery": {
+  "late": 0,
+  "failed": 0,
+  "frames": 1125,
+  "skipped": 0,
+  "progress": {
+   "late": 0,
+   "frame": 761,
+   "total": 761,
+   "failed": 0,
+   "skipped": 0,
+   "delivered": 761
+  },
+  "delivered": 1125
+ },
+ "event_activation": {
+  "late": false,
+  "error": null,
+  "active": true,
+  "attempts": 1
+ },
+ "scenario_precondition": null,
+ "created_at": "2026-10-23T18:28:40.751166+00:00",
+ "ended_at": "2026-10-23T18:30:40.765927+00:00",
+ "poll_error": null
+}

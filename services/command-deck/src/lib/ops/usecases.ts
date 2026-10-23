@@ -3,7 +3,10 @@
  *
  * Every field is transcribed from the use-case configs shipped with the
  * showcase ask (scenario_id, route spine, seeds, baseline closure policy,
- * departure, replications, horizon, description). They serve three purposes:
+ * departure, replications, horizon, description). The route spines mirror
+ * the emulator's use_case_library.json and the twin's scenarios.py on the
+ * real (OpenStreetMap) network — each a legal path, one-ways driven their
+ * own way (the contract tests hold them equal). They serve three purposes:
  *
  *   1. OFFLINE FIXTURES for the multi-event board when GET /api/v1/events/active
  *      is not deployed yet (rows are tagged `offline-fixture` and labelled).
@@ -70,7 +73,7 @@ export const USE_CASES: UseCaseProfile[] = [
 		eventKind: 'protected_movement',
 		protectionClass: 'Z+',
 		crowdClass: 'LOW',
-		routeSegmentIds: [1026, 1025, 1024, 1014, 1030],
+		routeSegmentIds: [1026, 1025, 1024, 1048, 1028, 1027, 1043],
 		departureTime: ISO_IST('2026-11-02T10:10:00+05:30'),
 		baselinePolicy: { advanceClosureSec: 180, closureType: 'full_closure' },
 		seed: 20261102,
@@ -81,7 +84,7 @@ export const USE_CASES: UseCaseProfile[] = [
 			closureType: 'full_closure',
 		}),
 		description:
-			'Z+ protected movement from Gandhinagar into the city core on a Monday mid-morning: GN Highway spine (1026-1025-1024) down through Kalupur (1014) onto Naroda Road (1030). Maximum-protocol closure (180 s advance, full closure), default event rates, no weather.',
+			'Z+ protected movement from Gandhinagar into the city core on a Monday mid-morning: down the Gandhinagar-Ahmedabad Highway (1026-1025-1024) through Koba and Bhat Circles, over the Indira Bridge (1048), along Airport Road (1028-1027) to Shahibaug and in on Dr. Ambedkar Road (1043) to Lal Darwaja. Maximum-protocol closure (180 s advance, full closure), default event rates, no weather.',
 	},
 	{
 		id: 'rath_yatra_ahmedabad',
@@ -90,7 +93,7 @@ export const USE_CASES: UseCaseProfile[] = [
 		eventKind: 'procession',
 		protectionClass: 'X',
 		crowdClass: 'EXTREME',
-		routeSegmentIds: [1012, 1015, 1005, 1013],
+		routeSegmentIds: [1012, 1049, 1013],
 		departureTime: ISO_IST('2025-06-27T07:00:00+05:30'),
 		baselinePolicy: { advanceClosureSec: 120, closureType: 'full_closure' },
 		seed: 20250627,
@@ -101,7 +104,7 @@ export const USE_CASES: UseCaseProfile[] = [
 			closureType: 'full_closure',
 		}),
 		description:
-			'148th Ahmedabad Rath Yatra: three chariots step off at 07:00 from the Jamalpur temple and crawl the old-city bazaar belt — Gandhi Road, Nehru Bridge, Relief Road, Tilak Road (~14 km). Managed as an X-class movement at chariot pace (8 km/h) with full street closure rolling ahead and lakhs-strong crowd load.',
+			'148th Ahmedabad Rath Yatra: three chariots step off at 07:00 from the Jamalpur temple and crawl the old-city bazaar belt — east along one-way Gandhi Road to Kalupur (1012), south past Sarangpur Darwaja (1049) and west along one-way Swami Vivekananda Road (1013), Relief Road (1005) shut alongside (~14 km). Managed as an X-class movement at chariot pace (8 km/h) with full street closure rolling ahead and lakhs-strong crowd load.',
 	},
 	{
 		id: 'kumbh_scale_gathering',
@@ -110,7 +113,7 @@ export const USE_CASES: UseCaseProfile[] = [
 		eventKind: 'mass_gathering',
 		protectionClass: 'X',
 		crowdClass: 'EXTREME',
-		routeSegmentIds: [1001, 1006, 1010],
+		routeSegmentIds: [1001, 1006, 1009],
 		departureTime: ISO_IST('2025-01-29T04:30:00+05:30'),
 		baselinePolicy: { advanceClosureSec: 90, closureType: 'signal_hold' },
 		seed: 20250129,
@@ -139,7 +142,7 @@ export const USE_CASES: UseCaseProfile[] = [
 		eventKind: 'race',
 		protectionClass: 'X',
 		crowdClass: 'HIGH',
-		routeSegmentIds: [1007, 1001, 1006, 1010],
+		routeSegmentIds: [1007, 1015, 1001, 1006],
 		departureTime: ISO_IST('2024-11-24T05:45:00+05:30'),
 		baselinePolicy: { advanceClosureSec: 60, closureType: 'full_closure' },
 		seed: 20241124,
@@ -159,7 +162,7 @@ export const USE_CASES: UseCaseProfile[] = [
 		eventKind: 'ceremonial',
 		protectionClass: 'Z',
 		crowdClass: 'HIGH',
-		routeSegmentIds: [1028, 1027, 1024, 1025],
+		routeSegmentIds: [1029, 1028, 1048, 1024, 1025],
 		departureTime: ISO_IST('2027-01-26T08:35:00+05:30'),
 		baselinePolicy: { advanceClosureSec: 150, closureType: 'full_closure' },
 		seed: 20270126,
@@ -170,7 +173,7 @@ export const USE_CASES: UseCaseProfile[] = [
 			closureType: 'full_closure',
 		}),
 		description:
-			'The two fixed ceremonial days every year: dignitary runs airport (1028-1027) onto the GN Highway parade strip (1024-1025) at 08:35, arriving before the 09:00 flag, while spectator and parking load saturates the strip.',
+			'The two fixed ceremonial days every year: dignitary runs from SVPI airport (1029-1028) over the Indira Bridge (1048) onto the GN Highway parade strip at Bhat (1024-1025) at 08:35, arriving before the 09:00 flag, while spectator and parking load saturates the strip.',
 	},
 	{
 		id: 'motera_stadium_egress',
@@ -179,7 +182,7 @@ export const USE_CASES: UseCaseProfile[] = [
 		eventKind: 'egress_surge',
 		protectionClass: 'X',
 		crowdClass: 'EXTREME',
-		routeSegmentIds: [1032, 1002, 1001],
+		routeSegmentIds: [1032, 1041, 1009, 1002, 1001],
 		departureTime: ISO_IST('2026-03-08T20:05:00+05:30'),
 		baselinePolicy: { advanceClosureSec: 60, closureType: 'signal_hold' },
 		seed: 20260308,
@@ -190,7 +193,7 @@ export const USE_CASES: UseCaseProfile[] = [
 			closureType: 'signal_hold',
 		}),
 		description:
-			'The 90–120 min egress surge just after a final ball at the world’s largest cricket ground: an X-class ambulance with a green-corridor request fights the ~130k dispersal wave from Motera Stadium Road (1032) down the Ashram spine (1002-1001) under signal_hold.',
+			'The 90–120 min egress surge just after a final ball at the world’s largest cricket ground: an X-class ambulance with a green-corridor request fights the ~130k dispersal wave from Motera Stadium Road (1032) over the Chimanbhai Patel Flyover (1041) down the Ashram spine (1009-1002-1001) under signal_hold.',
 	},
 	{
 		id: 'flood_evacuation_corridor',
@@ -219,7 +222,7 @@ export const USE_CASES: UseCaseProfile[] = [
 		eventKind: 'work_zone',
 		protectionClass: 'X',
 		crowdClass: 'MODERATE',
-		routeSegmentIds: [1031, 1014, 1024],
+		routeSegmentIds: [1031, 1014, 1049, 1038],
 		departureTime: ISO_IST('2025-08-14T09:15:00+05:30'),
 		baselinePolicy: { advanceClosureSec: 60, closureType: 'partial_closure' },
 		seed: 20250814,
@@ -239,7 +242,7 @@ export const USE_CASES: UseCaseProfile[] = [
 			}),
 		],
 		description:
-			'The most predictable corridor event: months-long lane loss published in advance. An X-class inspection convoy runs CTM Road (1031) through the Kalupur pinch (1014) onto GN Highway south (1024) while both work zones hold two barricaded lanes and diverted bazaar traffic squeezes Kankaria Road (1038).',
+			'The most predictable corridor event: months-long lane loss published in advance. An X-class inspection convoy runs Kasturba Gandhi Road (1031) through the Kalupur pinch (1014), south past Sarangpur Darwaja (1049) and onto Kankaria Road (1038) while both work zones hold two barricaded lanes and diverted bazaar traffic squeezes Kankaria Road itself.',
 	},
 ];
 

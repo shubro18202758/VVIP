@@ -84,6 +84,17 @@ def client():
         yield c
 
 
+@pytest.fixture(autouse=True)
+def _restore_calibration():
+    """Every test sees (and leaves) the process-wide state it started with."""
+    import copy
+
+    saved = copy.deepcopy(CALIBRATION.__dict__)
+    yield
+    CALIBRATION.__dict__.clear()
+    CALIBRATION.__dict__.update(saved)
+
+
 # ─── determinism ─────────────────────────────────────────────────────────────
 
 
@@ -586,7 +597,7 @@ class TestRouter:
         })
         assert resp.status_code == 200
         body = resp.json()
-        assert body["route_segment_ids"] == [1028, 1027, 1024, 1014]
+        assert body["route_segment_ids"] == [1028, 1027, 1043, 1005, 1014]
         assert body["closure_policy"]["advance_closure_sec"] == 180
         assert body["closure_policy"]["closure_type"] == "full_closure"
 
@@ -673,68 +684,13 @@ class TestRouter:
         assert client.post("/api/v1/simulate/twin", json=_twin_payload()
                            ).json()["calibrated"] is False
 
-    def test_replay_with_mock_data_calibrates(self):
+    def test_replay_with_mock_data_calibrates_and_persists(self):
         from traffic_oracle.simulation import calibration as calib
-        from traffic_oracle.simulation.tod import hour_demand_multiplier, infer_weather, weather_speed_factor
 
         app = FastAPI()
         app.include_router(sim_router)
-        net = default_network()
-
-        # Build 48 aggregate rows whose avg_speed equals the model prediction
-        # (segments × hours) — replay should drive adjusted MAE to ~0 and flip
-        # the calibrated flag.
-        rows = []
-        base_hour = datetime.fromisoformat("2026-10-05T09:00:00+05:30")
-        segs = [1001, 1002, 1003, 1004, 1005, 1009, 1016, 1017]
-        for i, seg_id in enumerate(segs):
-            seg = net.require(seg_id)
-            for h in range(6):
-                hour_dt = base_hour.replace(hour=9 + h)
-                tod = hour_demand_multiplier(hour_dt.hour, hour_dt.weekday())
-                w = infer_weather(hour_dt.date(), hour_dt.hour)
-                ff = seg.free_flow_kmh * weather_speed_factor(w)
-                vc = (seg.base_peak_demand_veh_h * tod) / max(seg.capacity_veh_h, 1.0)
-                pred = ff / (1.0 + 0.55 * (vc ** 4.2))
-                rows.append({
-                    "segment_id": seg_id,
-                    "hour_utc": hour_dt,
-                    "avg_speed_kmh": pred,
-                    "observation_cnt": 10,
-                })
-
-        class FakeConn:
-            async def fetch(self, sql, *args):
-                if "hourly_aggregates" in sql:
-                    return rows
-                if "signal_programs" in sql:
-                    return [
-                        {"junction_id": 1, "cycle_sec": 100,
-                         "phases": [{"green_sec": 47}, {"green_sec": 38}],
-                         "source": "calibrated"},
-                    ]
-                if "segment_adjacency" in sql:
-                    return [{"segment_id": 1001, "junction_id": 1},
-                            {"segment_id": 1002, "junction_id": 1}]
-                return []
-
-            async def execute(self, sql, *args):
-                return "OK"
-
-        class FakePool:
-            def acquire(self):
-                return self
-
-            async def __aenter__(self):
-                return FakeConn()
-
-            async def __aexit__(self, *a):
-                return None
-
-            async def fetch(self, sql, *args):
-                return await FakeConn().fetch(sql, *args)
-
-        app.state.pool = FakePool()
+        pool = ReplayPool(rows=model_rows(scale=1.0))
+        app.state.pool = pool
         app.state.forecaster = None
         calib.CALIBRATION.calibrated = False
 
@@ -744,16 +700,112 @@ class TestRouter:
                 "window_end": "2026-10-06T00:00:00+05:30",
             }).json()
             assert rep["status"] == "ok"
-            assert rep["n_observations"] == len(rows)
+            assert rep["n_observations"] == len(pool.rows)
             assert rep["calibrated"] is True
-            assert rep["adjusted_speed_mae_kmh"] < 1.0
+            assert rep["adjusted_speed_mae_kmh"] < 0.01  # rows ARE the model
+            assert set(rep["per_road_class_capacity_scale"].values()) == {1.0}
+            assert rep["signal_programs_applied"] >= 1
+            assert rep["fit"] == "grid_min_mae_engine_formula"
+            assert rep["time_basis"] == "IST bucket midpoint"
+            # ledgered into simulation.calibrations (parameter-bound INSERT)
+            assert rep["calibration_id"] == 7
+            sql, args = pool.inserts[0]
+            assert sql.startswith("INSERT INTO simulation.calibrations")
+            assert args[2] == len(pool.rows) and args[6] is True
 
             # twin now reports calibrated=true, and signal programs were applied
             twin = c.post("/api/v1/simulate/twin", json=_twin_payload()).json()
             assert twin["calibrated"] is True
             assert twin.get("signal_programs_applied", 0) >= 1
+            assert twin["signal_green_basis"] == "serving_phase_per_approach"
 
-        calib.CALIBRATION.calibrated = False  # restore fail-closed default
+
+# ─── replay fakes (shared by the calibration tests below) ──────────────────
+
+
+J1_PROGRAM = {
+    "junction_id": 1, "cycle_sec": 100, "source": "osm_assumed",
+    "phases": [{"green_sec": 47, "movements": ["through"]},
+               {"green_sec": 38, "movements": ["cross"]}],
+}
+# Nehru Bridge - Ashram Road Junction legs as PostGIS reports them on the
+# real (OpenStreetMap) network (bearing AWAY from the junction): Ashram Road
+# S 1001 + N 1002 are the straight pair, Nehru Bridge Road 1015 crosses.
+J1_LEGS = [
+    {"junction_id": 1, "segment_id": 1001, "road_class": "primary", "bearing_deg": 176.2},
+    {"junction_id": 1, "segment_id": 1002, "road_class": "primary", "bearing_deg": 353.3},
+    {"junction_id": 1, "segment_id": 1015, "road_class": "secondary", "bearing_deg": 85.9},
+]
+REPLAY_SEGMENTS = (1001, 1002, 1003, 1004, 1005, 1009, 1016, 1017)
+
+
+def replay_network():
+    """The network the replay fits: seed + J1's per-approach greens."""
+    from traffic_oracle.simulation.calibration import (
+        apply_signal_overrides,
+        approach_green_overrides,
+    )
+
+    net = default_network()
+    apply_signal_overrides(net, approach_green_overrides([J1_PROGRAM], J1_LEGS))
+    return net
+
+
+def model_rows(scale: float = 1.0, hours: int = 24, noise=None):
+    """Hourly aggregate rows equal to the twin's own speed at ``scale``
+    (24 distinct field hours by default — the calibration floor)."""
+    from traffic_oracle.simulation.calibration import bucket_midpoint, model_speed_kmh
+
+    net = replay_network()
+    base = datetime.fromisoformat("2026-10-05T03:00:00+00:00")  # 08:30 IST
+    rows = []
+    for i, seg_id in enumerate(REPLAY_SEGMENTS):
+        for h in range(hours):
+            hour_utc = base + timedelta(hours=h)
+            speed = model_speed_kmh(net, seg_id, bucket_midpoint(hour_utc), scale)
+            if noise is not None:
+                speed += noise(i, h)
+            rows.append({
+                "segment_id": seg_id, "hour_utc": hour_utc,
+                "avg_speed_kmh": speed, "observation_cnt": 10,
+            })
+    return rows
+
+
+class ReplayPool:
+    """asyncpg-shaped fake: aggregates, programs, legs; records INSERTs."""
+
+    def __init__(self, rows=None, field_hours=0, has_real=False, has_synthetic=True,
+                 latest=None):
+        self.rows = list(rows or [])
+        self.field_hours = field_hours
+        self.has_real = has_real
+        self.has_synthetic = has_synthetic
+        self.latest = latest
+        self.inserts: list[tuple[str, tuple]] = []
+        self.fetchrow_args: list[tuple[str, tuple]] = []
+
+    async def fetch(self, sql, *args):
+        if "hourly_aggregates" in sql:
+            return self.rows
+        if "ST_Azimuth" in sql:
+            return J1_LEGS
+        if "signal_programs" in sql:
+            return [J1_PROGRAM]
+        return []  # no DB-only segments / adjacency in these fakes
+
+    async def fetchrow(self, sql, *args):
+        self.fetchrow_args.append((sql, args))
+        if sql.startswith("INSERT INTO simulation.calibrations"):
+            self.inserts.append((sql, args))
+            return {"calibration_id": 7, "created_at": datetime.now()}
+        if "count(DISTINCT hour_utc)" in sql:
+            return {"hours": self.field_hours, "first_hour": None, "last_hour": None}
+        if "has_real" in sql:
+            return {"has_real": self.has_real, "has_synthetic": self.has_synthetic}
+        if "FROM simulation.calibrations" in sql:
+            return self.latest
+        return None
 
 
 # ─── scenario library ────────────────────────────────────────────────────────
@@ -775,6 +827,47 @@ class TestScenarioLibrary:
             sc = get_scenario(sid)
             for f in features:
                 assert f in sc.expected_features
+
+    def test_anchor_hazards_lie_on_the_convoy_route(self, network):
+        """The monsoon and multi-event anchors stage every forced hazard ON
+        the convoy's path (the Kalupur station approach 1014 and the Relief
+        Road approach 1005 on the real network): a hazard off the route never
+        meets the convoy, and its label would name a place it is not."""
+        for sid in ("monsoon_evening_peak", "multi_event_collision_kalupur"):
+            sc = get_scenario(sid)
+            assert sc.forced_events, sid
+            for fe in sc.forced_events:
+                assert fe["segment_id"] in sc.route_segment_ids, (sid, fe["segment_id"])
+                assert network.get(fe["segment_id"]) is not None, (sid, fe["segment_id"])
+        waterlogged = {
+            sid: [fe["segment_id"] for fe in get_scenario(sid).forced_events
+                  if fe["type"] == "waterlogging"]
+            for sid in ("monsoon_evening_peak", "multi_event_collision_kalupur")
+        }
+        assert waterlogged == {"monsoon_evening_peak": [1014],
+                               "multi_event_collision_kalupur": [1005]}
+
+    def test_the_monsoon_anchor_floods_a_low_lying_segment(self, network):
+        """The low-lying set keeps a segment on the monsoon anchor's route:
+        its scheduled waterlogging is on the Kalupur station approach
+        (Station Road 1014), so the stochastic model floods the same place
+        more readily.  1024 is the Gandhinagar Highway north of the Indira
+        Bridge on the real network, about 10 km from Kalupur — not low-lying.
+        The committed library (what the impact harness reads) says the same."""
+        sc = get_scenario("monsoon_evening_peak")
+        flooded = [fe["segment_id"] for fe in sc.forced_events if fe["type"] == "waterlogging"]
+        assert flooded == [1014]
+        assert network.require(1014).is_low_lying
+        assert not network.require(1024).is_low_lying
+        assert set(sc.route_segment_ids) & {
+            sid for sid, seg in network.segments.items() if seg.is_low_lying
+        } == {1014}
+        committed = json.loads(
+            (REPO / "scripts" / "scenario_library.json").read_text(encoding="utf-8"))
+        flags = {s["segment_id"]: s["low_lying"] for s in committed["network"]["segments"]}
+        assert {sid for sid, low in flags.items() if low} == {
+            sid for sid, seg in network.segments.items() if seg.is_low_lying
+        }
 
     def test_all_routes_exist_in_seed_network(self, network):
         for sid in list_scenarios():
@@ -840,8 +933,9 @@ class TestNetwork:
         harness_segments, harness_junctions = mod.parse_seed(SEED_SQL)
         net = from_seed_sql(SEED_SQL)
         assert len(net) == len(harness_segments)
-        # unsignalized seed junctions: 3 roundabouts + J15 (unsignalized
-        # Tilak Rd / Station Rd intersection — keeps the seed equal to live)
+        # unsignalized seed junctions: 3 roundabouts + J15 (the unsignalized
+        # Kalupur intersection where Relief Road, Gandhi Road, Station Road
+        # and Sarangpur Road meet — keeps the seed equal to live)
         assert net.n_signalized_junctions + 4 == harness_junctions
         for hs in harness_segments:
             seg = net.require(hs["id"])
@@ -860,3 +954,709 @@ class TestNetwork:
             assert 0 < seg.base_peak_demand_veh_h
             # peak demand at tod=1.0 stays under raw saturation capacity
             assert seg.base_peak_demand_veh_h <= 1800.0 * seg.lanes + 1e-6
+
+
+# ─── time zone: equivalent instants, identical twin ─────────────────────────
+
+
+class TestTimezoneEquivalence:
+    IST_STAMP = "2026-10-22T09:00:00+05:30"
+    UTC_STAMP = "2026-10-22T03:30:00+00:00"
+
+    def test_tod_and_weather_read_ist(self):
+        from traffic_oracle.simulation.tod import (
+            infer_weather_at,
+            time_of_day_demand,
+            to_ist,
+        )
+
+        ist = datetime.fromisoformat(self.IST_STAMP)
+        utc = datetime.fromisoformat(self.UTC_STAMP)
+        naive = datetime.fromisoformat("2026-10-22T09:00:00")  # naive = IST
+        assert time_of_day_demand(ist) == time_of_day_demand(utc)
+        assert time_of_day_demand(naive) == time_of_day_demand(ist)
+        assert infer_weather_at(utc) == infer_weather_at(ist)
+        assert to_ist(utc).hour == 9 and to_ist(utc).minute == 0
+
+    def test_equivalent_instants_give_identical_twin_metrics(self, engine):
+        runs = {}
+        for stamp in (self.IST_STAMP, self.UTC_STAMP):
+            runs[stamp] = [
+                r.to_dict() for r in engine.run(
+                    route_segment_ids=[1001, 1002, 1009],
+                    departure_time=datetime.fromisoformat(stamp),
+                    closure_policy=ClosurePolicy(120, "full_closure"),
+                    horizon_min=45, n_replications=3, seed=99,
+                )
+            ]
+        assert runs[self.IST_STAMP] == runs[self.UTC_STAMP]
+        # and it is the morning peak, not the 03:30 night trough
+        assert runs[self.IST_STAMP][0]["total_disruption_vehicle_hours"] > 10.0
+
+    def test_equivalent_instants_identical_through_http(self, client):
+        a = client.post("/api/v1/simulate/twin",
+                        json=_twin_payload(departure_time=self.IST_STAMP)).json()
+        b = client.post("/api/v1/simulate/twin",
+                        json=_twin_payload(departure_time=self.UTC_STAMP)).json()
+        assert a["runs"] == b["runs"]
+        assert a["departure_time"] == b["departure_time"] == self.IST_STAMP
+
+    def test_calibration_buckets_are_read_at_their_ist_midpoint(self):
+        from traffic_oracle.simulation.calibration import bucket_midpoint, model_speed_kmh
+
+        net = default_network()
+        hour_utc = datetime.fromisoformat("2026-10-22T03:00:00+00:00")
+        mid = bucket_midpoint(hour_utc)
+        assert mid.isoformat() == "2026-10-22T03:30:00+00:00"  # = 09:00 IST
+        assert model_speed_kmh(net, 1001, mid) == model_speed_kmh(
+            net, 1001, datetime.fromisoformat("2026-10-22T09:00:00+05:30")
+        )
+
+
+# ─── calibration: scale direction + MAE of the engine's own formula ─────────
+
+
+class TestCalibrationFit:
+    def _samples(self, scale):
+        from traffic_oracle.simulation.calibration import _row_iter
+
+        net = replay_network()
+        return net, list(_row_iter(model_rows(scale=scale), net))
+
+    def test_more_field_capacity_fits_a_scale_above_one(self):
+        from traffic_oracle.simulation.calibration import fit_class_scales
+
+        net, samples = self._samples(1.3)
+        fits = fit_class_scales(samples, net)
+        assert fits, "no classes fitted"
+        for cls, fit in fits.items():
+            assert fit["scale"] == pytest.approx(1.3, abs=0.011), cls
+            assert fit["mae_after"] < fit["mae_before"] or fit["mae_before"] < 1e-9
+
+    def test_less_field_capacity_fits_a_scale_below_one(self):
+        from traffic_oracle.simulation.calibration import fit_class_scales
+
+        net, samples = self._samples(0.8)
+        fits = fit_class_scales(samples, net)
+        sensitive = {c: f for c, f in fits.items() if f["mae_before"] > 0.05}
+        assert sensitive, "the synthetic truth must move at least one class"
+        for cls, fit in sensitive.items():
+            assert fit["scale"] == pytest.approx(0.8, abs=0.011), cls
+            assert fit["mae_after"] < fit["mae_before"]
+
+    def test_fit_is_never_worse_than_uncalibrated(self):
+        from traffic_oracle.simulation.calibration import _row_iter, fit_class_scales
+
+        net = replay_network()
+        rng = SeededRng(derive_seed("calibration-noise"))
+        rows = model_rows(noise=lambda i, h: rng.uniform(-6.0, 6.0))
+        fits = fit_class_scales(list(_row_iter(rows, net)), net)
+        for fit in fits.values():
+            assert fit["mae_after"] <= fit["mae_before"] + 1e-12
+
+    def test_replay_calibrates_the_direction_end_to_end(self):
+        import asyncio as _asyncio
+
+        from traffic_oracle.simulation.calibration import run_replay
+
+        pool = ReplayPool(rows=model_rows(scale=1.3))
+        start = datetime.fromisoformat("2026-10-05T00:00:00+00:00")
+        report = _asyncio.run(run_replay(pool, start, start + timedelta(days=1)))
+        assert report["calibrated"] is True
+        assert report["adjusted_speed_mae_kmh"] < report["speed_mae_kmh"]
+        assert all(k >= 1.25 for k in report["per_road_class_capacity_scale"].values())
+        assert CALIBRATION.calibrated is True
+        assert CALIBRATION.capacity_scale >= 1.25
+
+    def test_a_twin_that_does_not_fit_stays_uncalibrated_and_unscaled(self):
+        import asyncio as _asyncio
+
+        from traffic_oracle.simulation.calibration import run_replay
+
+        rows = model_rows(noise=lambda i, h: 25.0 if (i + h) % 2 else -25.0)
+        pool = ReplayPool(rows=rows)
+        start = datetime.fromisoformat("2026-10-05T00:00:00+00:00")
+        report = _asyncio.run(run_replay(pool, start, start + timedelta(days=1)))
+        assert report["calibrated"] is False
+        assert CALIBRATION.calibrated is False
+        assert CALIBRATION.capacity_scale == 1.0
+        assert CALIBRATION.per_road_class_scale == {}
+        assert "does not fit" in (CALIBRATION.reason or "")
+
+    def test_one_busy_hour_never_calibrates_however_well_it_fits(self):
+        import asyncio as _asyncio
+
+        from traffic_oracle.simulation.calibration import MIN_FIELD_HOURS, run_replay
+
+        # 8 segments x 6 hours = 48 aggregates (>= 30) that ARE the model:
+        # a perfect fit, but on 6 distinct field hours of the 24 required.
+        pool = ReplayPool(rows=model_rows(hours=6))
+        start = datetime.fromisoformat("2026-10-05T00:00:00+00:00")
+        report = _asyncio.run(run_replay(pool, start, start + timedelta(days=1)))
+        assert report["n_observations"] == 48
+        assert report["adjusted_speed_mae_kmh"] < 0.01
+        assert report["field_hours"] == 6
+        assert report["min_field_hours"] == MIN_FIELD_HOURS == 24
+        assert report["calibrated"] is False
+        assert CALIBRATION.calibrated is False
+        assert CALIBRATION.reason == "field history too thin: 6 field hours of 24 required"
+        assert CALIBRATION.capacity_scale == 1.0
+
+    def test_the_ledger_records_the_field_hours_behind_a_fit(self):
+        import asyncio as _asyncio
+        import json as _json
+
+        from traffic_oracle.simulation.calibration import persist_calibration, run_replay
+
+        pool = ReplayPool(rows=model_rows(scale=1.1))
+        start = datetime.fromisoformat("2026-10-05T00:00:00+00:00")
+        report = _asyncio.run(run_replay(pool, start, start + timedelta(days=1)))
+        assert report["calibrated"] is True
+        assert report["field_hours"] == 24
+        assert "(24 field hours)" in (CALIBRATION.reason or "")
+        assert _asyncio.run(persist_calibration(pool, report)) == 7
+        _sql, args = pool.inserts[0]
+        details = _json.loads(args[7])
+        assert details["field_hours"] == 24 and details["min_field_hours"] == 24
+
+
+# ─── per-approach greens from the serving phase (C6) ────────────────────────
+
+
+class TestApproachGreens:
+    def test_through_and_cross_get_their_serving_phase(self):
+        from traffic_oracle.simulation.calibration import approach_green_overrides
+
+        ov = approach_green_overrides([J1_PROGRAM], J1_LEGS)
+        assert ov[1001]["green_ratio"] == pytest.approx(0.47)
+        assert ov[1002]["green_ratio"] == pytest.approx(0.47)
+        assert ov[1001]["movement"] == "through"
+        assert ov[1015]["green_ratio"] == pytest.approx(0.38)
+        assert ov[1015]["movement"] == "cross"
+        # the old Σgreen/cycle (0.85) is never a segment's green
+        assert all(v["green_ratio"] < 0.5 for v in ov.values())
+
+    def test_a_segment_on_two_programmed_junctions_keeps_the_binding_green(self):
+        from traffic_oracle.simulation.calibration import approach_green_overrides
+
+        j7 = {"junction_id": 7, "cycle_sec": 100, "source": "osm_assumed",
+              "phases": [{"green_sec": 47, "movements": ["through"]},
+                         {"green_sec": 30, "movements": ["cross"]}]}
+        legs7 = [
+            {"junction_id": 7, "segment_id": 1002, "road_class": "secondary",
+             "bearing_deg": 180.0},
+            {"junction_id": 7, "segment_id": 1009, "road_class": "trunk",
+             "bearing_deg": 345.5},
+            {"junction_id": 7, "segment_id": 1041, "road_class": "trunk",
+             "bearing_deg": 165.0},
+        ]
+        ov = approach_green_overrides([J1_PROGRAM, j7], J1_LEGS + legs7)
+        # 1002 is J1's through (0.47) but J7's cross (0.30): binding = 0.30
+        assert ov[1002]["green_ratio"] == pytest.approx(0.30)
+        assert ov[1002]["junction_id"] == 7
+
+    def test_compass_programs_map_by_approach_axis(self):
+        from traffic_oracle.simulation.calibration import approach_green_overrides
+
+        prog = {"junction_id": 9, "cycle_sec": 90, "source": "calibrated",
+                "phases": [{"green_sec": 40, "movements": ["NS"]},
+                           {"green_sec": 30, "movements": ["EW"]}]}
+        legs = [
+            {"junction_id": 9, "segment_id": 1, "road_class": "primary", "bearing_deg": 0.0},
+            {"junction_id": 9, "segment_id": 2, "road_class": "primary", "bearing_deg": 90.0},
+        ]
+        ov = approach_green_overrides([prog], legs)
+        assert ov[1]["movement"] == "NS" and ov[1]["green_ratio"] == pytest.approx(40 / 90)
+        assert ov[2]["movement"] == "EW" and ov[2]["green_ratio"] == pytest.approx(30 / 90)
+
+    def test_only_junction_legs_become_signalized(self):
+        from traffic_oracle.simulation.calibration import (
+            apply_signal_overrides,
+            approach_green_overrides,
+        )
+
+        net = default_network()
+        before = {sid: seg.signalized for sid, seg in net.segments.items()}
+        n = apply_signal_overrides(net, approach_green_overrides([J1_PROGRAM], J1_LEGS))
+        assert n == 3
+        changed = {sid for sid, seg in net.segments.items() if seg.signalized != before[sid]}
+        assert changed <= {1001, 1002, 1015}
+        # Ashram Road (South): 4 lanes (OpenStreetMap: 2 per carriageway)
+        assert net.require(1001).capacity_veh_h == pytest.approx(1800 * 4 * 0.47)
+
+
+# ─── recovery vs the paired no-closure counterfactual ───────────────────────
+
+
+class TestPairedRecovery:
+    def _scenario_runs(self, scenario_id, engine):
+        sc = get_scenario(scenario_id)
+        return engine.run(
+            route_segment_ids=list(sc.route_segment_ids),
+            departure_time=sc.departure_dt(),
+            closure_policy=ClosurePolicy(**sc.closure_policy),
+            horizon_min=sc.horizon_min,
+            n_replications=sc.n_replications,
+            seed=sc.seed,
+            weather=sc.weather_state(),
+            event_config=sc.event_config(),
+            scheduled_events=sc.scheduled_events(),
+        )
+
+    def test_off_peak_closure_recovers_and_is_not_censored(self, engine):
+        runs = self._scenario_runs("night_owl_low_demand", engine)
+        assert all(not r.censored and r.recovered for r in runs)
+        d = runs[0].to_dict()
+        assert d["censored"] is False
+        assert d["recovery_basis"] == "paired_no_closure"
+        assert 0.0 <= d["recovery_sec"] < 600.0
+
+    def test_oversaturated_peak_is_censored_not_a_measurement(self, engine):
+        runs = self._scenario_runs("monsoon_evening_peak", engine)
+        assert all(r.censored and not r.recovered for r in runs)
+        sc = get_scenario("monsoon_evening_peak")
+        for r in runs:
+            # censored lower bound: the horizon remainder after the closure
+            assert r.recovery_sec <= sc.horizon_min * 60.0
+
+    def test_compare_summary_counts_censored_runs(self, client):
+        body = client.post("/api/v1/simulate/twin/compare", json={
+            "scenario_id": "monsoon_evening_peak",
+            "candidate_policy": {"advance_closure_sec": 60,
+                                 "closure_type": "full_closure"},
+            "n_replications": 2,
+        }).json()
+        assert body["baseline"]["summary"]["recovery_censored_runs"] == 2
+        assert "recovery_censored_runs" not in body["deltas"]
+
+    def test_signal_fault_now_cuts_signalized_capacity(self, network):
+        from traffic_oracle.simulation.events import ScheduledEvent
+
+        sid = next(s for s, seg in network.segments.items() if seg.signalized)
+        t0 = datetime.fromisoformat("2026-10-13T13:40:00+05:30")
+        common = dict(
+            replication=0, network=network, route_segment_ids=[sid],
+            departure_time=t0, closure_policy=ClosurePolicy(60, "signal_hold"),
+            horizon_sec=1800.0, seed=5, event_config=EventConfig(disable_all=True),
+        )
+        calm = run_replication(**common)
+        fault = run_replication(
+            **common,
+            scheduled_events=[ScheduledEvent(EventType.SIGNAL_FAULT, sid, 0.0, 1800.0, 0.9)],
+        )
+        assert fault.total_disruption_vehicle_hours > calm.total_disruption_vehicle_hours
+
+
+# ─── forecast coupling + route coverage honesty ─────────────────────────────
+
+
+class TestCouplingHonesty:
+    def _app(self, forecaster):
+        app = FastAPI()
+        app.include_router(sim_router)
+        app.state.pool = None
+        app.state.forecaster = forecaster
+        return TestClient(app)
+
+    def test_empty_forecast_reports_internal_with_coverage(self):
+        class EmptyForecaster:
+            last_forecast_rung = "heuristic"
+
+            async def predict(self, segment_ids, horizons_min=None):
+                return {}
+
+        body = self._app(EmptyForecaster()).post(
+            "/api/v1/simulate/twin", json=_twin_payload()
+        ).json()
+        assert body["forecast_coupling"] == "internal"
+        assert body["forecast_coverage"] == {"covered": 0, "route_segments": 3}
+
+    def test_covered_route_names_the_producing_rung(self):
+        class Meta:
+            rung = "foundation"
+
+        class FoundationForecaster:
+            async def predict_with_meta(self, segment_ids, horizons_min=None):
+                rows = {
+                    sid: {h: {"speed_kmh": 40.0, "congestion_idx": 0.0}
+                          for h in horizons_min}
+                    for sid in segment_ids[:2]
+                }
+                return rows, Meta()
+
+        body = self._app(FoundationForecaster()).post(
+            "/api/v1/simulate/twin", json=_twin_payload()
+        ).json()
+        assert body["forecast_coupling"] == "foundation"
+        assert body["forecast_coverage"] == {"covered": 2, "route_segments": 3}
+
+    def test_true_zero_congestion_survives_shape_normalisation(self):
+        from traffic_oracle.simulation.engine import shapes_from_forecaster
+
+        shapes = shapes_from_forecaster(
+            {7: {5: {"speed_kmh": 0.0, "congestion_idx": 0.0},
+                 10: {"speed_kmh": 30.0, "congestion_idx": float("nan")}}}
+        )
+        assert shapes == {7: {5: {"speed_kmh": 0.0, "congestion_idx": 0.0}}}
+
+    def test_route_coverage_says_what_the_twin_modelled(self, client):
+        unknown = client.post("/api/v1/simulate/twin",
+                              json=_twin_payload(route_segment_ids=[1, 2, 3])).json()
+        assert unknown["route_coverage"] == {"modelled": 0, "requested": 3}
+        known = client.post("/api/v1/simulate/twin", json=_twin_payload()).json()
+        assert known["route_coverage"] == {"modelled": 3, "requested": 3}
+
+
+# ─── calibration ledger + scheduler ─────────────────────────────────────────
+
+
+class TestCalibrationLedgerAndScheduler:
+    def test_reload_restores_a_recent_calibrated_row(self):
+        import asyncio as _asyncio
+
+        from traffic_oracle.simulation.calibration import reload_calibration
+
+        CALIBRATION.mark_uncalibrated("test start")
+        now = datetime.now().astimezone()
+        pool = ReplayPool(latest={
+            "calibration_id": 11, "window_start": now - timedelta(days=7),
+            "window_end": now, "n_observations": 480, "speed_mae_kmh": 2.4,
+            "capacity_scale": 1.12, "per_road_class_scale": '{"trunk": 1.12}',
+            "calibrated": True, "details": "{}", "created_at": now,
+        })
+        assert _asyncio.run(reload_calibration(pool)) is True
+        assert CALIBRATION.calibrated is True
+        assert CALIBRATION.per_road_class_scale == {"trunk": 1.12}
+        assert CALIBRATION.calibration_id == 11
+        sql, args = pool.fetchrow_args[-1]
+        assert "FROM simulation.calibrations WHERE created_at >= $1" in sql
+        age = datetime.now().astimezone() - args[0]
+        assert timedelta(days=6, hours=23) < age < timedelta(days=7, hours=1)
+
+    def test_reload_of_a_failed_fit_keeps_the_twin_uncalibrated(self):
+        import asyncio as _asyncio
+
+        from traffic_oracle.simulation.calibration import reload_calibration
+
+        now = datetime.now().astimezone()
+        pool = ReplayPool(latest={
+            "calibration_id": 12, "window_start": now, "window_end": now,
+            "n_observations": 480, "speed_mae_kmh": 9.7, "capacity_scale": 1.0,
+            "per_road_class_scale": "{}", "calibrated": False, "details": "{}",
+            "created_at": now,
+        })
+        assert _asyncio.run(reload_calibration(pool)) is False
+        assert CALIBRATION.calibrated is False
+        assert "did not fit" in CALIBRATION.reason
+
+    def test_reload_of_a_thin_history_replay_says_so_not_misfit(self):
+        import asyncio as _asyncio
+        import json as _json
+
+        from traffic_oracle.simulation.calibration import reload_calibration
+
+        now = datetime.now().astimezone()
+        pool = ReplayPool(latest={
+            "calibration_id": 13, "window_start": now, "window_end": now,
+            "n_observations": 40, "speed_mae_kmh": 0.8, "capacity_scale": 1.0,
+            "per_road_class_scale": "{}", "calibrated": False,
+            "details": _json.dumps({"field_hours": 1, "min_field_hours": 24,
+                                    "min_rows_for_calibration": 30}),
+            "created_at": now,
+        })
+        assert _asyncio.run(reload_calibration(pool)) is False
+        assert CALIBRATION.calibrated is False
+        assert CALIBRATION.reason == (
+            "last field replay #13 stood on 1 field hours of 24 required"
+        )
+
+    def test_simulated_feed_only_defers_with_the_explicit_reason(self):
+        import asyncio as _asyncio
+
+        from traffic_oracle.simulation.calibration import REASON_SIMULATED_ONLY
+        from traffic_oracle.simulation.scheduler import CalibrationScheduler
+
+        CALIBRATION.mark_uncalibrated("test start")
+        pool = ReplayPool(rows=model_rows(), field_hours=0,
+                          has_real=False, has_synthetic=True)
+        result = _asyncio.run(CalibrationScheduler(pool).check_and_run())
+        assert result["status"] == "waiting_for_field_data"
+        assert CALIBRATION.calibrated is False
+        assert CALIBRATION.reason == REASON_SIMULATED_ONLY
+        assert REASON_SIMULATED_ONLY == "no field observations — simulated feed only"
+        assert CALIBRATION.readiness() == (False, REASON_SIMULATED_ONLY)
+        assert pool.inserts == []  # nothing replayed, nothing ledgered
+
+    def test_partial_field_history_names_the_hours(self):
+        import asyncio as _asyncio
+
+        from traffic_oracle.simulation.scheduler import CalibrationScheduler
+
+        CALIBRATION.mark_uncalibrated("test start")
+        pool = ReplayPool(field_hours=5, has_real=True)
+        _asyncio.run(CalibrationScheduler(pool).check_and_run())
+        assert CALIBRATION.reason == "field history 5h of 24h required"
+
+    def test_enough_field_hours_replay_and_ledger(self):
+        import asyncio as _asyncio
+
+        from traffic_oracle.simulation.scheduler import CalibrationScheduler
+
+        CALIBRATION.mark_uncalibrated("test start")
+        pool = ReplayPool(rows=model_rows(scale=1.1), field_hours=30, has_real=True)
+        scheduler = CalibrationScheduler(pool)
+        result = _asyncio.run(scheduler.check_and_run())
+        assert result["status"] == "replay_ok"
+        assert CALIBRATION.calibrated is True
+        assert len(pool.inserts) == 1
+        assert scheduler.health()["runs"] == 1
+
+    def test_prime_makes_the_reason_final_before_the_first_decision(self):
+        """Restart over a thin-history ledger row on a simulated-only feed:
+        after the prime the twin quotes the explicit simulated-feed reason —
+        not the reload's ledger reason, not the 'not yet checked' placeholder
+        — before the situation engine makes its first decision."""
+        import asyncio as _asyncio
+        import json as _json
+
+        from traffic_oracle.simulation.calibration import REASON_SIMULATED_ONLY
+        from traffic_oracle.simulation.scheduler import CalibrationScheduler
+
+        CALIBRATION.mark_uncalibrated("not yet checked for field observations")
+        now = datetime.now().astimezone()
+        pool = ReplayPool(field_hours=0, has_real=False, has_synthetic=True, latest={
+            "calibration_id": 13, "window_start": now - timedelta(days=9),
+            "window_end": now - timedelta(days=8), "n_observations": 40,
+            "speed_mae_kmh": 11.39, "capacity_scale": 1.0,
+            "per_road_class_scale": "{}", "calibrated": False,
+            "details": _json.dumps({"field_hours": 1, "min_field_hours": 24,
+                                    "min_rows_for_calibration": 30}),
+            "created_at": now,
+        })
+        scheduler = CalibrationScheduler(pool)
+        result = _asyncio.run(scheduler.prime())
+        assert result["primed"] is True and result["status"] == "waiting_for_field_data"
+        assert result["reason"] == REASON_SIMULATED_ONLY
+        assert CALIBRATION.readiness() == (False, REASON_SIMULATED_ONLY)
+        health = scheduler.health()
+        assert health["primed"] is True and health["checks"] == 1
+        assert health["reloaded_calibrated"] is False and health["prime_ms"] is not None
+        assert pool.inserts == []  # no field hours: nothing replayed
+        # The reloaded replay's facts are labelled apart from the coverage.
+        state = CALIBRATION.to_dict()
+        assert state["field_hours"] == 0
+        assert state["last_replay"]["origin"] == "ledger"
+        assert state["last_replay"]["calibration_id"] == 13
+        assert state["last_replay"]["field_hours"] == 1
+        assert state["last_replay"]["speed_mae_kmh"] == 11.39
+        assert state["last_replay"]["calibrated"] is False
+
+    def test_prime_replays_when_field_hours_suffice(self):
+        import asyncio as _asyncio
+
+        from traffic_oracle.simulation.scheduler import CalibrationScheduler
+
+        CALIBRATION.mark_uncalibrated("not yet checked for field observations")
+        pool = ReplayPool(rows=model_rows(scale=1.1), field_hours=30, has_real=True)
+        scheduler = CalibrationScheduler(pool)
+        result = _asyncio.run(scheduler.prime())
+        assert result["primed"] is True and result["status"] == "replay_ok"
+        assert result["calibrated"] is True and CALIBRATION.calibrated is True
+        assert len(pool.inserts) == 1
+        last = CALIBRATION.to_dict()["last_replay"]
+        assert last["origin"] == "replayed" and last["field_hours"] == 24
+        assert last["calibrated"] is True
+
+    def test_prime_is_bounded_and_never_fatal(self):
+        import asyncio as _asyncio
+        import time as _time
+
+        from traffic_oracle.simulation.scheduler import CalibrationScheduler
+
+        class HangingPool(ReplayPool):
+            """A database that stops answering.  Like asyncpg, cancelling
+            the hung query ALSO waits on the server (cancel request,
+            connection reset) — so the bound must abandon the prime, not
+            await its cleanup (asyncio.wait_for would hold startup here)."""
+
+            def __init__(self, back):
+                super().__init__()
+                self.back = back
+
+            async def fetchrow(self, sql, *args):
+                try:
+                    await self.back.wait()
+                except _asyncio.CancelledError:
+                    await self.back.wait()  # cleanup talks to the server
+                    raise
+                return await super().fetchrow(sql, *args)
+
+        class DownPool(ReplayPool):
+            async def fetchrow(self, sql, *args):
+                if "count(DISTINCT hour_utc)" in sql:
+                    raise ConnectionError("database unavailable")
+                return await super().fetchrow(sql, *args)
+
+        CALIBRATION.mark_uncalibrated("not yet checked for field observations")
+
+        async def hung_start():
+            back = _asyncio.Event()
+            # safety valve: a regression fails the timing assert, never hangs
+            _asyncio.get_running_loop().call_later(1.5, back.set)
+            scheduler = CalibrationScheduler(HangingPool(back), prime_timeout_sec=0.05)
+            started = _time.monotonic()
+            result = await _asyncio.wait_for(scheduler.prime(), timeout=2.0)
+            elapsed = _time.monotonic() - started
+            back.set()  # the database answers again; the abandoned prime unwinds
+            await scheduler.stop()
+            return result, elapsed, scheduler.health()
+
+        result, elapsed, health = _asyncio.run(hung_start())
+        assert elapsed < 1.0  # the oracle still starts
+        assert result["primed"] is False and result["status"] == "prime_timeout"
+        assert "no answer within 0.05 s" in health["last_error"]
+        down = CalibrationScheduler(DownPool())
+        result = _asyncio.run(down.prime())
+        assert result["primed"] is False and result["status"] == "prime_failed"
+        assert "ConnectionError" in down.health()["last_error"]
+        assert CALIBRATION.calibrated is False  # fail closed throughout
+
+    def test_a_primed_scheduler_waits_a_full_interval_before_rechecking(self):
+        import asyncio as _asyncio
+
+        from traffic_oracle.simulation.scheduler import CalibrationScheduler
+
+        async def scenario():
+            scheduler = CalibrationScheduler(ReplayPool(field_hours=0))
+            await scheduler.prime()
+            scheduler.start()
+            await _asyncio.sleep(0.05)
+            health = scheduler.health()
+            await scheduler.stop()
+            return health
+
+        health = _asyncio.run(scenario())
+        assert health["checks"] == 1  # the prime's check only
+        assert health["next_check_in_sec"] > 3500
+
+    def test_unprimed_scheduler_checks_at_once_and_retries_a_failure_fast(self):
+        import asyncio as _asyncio
+
+        from traffic_oracle.simulation.calibration import REASON_SIMULATED_ONLY
+        from traffic_oracle.simulation.scheduler import CalibrationScheduler
+
+        class FlakyPool(ReplayPool):
+            coverage_calls = 0
+
+            async def fetchrow(self, sql, *args):
+                if "count(DISTINCT hour_utc)" in sql:
+                    self.coverage_calls += 1
+                    if self.coverage_calls == 1:
+                        raise ConnectionError("database unavailable")
+                return await super().fetchrow(sql, *args)
+
+        CALIBRATION.mark_uncalibrated("not yet checked for field observations")
+        pool = FlakyPool(field_hours=0)
+
+        async def scenario():
+            scheduler = CalibrationScheduler(pool, retry_delay_sec=0.02)
+            scheduler.start()  # no prime: reload + check at once, no fixed delay
+            for _ in range(300):
+                await _asyncio.sleep(0.01)
+                if scheduler.last_status == "waiting_for_field_data":
+                    break
+            health = scheduler.health()
+            await scheduler.stop()
+            return health
+
+        health = _asyncio.run(scenario())
+        assert pool.coverage_calls == 2  # failed, then retried in 0.02 s, not 1 h
+        assert health["last_status"] == "waiting_for_field_data"
+        assert health["reloaded_calibrated"] is False  # reloaded before checking
+        assert health["next_check_in_sec"] > 3500  # healthy again: hourly
+        assert CALIBRATION.reason == REASON_SIMULATED_ONLY
+
+    def test_an_abandoned_prime_unwinds_before_the_first_background_check(self):
+        """Two checks (two replays, two ledger rows) never run at once: the
+        background task waits for an abandoned prime to finish unwinding."""
+        import asyncio as _asyncio
+
+        from traffic_oracle.simulation.scheduler import CalibrationScheduler
+
+        class SlowCoveragePool(ReplayPool):
+            def __init__(self, back, **kw):
+                super().__init__(**kw)
+                self.back = back
+                self.in_flight = 0
+                self.max_in_flight = 0
+
+            async def fetchrow(self, sql, *args):
+                if "count(DISTINCT hour_utc)" not in sql:
+                    return await super().fetchrow(sql, *args)
+                self.in_flight += 1
+                self.max_in_flight = max(self.max_in_flight, self.in_flight)
+                try:
+                    await self.back.wait()
+                except _asyncio.CancelledError:
+                    await self.back.wait()
+                    raise
+                finally:
+                    self.in_flight -= 1
+                return await super().fetchrow(sql, *args)
+
+        CALIBRATION.mark_uncalibrated("not yet checked for field observations")
+
+        async def scenario():
+            back = _asyncio.Event()
+            # safety valve: a regression fails the asserts, never hangs
+            _asyncio.get_running_loop().call_later(2.0, back.set)
+            pool = SlowCoveragePool(back, field_hours=0)
+            scheduler = CalibrationScheduler(pool, prime_timeout_sec=0.05)
+            await scheduler.prime()  # abandoned mid-check
+            scheduler.start()
+            await _asyncio.sleep(0.1)
+            waiting = pool.in_flight  # only the abandoned prime's query
+            back.set()
+            for _ in range(200):
+                await _asyncio.sleep(0.01)
+                if scheduler.last_status == "waiting_for_field_data":
+                    break
+            await scheduler.stop()
+            return pool, waiting, scheduler
+
+        pool, waiting, scheduler = _asyncio.run(scenario())
+        assert waiting == 1 and pool.max_in_flight == 1
+        assert scheduler.primed is False and scheduler.prime_status == "prime_timeout"
+        assert scheduler.last_status == "waiting_for_field_data"  # checked after
+
+    def test_replay_reads_the_newest_aggregates_first(self):
+        import asyncio as _asyncio
+
+        from traffic_oracle.simulation.calibration import (
+            _SQL_HOURLY_AGGREGATES,
+            REPLAY_ROW_LIMIT,
+            run_replay,
+        )
+
+        # A week of today's 49-segment corridor (the 1048/1049 connectors
+        # included) fits; if the bound ever truncates, the OLDEST hours drop
+        # (the old ascending LIMIT 5000 fitted only the oldest ~106 h of a
+        # 7-day window).
+        assert REPLAY_ROW_LIMIT >= 49 * 24 * 7
+        assert "ORDER BY hour_utc DESC" in _SQL_HOURLY_AGGREGATES
+        assert "LIMIT $3" in _SQL_HOURLY_AGGREGATES
+
+        class ArgsPool(ReplayPool):
+            aggregate_args: tuple = ()
+
+            async def fetch(self, sql, *args):
+                if "hourly_aggregates" in sql:
+                    self.aggregate_args = args
+                return await super().fetch(sql, *args)
+
+        pool = ArgsPool(rows=model_rows())
+        start = datetime.fromisoformat("2026-10-05T00:00:00+00:00")
+        report = _asyncio.run(run_replay(pool, start, start + timedelta(days=1)))
+        assert pool.aggregate_args[-1] == REPLAY_ROW_LIMIT
+        assert report["row_order"] == "newest_first"
+        assert report["rows_truncated"] is False

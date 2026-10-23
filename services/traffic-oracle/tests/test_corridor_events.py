@@ -3,8 +3,10 @@
 Covers the event-agnostic extensions that must not disturb the VVIP base
 case: SituationInputs public-event profile fields, the merged
 situation-engine subject query (events + legacy movements), the events API
-request model, EMERGENCY_VEHICLE scheduling, and the ambulance-rate
-multiplier.
+request model (incl. the 013 ``officer`` creation actor), the
+/events/active row shape with its lifecycle fields (spines and phases read
+in two batched queries), EMERGENCY_VEHICLE scheduling, and the
+ambulance-rate multiplier.
 """
 
 from __future__ import annotations
@@ -231,11 +233,90 @@ class TestCorridorEventRequest:
                 title="x", route_spines=[{"segment_ids": [1]}],
             )
 
+    def test_officer_is_optional_trimmed_and_bounded(self):
+        req = CorridorEventRequest(
+            event_kind="race", title="x", route_spines=[{"segment_ids": [1]}],
+        )
+        assert req.officer is None
+        req = CorridorEventRequest(
+            event_kind="race", title="x", route_spines=[{"segment_ids": [1]}],
+            officer="  Duty   Officer A ",
+        )
+        assert req.officer == "Duty Officer A"
+        for bad in ("x", "  ", "z" * 65):
+            with pytest.raises(ValueError):
+                CorridorEventRequest(
+                    event_kind="race", title="x", route_spines=[{"segment_ids": [1]}],
+                    officer=bad,
+                )
+
     def test_eight_archetypes(self):
         # 010 (C3 lockstep): + crime_incident + vehicle_pursuit
         assert len(EVENT_KINDS) == 10
         assert "crime_incident" in EVENT_KINDS and "vehicle_pursuit" in EVENT_KINDS
         assert set(USE_CASE_KINDS.values()) <= set(EVENT_KINDS)
+
+
+# ── /events/active row shape (lifecycle fields, batched spines/phases) ──────
+
+
+class _ActiveConn:
+    def __init__(self) -> None:
+        import json as _json
+        import uuid as _uuid
+        from datetime import timezone as _tz
+
+        self.eid = _uuid.UUID("4508d86d-566b-438f-8414-b3d67fd7e6e4")
+        now = datetime(2026, 10, 22, 12, 0, tzinfo=_tz.utc)
+        self.row = {
+            "event_id": self.eid, "event_kind": "vehicle_pursuit", "protection_class": "none",
+            "crowd_class": "LOW", "title": "PURSUIT", "description": "", "status": "active",
+            "movement_id": None, "planned_start": None, "planned_end": None,
+            "actual_start": now, "actual_end": None,
+            "metadata": _json.dumps({"vehicle_id": "v"}), "created_at": now, "updated_at": now,
+            "zone_geojson": None,
+        }
+        self.calls: list[tuple[str, tuple]] = []
+
+    async def fetch(self, sql, *args):
+        from traffic_oracle import events as ev
+
+        self.calls.append((sql, args))
+        if sql == ev._ACTIVE_EVENTS_SQL:
+            return [self.row]
+        if sql == ev._SQL_EVENT_ROUTES:
+            assert list(args[0]) == [self.eid]
+            return [{"event_id": self.eid, "label": "belt", "segment_ids": [1012, 1015]}]
+        if sql == ev._SQL_EVENT_PHASES:
+            start = self.row["actual_start"]
+            return [{"event_id": self.eid, "label": "pursuit",
+                     "window_start": start, "window_end": start,
+                     "closure_policy": '{"closure_type": "signal_hold"}'}]
+        raise AssertionError("unexpected SQL: " + sql[:60])
+
+
+class TestActiveEventsShape:
+    def test_rows_carry_lifecycle_fields_and_batched_children(self):
+        from httpx import ASGITransport, AsyncClient
+
+        from traffic_oracle.__main__ import create_app
+
+        conn = _ActiveConn()
+        app = create_app()
+        app.state.pool = _FakePool(conn)
+
+        async def run():
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
+                return await c.get("/api/v1/events/active")
+
+        r = asyncio.run(run())
+        assert r.status_code == 200, r.text
+        ev = r.json()["events"][0]
+        assert ev["routes"] == [{"label": "belt", "segment_ids": [1012, 1015]}]
+        assert ev["phases"][0]["closure_policy"] == {"closure_type": "signal_hold"}
+        assert ev["actual_start"].startswith("2026-10-22T12:00") and ev["actual_end"] is None
+        assert ev["updated_at"] is not None and ev["metadata"] == {"vehicle_id": "v"}
+        assert len(conn.calls) == 3   # events + ONE spines read + ONE phases read
 
 
 # ── EMERGENCY_VEHICLE scheduling ────────────────────────────────────────────
@@ -259,8 +340,11 @@ class TestEmergencyVehicle:
 
     def test_scheduled_emergency_vehicle_charged_delay(self):
         engine = SimulationEngine(network=default_network())
+        # Ashram Road (North), 1.56 km — long enough for the ambulance to
+        # meet the closure (Ashram Road (South) 1001 is 0.46 km on the real
+        # network)
         kwargs = dict(
-            route_segment_ids=[1001],
+            route_segment_ids=[1002],
             departure_time=datetime.fromisoformat("2026-10-13T18:00:00+05:30"),
             closure_policy=ClosurePolicy(
                 advance_closure_sec=120, closure_type="full_closure"
@@ -275,7 +359,7 @@ class TestEmergencyVehicle:
             scheduled_events=[
                 ScheduledEvent(
                     event_type=EventType.EMERGENCY_VEHICLE,
-                    segment_id=1001, start_sec=60.0, duration_sec=600.0,
+                    segment_id=1002, start_sec=60.0, duration_sec=600.0,
                     severity=0.9, label="ambulance mid-closure",
                 )
             ],
@@ -329,7 +413,9 @@ class TestUseCaseScenarios:
     def test_base_case_reference_values(self):
         s = get_scenario("vvip_convoy_base")
         assert s.vvip_class == "Z+"
-        assert list(s.route_segment_ids) == [1026, 1025, 1024, 1014, 1030]
+        # Gandhinagar -> Koba -> Bhat -> Indira Bridge -> Airport Road ->
+        # Dr. Ambedkar Road into Lal Darwaja: one legal path on the real network
+        assert list(s.route_segment_ids) == [1026, 1025, 1024, 1048, 1028, 1027, 1043]
         assert s.closure_policy == {
             "advance_closure_sec": 180, "closure_type": "full_closure"}
         assert s.seed == 20261102 and s.n_replications == 10

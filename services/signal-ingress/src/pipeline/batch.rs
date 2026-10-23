@@ -137,9 +137,10 @@ mod tests {
     fn sample_obs(speed: f32) -> TrafficObservation {
         TrafficObservation {
             timestamp_ms: 1710000000000,
-            lon: 77.2090,
-            lat: 28.6139,
-            segment_id: "12345".to_string(),
+            // Ashram Road (South), segment 1001 of the Ahmedabad corridor
+            lon: 72.5747,
+            lat: 23.02875,
+            segment_id: "1001".to_string(),
             speed_kmh: speed,
             congestion_index: 0.3,
             source: FeedSource::FleetGps,

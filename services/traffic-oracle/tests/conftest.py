@@ -211,3 +211,21 @@ class MockValkey:
 @pytest.fixture
 def mock_valkey() -> MockValkey:
     return MockValkey()
+
+
+# ─── Probe caches (WP-19) ─────────────────────────────────────────────────────
+
+
+@pytest.fixture(autouse=True)
+def _fresh_schema_probes():
+    """Every test starts with empty relation / column probe caches.
+
+    The readers pick their SQL by a 30 s-cached schema probe
+    (city/common.column_exists — migrations 015 / 018); a DB-tier test
+    that probed a real store must never decide which SQL a later test's
+    fake connection is asked for."""
+    from traffic_oracle.city import common
+
+    common.reset_relation_cache()
+    yield
+    common.reset_relation_cache()

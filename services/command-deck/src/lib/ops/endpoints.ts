@@ -32,17 +32,16 @@ export const ORACLE_V1 = '/api/v1';
 export const BRAIN_API = '/api/convoy';
 
 /**
- * Event emulator — the ONE absolute endpoint, by contract C6: the emulator
- * listens on loopback :8090 and enables CORS for the deck origin, so the deck
- * talks to it directly with an absolute URL in dev and prod. Demo-scoped.
+ * Event emulator. The PRIMARY path is the same-origin proxy prefix
+ * EMULATOR_PROXY_PATH — the vite dev proxy in dev and src/hooks.server.ts in
+ * the adapter-node build both forward `/api/emulator → 127.0.0.1:8090`, so
+ * no browser ever needs the emulator's CORS allowlist (which covers only the
+ * :5173 dev origin; the argus deck serves from :5273 and every absolute call
+ * from there was CORS-blocked before falling back).
  *
- * EMULATOR_PROXY_PATH is the sanctioned optional dev-tidiness proxy entry
- * (vite dev server `/api/emulator → 127.0.0.1:8090`): when the deck is served
- * from an origin the emulator has not allowlisted (e.g. a second dev server
- * on :5174 while the fleet's :5173 is up), the browser fetch of the absolute
- * URL is CORS-blocked, and the client falls back to this same-origin path.
- * The emulator's CORS allowlist includes http://localhost:5173 — the deck's
- * production port — so the absolute URL is the primary path in production.
+ * EMULATOR_BASE (absolute loopback :8090) is a DEV-ONLY second rung, tried
+ * only under the vite dev server when the proxy entry is missing. Production
+ * never requests it.
  */
 export const EMULATOR_BASE = 'http://localhost:8090';
 export const EMULATOR_PROXY_PATH = '/api/emulator';
@@ -65,7 +64,30 @@ export const POLL_MS = {
 	watchlist: 8000,
 	/** Degradation ledger (decisions_log failure taxonomy). */
 	ledger: 10000,
+	/** Interception plan, only while a LIVE vehicle_pursuit is selected. */
+	interception: 6000,
+	/** Cockpit corridor summary (stats pill, live rail, escort HUD) + the ops feed-provenance chip. */
+	corridor: 10000,
+	/** City narrative (GET /city/feed) while the stream follows the city. */
+	feed: 3000,
+	/** Brain posture strip (GET /api/convoy/health + /adaptive/status). */
+	brain: 10000,
+	/** Sighting-retention reaper health (GET /vehicles/retention). */
+	retention: 60000,
+	/** Junction registry + segment lines (static geometry; names for waypoints). */
+	geometry: 300000,
+	/** Approved recommendations (the pursuit chain's human approval, C6). */
+	approved: 15000,
+	/** One emulator run's progress while it runs (C-G GET /runs/{id}). */
+	emulatorRun: 2000,
 } as const;
+
+/**
+ * Network hygiene: a GET path that answered 404 (route not deployed, or no
+ * such row) is not requested again for this long — callers get the same
+ * not-deployed answer from memory instead of a request per poll tick.
+ */
+export const NOT_DEPLOYED_BACKOFF_MS = 60_000;
 
 /** WebSocket ladder grace before falling through to the next rung. */
 export const WS_OPEN_TIMEOUT_MS = 4000;
@@ -73,26 +95,33 @@ export const WS_OPEN_TIMEOUT_MS = 4000;
 // ─── God's-eye canvas endpoints (city-canvas stream, contract C1) ───────────
 //
 // All fixed path templates under the deck origin — served by the vite dev
-// proxy in dev and by src/hooks.server.ts in the adapter-node build. Until
-// the backend streams deploy them, each 404 degrades the matching canvas
-// layer (chip state "not deployed"), never the board.
+// proxy in dev and by src/hooks.server.ts in the adapter-node build. Each
+// list endpoint answers an ENVELOPE ({vehicles|junctions|units|cameras: []});
+// a 404 degrades only the matching canvas layer (chip state "not deployed"),
+// never the board.
 
 /** Road-network geometry for event spines (existing live endpoint). */
 export const SPATIAL_SEGMENTS_API = `${ORACLE_V1}/spatial/segments`;
 
-/** Vehicle registry + earmark state (watchlist-anpr stream; 404 today). */
+/** Earmarked vehicles + last sighting: {vehicles: [...]} (watchlist-anpr). */
 export const VEHICLES_API = `${ORACLE_V1}/vehicles`;
 
-/** Per-vehicle trace (watchlist-anpr stream; 404 today). */
+/**
+ * Per-vehicle trace: GET /{id}/trace?window_sec= (404 'no sightings in
+ * window' on older oracles; 200 with empty geometry once WP-03 lands).
+ */
 export const VEHICLE_TRACE_API = `${ORACLE_V1}/vehicles`; // /{id}/trace
 
-/** City signal-program state (signalling stream; 404 today). */
+/** Per-vehicle raw sightings (newest first) — the trace's fallback rung. */
+export const VEHICLE_SIGHTINGS_API = `${ORACLE_V1}/vehicles`; // /{id}/sightings?limit=
+
+/** City signal-program state: {junctions: [...], city_band} (signalling). */
 export const SIGNALS_STATE_API = `${ORACLE_V1}/signals/state`;
 
-/** Jan Rakshak / police / traffic unit markers (signalling stream; 404 today). */
+/** Agency unit markers: {units: [...]} — dispatch projections + emulated patrols. */
 export const UNITS_API = `${ORACLE_V1}/units`;
 
-/** Camera registry — locations ONLY, never frame data (watchlist-anpr). */
+/** Camera registry {cameras: [...]} — locations + read counts ONLY, never frames (C-C). */
 export const CAMERAS_API = `${ORACLE_V1}/cameras`;
 
 /**
@@ -110,6 +139,15 @@ export const GODS_EYE_MODE_API = '/gods-eye/mode';
  * corridor-store seed/sample_corridor.sql). Fixed constant, not input.
  */
 export const CITY_BBOX = { minLon: 72.5, minLat: 22.95, maxLon: 72.7, maxLat: 23.12 } as const;
+
+/**
+ * The city's road-network extent for geometry reads (contract C-J's city
+ * bbox: lon 72.40–72.80, lat 22.90–23.20). CITY_BBOX is the canvas's boot
+ * VIEW and stops at lon 72.50 — it drops the SP Ring Road (West) segment
+ * at lon 72.48–72.49, so a sighting there would have no road name and no
+ * pursuit anchor. Waypoints, anchors and spine names read through this.
+ */
+export const NETWORK_BBOX = { minLon: 72.4, minLat: 22.9, maxLon: 72.8, maxLat: 23.2 } as const;
 
 // ─── Path parameter validation ───────────────────────────────────────────────
 
@@ -241,12 +279,82 @@ export const DISPATCHES_API = `${ORACLE_V1}/dispatches`;
 /** Corridor events (board reads /events/active here already; POST creates). */
 export const EVENTS_API = `${ORACLE_V1}/events`;
 
-/** City signal plans: GET /plans, POST /plans/apply, POST /restore, GET /history. */
+/** City signal plans: GET /plans, POST /plans/apply. */
 export const SIGNALS_PLANS_API = `${ORACLE_V1}/signals/plans`;
+
+/** Signal program snapshots (applies + restores): GET /signals/history. */
+export const SIGNALS_HISTORY_API = `${ORACLE_V1}/signals/history`;
 
 /** Interception choke ranking: GET /events/{id}/interception-plan (read-only). */
 export const INTERCEPTION_PLAN_PATH = (eventId: string) =>
 	`${EVENTS_API}/${eventId}/interception-plan`;
+
+/** Event lifecycle (contract C-F): POST /events/{id}/status — CITY WRITER. */
+export const EVENT_STATUS_PATH = (eventId: string) => `${EVENTS_API}/${eventId}/status`;
+
+/** One event's audit narrative (contract C-C): GET /events/{id}/audit. */
+export const EVENT_AUDIT_PATH = (eventId: string) => `${EVENTS_API}/${eventId}/audit`;
+
+/** The city narrative (contract C-C): GET /city/feed?since=&limit=&kinds=. */
+export const CITY_FEED_API = `${ORACLE_V1}/city/feed`;
+
+/** The fused city picture (contract C-C) — the junction registry is read from it. */
+export const CITY_ENTITIES_API = `${ORACLE_V1}/city/entities`;
+
+/** Sighting-retention policy + reaper health (C6 / DPDP, WP-03). */
+export const VEHICLE_RETENTION_API = `${ORACLE_V1}/vehicles/retention`;
+
+/** Corridor summary — its quality_mix says whether the traffic feed is simulated. */
+export const CORRIDOR_SUMMARY_API = `${ORACLE_V1}/corridor/summary`;
+
+/** Adaptive degradation + per-subject situation (read-only). */
+export const ADAPTIVE_STATUS_API = `${ORACLE_V1}/adaptive/status`;
+
+/** convoy-brain health: decider tier (model host, p95, latch) + Gemma tier. */
+export const BRAIN_HEALTH_API = `${BRAIN_API}/health`;
+
+/**
+ * Event lifecycle transitions (contract C-F, mirrored from
+ * traffic_oracle/events EVENT_TRANSITIONS): the verb rail offers only these.
+ */
+export const EVENT_TRANSITIONS: Record<string, readonly ('approved' | 'active' | 'completed' | 'cancelled')[]> = {
+	planning: ['approved', 'active', 'cancelled'],
+	approved: ['active', 'cancelled'],
+	active: ['completed', 'cancelled'],
+	completed: [],
+	cancelled: [],
+};
+
+/**
+ * Sighting → road attribution tolerance: the oracle's interception plan
+ * seeds from the nearest segment within this distance
+ * (vehicles/pursuit.py SEGMENT_ATTRIBUTION_TOL_M) — a pursuit anchors the
+ * same way, or not at all.
+ */
+export const PURSUIT_ANCHOR_TOL_M = 300;
+
+// ─── Emulator control plane (contract C-G, via the /api/emulator proxy) ─────
+
+/** Clock compressions the panel offers. */
+export const EMULATOR_CLOCKS = [1, 10, 60] as const;
+
+/**
+ * Flagship ('hero') tapes are capped at ×10: at ×60 one 5 s engine tick
+ * spans 5 simulated minutes and the flagship's 300-s green-corridor windows
+ * alias away (audit: clock-compression aliasing).
+ */
+export const EMULATOR_HERO_CLOCK_CAP = 10;
+export const EMULATOR_HERO_CATEGORIES: readonly string[] = ['multi_event', 'enforcement'];
+export const EMULATOR_HERO_USE_CASES: readonly string[] = ['rath_yatra_monsoon_ambulance', 'watchlist_anpr_sweep'];
+
+/** Suggested unit id per agency for a new request (emulated fleet labels). */
+export const DEFAULT_UNIT_ID: Record<string, string> = {
+	jan_rakshak: 'JR-EM-01',
+	police: 'PCR-EM-01',
+	traffic: 'TP-EM-01',
+	ambulance: '108-EM-01',
+	fire: 'FIRE-EM-01',
+};
 
 /**
  * Degradation ledger: GET /ops/degradation-taxonomy — the recurring-failure
@@ -319,7 +427,7 @@ export const DISPATCH_TRANSITIONS: Record<DispatchState, readonly DispatchState[
  */
 export const CITY_WRITER_POST_PATHS = [
 	'/api/v1/enforcement/recommendations/', // + {id}/decision
-	'/api/v1/events/', // + {event_id}/dispatch, and POST /api/v1/events itself
+	'/api/v1/events/', // + {event_id}/dispatch | {event_id}/status (C-F), and POST /api/v1/events itself
 	'/api/v1/dispatches/', // + {id}/decision | /status
 	'/api/v1/signals/plans/apply',
 	'/api/v1/signals/restore',

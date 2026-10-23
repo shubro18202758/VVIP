@@ -1,0 +1,492 @@
+{
+	"entries": [
+		{
+			"movement_id": "3ef08290-66d8-511b-a25a-3d2967c79985",
+			"situation_class": "RED",
+			"situation_code": "none:GRIDLOCK:RAIN:EXTREME",
+			"severity_score": 11,
+			"transitioned": false,
+			"protection_class": "none",
+			"timestamp_utc": "2026-10-19T09:57:43.787039+00:00"
+		},
+		{
+			"movement_id": "3ef08290-66d8-511b-a25a-3d2967c79985",
+			"situation_class": "RED",
+			"situation_code": "none:GRIDLOCK:RAIN:EXTREME",
+			"severity_score": 11,
+			"transitioned": false,
+			"protection_class": "none",
+			"timestamp_utc": "2026-10-19T09:57:38.781180+00:00"
+		},
+		{
+			"movement_id": "3ef08290-66d8-511b-a25a-3d2967c79985",
+			"situation_class": "RED",
+			"situation_code": "none:GRIDLOCK:RAIN:EXTREME",
+			"severity_score": 11,
+			"transitioned": false,
+			"protection_class": "none",
+			"timestamp_utc": "2026-10-19T09:57:33.775734+00:00"
+		},
+		{
+			"movement_id": "3ef08290-66d8-511b-a25a-3d2967c79985",
+			"situation_class": "RED",
+			"situation_code": "none:GRIDLOCK:RAIN:EXTREME",
+			"severity_score": 11,
+			"transitioned": false,
+			"protection_class": "none",
+			"timestamp_utc": "2026-10-19T09:57:28.771957+00:00"
+		},
+		{
+			"movement_id": "3ef08290-66d8-511b-a25a-3d2967c79985",
+			"situation_class": "RED",
+			"situation_code": "none:GRIDLOCK:RAIN:EXTREME",
+			"severity_score": 13,
+			"transitioned": false,
+			"protection_class": "none",
+			"timestamp_utc": "2026-10-19T09:57:23.767354+00:00"
+		},
+		{
+			"movement_id": "3ef08290-66d8-511b-a25a-3d2967c79985",
+			"situation_class": "RED",
+			"situation_code": "none:GRIDLOCK:RAIN:EXTREME",
+			"severity_score": 13,
+			"transitioned": false,
+			"protection_class": "none",
+			"timestamp_utc": "2026-10-19T09:57:18.763072+00:00"
+		},
+		{
+			"movement_id": "3ef08290-66d8-511b-a25a-3d2967c79985",
+			"situation_class": "RED",
+			"situation_code": "none:GRIDLOCK:RAIN:EXTREME",
+			"severity_score": 13,
+			"transitioned": false,
+			"protection_class": "none",
+			"timestamp_utc": "2026-10-19T09:57:13.757989+00:00"
+		},
+		{
+			"movement_id": "3ef08290-66d8-511b-a25a-3d2967c79985",
+			"situation_class": "RED",
+			"situation_code": "none:GRIDLOCK:RAIN:EXTREME",
+			"severity_score": 13,
+			"transitioned": false,
+			"protection_class": "none",
+			"timestamp_utc": "2026-10-19T09:57:08.754626+00:00"
+		},
+		{
+			"movement_id": "3ef08290-66d8-511b-a25a-3d2967c79985",
+			"situation_class": "RED",
+			"situation_code": "none:GRIDLOCK:RAIN:EXTREME",
+			"severity_score": 13,
+			"transitioned": false,
+			"protection_class": "none",
+			"timestamp_utc": "2026-10-19T09:57:03.750222+00:00"
+		},
+		{
+			"movement_id": "3ef08290-66d8-511b-a25a-3d2967c79985",
+			"situation_class": "RED",
+			"situation_code": "none:GRIDLOCK:RAIN:HIGH",
+			"severity_score": 12,
+			"transitioned": false,
+			"protection_class": "none",
+			"timestamp_utc": "2026-10-19T09:56:58.746811+00:00"
+		},
+		{
+			"movement_id": "3ef08290-66d8-511b-a25a-3d2967c79985",
+			"situation_class": "RED",
+			"situation_code": "none:GRIDLOCK:RAIN:HIGH",
+			"severity_score": 10,
+			"transitioned": false,
+			"protection_class": "none",
+			"timestamp_utc": "2026-10-19T09:56:53.742646+00:00"
+		},
+		{
+			"movement_id": "3ef08290-66d8-511b-a25a-3d2967c79985",
+			"situation_class": "RED",
+			"situation_code": "none:GRIDLOCK:CLEAR:HIGH",
+			"severity_score": 9,
+			"transitioned": false,
+			"protection_class": "none",
+			"timestamp_utc": "2026-10-19T09:56:48.737685+00:00"
+		},
+		{
+			"movement_id": "3ef08290-66d8-511b-a25a-3d2967c79985",
+			"situation_class": "RED",
+			"situation_code": "none:GRIDLOCK:RAIN:EXTREME",
+			"severity_score": 11,
+			"transitioned": false,
+			"protection_class": "none",
+			"timestamp_utc": "2026-10-19T09:54:28.661093+00:00"
+		},
+		{
+			"movement_id": "3ef08290-66d8-511b-a25a-3d2967c79985",
+			"situation_class": "RED",
+			"situation_code": "none:GRIDLOCK:RAIN:EXTREME",
+			"severity_score": 11,
+			"transitioned": false,
+			"protection_class": "none",
+			"timestamp_utc": "2026-10-19T09:54:23.655128+00:00"
+		},
+		{
+			"movement_id": "3ef08290-66d8-511b-a25a-3d2967c79985",
+			"situation_class": "RED",
+			"situation_code": "none:GRIDLOCK:RAIN:EXTREME",
+			"severity_score": 11,
+			"transitioned": false,
+			"protection_class": "none",
+			"timestamp_utc": "2026-10-19T09:54:18.650077+00:00"
+		},
+		{
+			"movement_id": "3ef08290-66d8-511b-a25a-3d2967c79985",
+			"situation_class": "RED",
+			"situation_code": "none:GRIDLOCK:RAIN:EXTREME",
+			"severity_score": 11,
+			"transitioned": false,
+			"protection_class": "none",
+			"timestamp_utc": "2026-10-19T09:54:13.641399+00:00"
+		},
+		{
+			"movement_id": "3ef08290-66d8-511b-a25a-3d2967c79985",
+			"situation_class": "RED",
+			"situation_code": "none:GRIDLOCK:RAIN:EXTREME",
+			"severity_score": 13,
+			"transitioned": false,
+			"protection_class": "none",
+			"timestamp_utc": "2026-10-19T09:54:08.634005+00:00"
+		},
+		{
+			"movement_id": "3ef08290-66d8-511b-a25a-3d2967c79985",
+			"situation_class": "RED",
+			"situation_code": "none:GRIDLOCK:RAIN:EXTREME",
+			"severity_score": 13,
+			"transitioned": false,
+			"protection_class": "none",
+			"timestamp_utc": "2026-10-19T09:54:03.627669+00:00"
+		},
+		{
+			"movement_id": "3ef08290-66d8-511b-a25a-3d2967c79985",
+			"situation_class": "RED",
+			"situation_code": "none:GRIDLOCK:RAIN:EXTREME",
+			"severity_score": 13,
+			"transitioned": false,
+			"protection_class": "none",
+			"timestamp_utc": "2026-10-19T09:53:58.620493+00:00"
+		},
+		{
+			"movement_id": "3ef08290-66d8-511b-a25a-3d2967c79985",
+			"situation_class": "RED",
+			"situation_code": "none:GRIDLOCK:RAIN:EXTREME",
+			"severity_score": 13,
+			"transitioned": false,
+			"protection_class": "none",
+			"timestamp_utc": "2026-10-19T09:53:53.614384+00:00"
+		},
+		{
+			"movement_id": "3ef08290-66d8-511b-a25a-3d2967c79985",
+			"situation_class": "RED",
+			"situation_code": "none:GRIDLOCK:RAIN:EXTREME",
+			"severity_score": 13,
+			"transitioned": true,
+			"protection_class": "none",
+			"timestamp_utc": "2026-10-19T09:53:48.607812+00:00"
+		},
+		{
+			"movement_id": "3ef08290-66d8-511b-a25a-3d2967c79985",
+			"situation_class": "AMBER",
+			"situation_code": "none:GRIDLOCK:RAIN:HIGH",
+			"severity_score": 12,
+			"transitioned": false,
+			"protection_class": "none",
+			"timestamp_utc": "2026-10-19T09:53:43.600426+00:00"
+		},
+		{
+			"movement_id": "3ef08290-66d8-511b-a25a-3d2967c79985",
+			"situation_class": "AMBER",
+			"situation_code": "none:CONGESTED:RAIN:HIGH",
+			"severity_score": 8,
+			"transitioned": false,
+			"protection_class": "none",
+			"timestamp_utc": "2026-10-19T09:53:38.592506+00:00"
+		},
+		{
+			"movement_id": "3ef08290-66d8-511b-a25a-3d2967c79985",
+			"situation_class": "AMBER",
+			"situation_code": "none:CONGESTED:CLEAR:HIGH",
+			"severity_score": 7,
+			"transitioned": false,
+			"protection_class": "none",
+			"timestamp_utc": "2026-10-19T09:53:33.582018+00:00"
+		},
+		{
+			"movement_id": "3ef08290-66d8-511b-a25a-3d2967c79985",
+			"situation_class": "GREEN",
+			"situation_code": "none:FREE_FLOW:CLEAR:HIGH",
+			"severity_score": 2,
+			"transitioned": true,
+			"protection_class": "none",
+			"timestamp_utc": "2026-10-18T15:01:08.295566+00:00"
+		},
+		{
+			"movement_id": "3ef08290-66d8-511b-a25a-3d2967c79985",
+			"situation_class": "RED",
+			"situation_code": "none:FREE_FLOW:CLEAR:HIGH",
+			"severity_score": 2,
+			"transitioned": false,
+			"protection_class": "none",
+			"timestamp_utc": "2026-10-18T15:01:06.289138+00:00"
+		},
+		{
+			"movement_id": "3ef08290-66d8-511b-a25a-3d2967c79985",
+			"situation_class": "RED",
+			"situation_code": "none:FREE_FLOW:CLEAR:HIGH",
+			"severity_score": 2,
+			"transitioned": false,
+			"protection_class": "none",
+			"timestamp_utc": "2026-10-18T15:01:04.273188+00:00"
+		},
+		{
+			"movement_id": "3ef08290-66d8-511b-a25a-3d2967c79985",
+			"situation_class": "RED",
+			"situation_code": "none:FREE_FLOW:CLEAR:HIGH",
+			"severity_score": 2,
+			"transitioned": false,
+			"protection_class": "none",
+			"timestamp_utc": "2026-10-18T15:01:02.267343+00:00"
+		},
+		{
+			"movement_id": "3ef08290-66d8-511b-a25a-3d2967c79985",
+			"situation_class": "RED",
+			"situation_code": "none:GRIDLOCK:RAIN:EXTREME",
+			"severity_score": 11,
+			"transitioned": false,
+			"protection_class": "none",
+			"timestamp_utc": "2026-10-18T14:59:18.751094+00:00"
+		},
+		{
+			"movement_id": "3ef08290-66d8-511b-a25a-3d2967c79985",
+			"situation_class": "RED",
+			"situation_code": "none:GRIDLOCK:RAIN:EXTREME",
+			"severity_score": 11,
+			"transitioned": false,
+			"protection_class": "none",
+			"timestamp_utc": "2026-10-18T14:59:13.746213+00:00"
+		},
+		{
+			"movement_id": "3ef08290-66d8-511b-a25a-3d2967c79985",
+			"situation_class": "RED",
+			"situation_code": "none:GRIDLOCK:RAIN:EXTREME",
+			"severity_score": 11,
+			"transitioned": false,
+			"protection_class": "none",
+			"timestamp_utc": "2026-10-18T14:59:08.741708+00:00"
+		},
+		{
+			"movement_id": "3ef08290-66d8-511b-a25a-3d2967c79985",
+			"situation_class": "RED",
+			"situation_code": "none:GRIDLOCK:RAIN:EXTREME",
+			"severity_score": 11,
+			"transitioned": false,
+			"protection_class": "none",
+			"timestamp_utc": "2026-10-18T14:59:03.735939+00:00"
+		},
+		{
+			"movement_id": "3ef08290-66d8-511b-a25a-3d2967c79985",
+			"situation_class": "RED",
+			"situation_code": "none:GRIDLOCK:RAIN:EXTREME",
+			"severity_score": 11,
+			"transitioned": false,
+			"protection_class": "none",
+			"timestamp_utc": "2026-10-18T14:58:58.731183+00:00"
+		},
+		{
+			"movement_id": "3ef08290-66d8-511b-a25a-3d2967c79985",
+			"situation_class": "RED",
+			"situation_code": "none:GRIDLOCK:RAIN:EXTREME",
+			"severity_score": 11,
+			"transitioned": false,
+			"protection_class": "none",
+			"timestamp_utc": "2026-10-18T14:58:53.726854+00:00"
+		},
+		{
+			"movement_id": "3ef08290-66d8-511b-a25a-3d2967c79985",
+			"situation_class": "RED",
+			"situation_code": "none:GRIDLOCK:RAIN:EXTREME",
+			"severity_score": 11,
+			"transitioned": false,
+			"protection_class": "none",
+			"timestamp_utc": "2026-10-18T14:58:48.722906+00:00"
+		},
+		{
+			"movement_id": "3ef08290-66d8-511b-a25a-3d2967c79985",
+			"situation_class": "RED",
+			"situation_code": "none:GRIDLOCK:RAIN:EXTREME",
+			"severity_score": 11,
+			"transitioned": false,
+			"protection_class": "none",
+			"timestamp_utc": "2026-10-18T14:58:43.716410+00:00"
+		},
+		{
+			"movement_id": "3ef08290-66d8-511b-a25a-3d2967c79985",
+			"situation_class": "RED",
+			"situation_code": "none:GRIDLOCK:RAIN:EXTREME",
+			"severity_score": 13,
+			"transitioned": false,
+			"protection_class": "none",
+			"timestamp_utc": "2026-10-18T14:58:38.711708+00:00"
+		},
+		{
+			"movement_id": "3ef08290-66d8-511b-a25a-3d2967c79985",
+			"situation_class": "RED",
+			"situation_code": "none:GRIDLOCK:RAIN:EXTREME",
+			"severity_score": 13,
+			"transitioned": false,
+			"protection_class": "none",
+			"timestamp_utc": "2026-10-18T14:58:33.707931+00:00"
+		},
+		{
+			"movement_id": "3ef08290-66d8-511b-a25a-3d2967c79985",
+			"situation_class": "RED",
+			"situation_code": "none:GRIDLOCK:RAIN:EXTREME",
+			"severity_score": 13,
+			"transitioned": false,
+			"protection_class": "none",
+			"timestamp_utc": "2026-10-18T14:58:28.703525+00:00"
+		},
+		{
+			"movement_id": "3ef08290-66d8-511b-a25a-3d2967c79985",
+			"situation_class": "RED",
+			"situation_code": "none:GRIDLOCK:RAIN:EXTREME",
+			"severity_score": 13,
+			"transitioned": false,
+			"protection_class": "none",
+			"timestamp_utc": "2026-10-18T14:58:23.698473+00:00"
+		},
+		{
+			"movement_id": "3ef08290-66d8-511b-a25a-3d2967c79985",
+			"situation_class": "RED",
+			"situation_code": "none:GRIDLOCK:RAIN:EXTREME",
+			"severity_score": 13,
+			"transitioned": false,
+			"protection_class": "none",
+			"timestamp_utc": "2026-10-18T14:58:18.693482+00:00"
+		},
+		{
+			"movement_id": "3ef08290-66d8-511b-a25a-3d2967c79985",
+			"situation_class": "RED",
+			"situation_code": "none:GRIDLOCK:RAIN:EXTREME",
+			"severity_score": 13,
+			"transitioned": false,
+			"protection_class": "none",
+			"timestamp_utc": "2026-10-18T14:58:13.688749+00:00"
+		},
+		{
+			"movement_id": "3ef08290-66d8-511b-a25a-3d2967c79985",
+			"situation_class": "RED",
+			"situation_code": "none:GRIDLOCK:RAIN:EXTREME",
+			"severity_score": 13,
+			"transitioned": false,
+			"protection_class": "none",
+			"timestamp_utc": "2026-10-18T14:58:08.673221+00:00"
+		},
+		{
+			"movement_id": "3ef08290-66d8-511b-a25a-3d2967c79985",
+			"situation_class": "RED",
+			"situation_code": "none:GRIDLOCK:RAIN:EXTREME",
+			"severity_score": 13,
+			"transitioned": false,
+			"protection_class": "none",
+			"timestamp_utc": "2026-10-18T14:58:03.668707+00:00"
+		},
+		{
+			"movement_id": "3ef08290-66d8-511b-a25a-3d2967c79985",
+			"situation_class": "RED",
+			"situation_code": "none:GRIDLOCK:RAIN:EXTREME",
+			"severity_score": 13,
+			"transitioned": false,
+			"protection_class": "none",
+			"timestamp_utc": "2026-10-18T14:57:58.663208+00:00"
+		},
+		{
+			"movement_id": "3ef08290-66d8-511b-a25a-3d2967c79985",
+			"situation_class": "RED",
+			"situation_code": "none:GRIDLOCK:RAIN:EXTREME",
+			"severity_score": 13,
+			"transitioned": false,
+			"protection_class": "none",
+			"timestamp_utc": "2026-10-18T14:57:53.660325+00:00"
+		},
+		{
+			"movement_id": "3ef08290-66d8-511b-a25a-3d2967c79985",
+			"situation_class": "RED",
+			"situation_code": "none:GRIDLOCK:RAIN:HIGH",
+			"severity_score": 12,
+			"transitioned": true,
+			"protection_class": "none",
+			"timestamp_utc": "2026-10-18T14:57:48.657570+00:00"
+		},
+		{
+			"movement_id": "3ef08290-66d8-511b-a25a-3d2967c79985",
+			"situation_class": "AMBER",
+			"situation_code": "none:GRIDLOCK:RAIN:HIGH",
+			"severity_score": 12,
+			"transitioned": false,
+			"protection_class": "none",
+			"timestamp_utc": "2026-10-18T14:57:43.652135+00:00"
+		},
+		{
+			"movement_id": "3ef08290-66d8-511b-a25a-3d2967c79985",
+			"situation_class": "AMBER",
+			"situation_code": "none:CONGESTED:RAIN:HIGH",
+			"severity_score": 8,
+			"transitioned": false,
+			"protection_class": "none",
+			"timestamp_utc": "2026-10-18T14:57:38.647956+00:00"
+		},
+		{
+			"movement_id": "3ef08290-66d8-511b-a25a-3d2967c79985",
+			"situation_class": "AMBER",
+			"situation_code": "none:CONGESTED:RAIN:HIGH",
+			"severity_score": 8,
+			"transitioned": false,
+			"protection_class": "none",
+			"timestamp_utc": "2026-10-18T14:57:33.641542+00:00"
+		},
+		{
+			"movement_id": "3ef08290-66d8-511b-a25a-3d2967c79985",
+			"situation_class": "AMBER",
+			"situation_code": "none:CONGESTED:RAIN:HIGH",
+			"severity_score": 8,
+			"transitioned": false,
+			"protection_class": "none",
+			"timestamp_utc": "2026-10-18T14:57:28.635887+00:00"
+		},
+		{
+			"movement_id": "3ef08290-66d8-511b-a25a-3d2967c79985",
+			"situation_class": "AMBER",
+			"situation_code": "none:GRIDLOCK:RAIN:EXTREME",
+			"severity_score": 11,
+			"transitioned": false,
+			"protection_class": "none",
+			"timestamp_utc": "2026-10-18T14:57:24.398110+00:00"
+		},
+		{
+			"movement_id": "3ef08290-66d8-511b-a25a-3d2967c79985",
+			"situation_class": "AMBER",
+			"situation_code": "none:HEAVY:RAIN:EXTREME",
+			"severity_score": 7,
+			"transitioned": true,
+			"protection_class": "none",
+			"timestamp_utc": "2026-10-18T14:57:24.390253+00:00"
+		},
+		{
+			"movement_id": "3ef08290-66d8-511b-a25a-3d2967c79985",
+			"situation_class": "GREEN",
+			"situation_code": "none:CONGESTED:RAIN:HIGH",
+			"severity_score": 8,
+			"transitioned": false,
+			"protection_class": "none",
+			"timestamp_utc": "2026-10-18T14:57:23.629082+00:00"
+		}
+	],
+	"count": 54,
+	"subject": "3ef08290-66d8-511b-a25a-3d2967c79985"
+}

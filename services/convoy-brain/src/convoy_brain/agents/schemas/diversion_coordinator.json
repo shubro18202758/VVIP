@@ -3,10 +3,11 @@
   "title": "DiversionCoordinatorDirectives",
   "type": "object",
   "additionalProperties": false,
-  "required": ["directives", "queue_alerts", "overall_status", "confidence"],
+  "required": ["directives", "queue_alerts", "confidence"],
   "properties": {
     "directives": {
       "type": "array",
+      "maxItems": 6,
       "items": {
         "type": "object",
         "additionalProperties": false,
@@ -19,12 +20,13 @@
             "enum": ["traffic_police", "transport", "security"]
           },
           "timing_sec": { "type": "integer" },
-          "detail": { "type": "string" }
+          "detail": { "type": "string", "maxLength": 120 }
         }
       }
     },
     "queue_alerts": {
       "type": "array",
+      "maxItems": 4,
       "items": {
         "type": "object",
         "additionalProperties": false,
@@ -32,11 +34,10 @@
         "properties": {
           "segment_id": { "type": "integer" },
           "estimated_queue_m": { "type": "number" },
-          "action": { "type": "string" }
+          "action": { "type": "string", "maxLength": 80 }
         }
       }
     },
-    "overall_status": { "type": "string" },
     "confidence": { "type": "string", "enum": ["high", "medium", "low"] }
   }
 }

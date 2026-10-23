@@ -1,0 +1,70 @@
+{
+	"vehicle_id": "1b94e9d2-7e11-4174-a735-7dd3be3189cf",
+	"sightings": [
+		{
+			"sighting_id": "921aa179-e2c4-5065-8dda-b12a9555bcad",
+			"plate": "GJ27EM9001",
+			"camera_id": "EM-CAM-02",
+			"t": "2026-10-18T15:19:59.301446+00:00",
+			"position": [
+				72.573251,
+				23.02397
+			],
+			"speed_kmh": 112,
+			"heading": 78,
+			"vehicle_class": "car",
+			"source": "emulated_anpr",
+			"run_id": 20,
+			"matched_plate_hit": "stolen_vehicle"
+		},
+		{
+			"sighting_id": "99f242d5-1687-5674-a8d0-b7de8f7ecb6d",
+			"plate": "GJ27EM9001",
+			"camera_id": "EM-CAM-01",
+			"t": "2026-10-18T15:06:29.301446+00:00",
+			"position": [
+				72.583048,
+				23.029374
+			],
+			"speed_kmh": 95,
+			"heading": 78,
+			"vehicle_class": "car",
+			"source": "emulated_anpr",
+			"run_id": 20,
+			"matched_plate_hit": "stolen_vehicle"
+		},
+		{
+			"sighting_id": "e2dea6b9-8731-594a-a6a1-95f8557789f2",
+			"plate": "GJ27EM9001",
+			"camera_id": "EM-CAM-04",
+			"t": "2026-10-18T15:03:12.301446+00:00",
+			"position": [
+				72.596416,
+				23.022782
+			],
+			"speed_kmh": 101,
+			"heading": 78,
+			"vehicle_class": "car",
+			"source": "emulated_anpr",
+			"run_id": 20,
+			"matched_plate_hit": "stolen_vehicle"
+		},
+		{
+			"sighting_id": "081bae79-ed3d-57df-9ed2-2196d271f061",
+			"plate": "GJ27EM9001",
+			"camera_id": "EM-CAM-03",
+			"t": "2026-10-18T15:00:23.301446+00:00",
+			"position": [
+				72.584615,
+				23.018854
+			],
+			"speed_kmh": 92,
+			"heading": 78,
+			"vehicle_class": "car",
+			"source": "emulated_anpr",
+			"run_id": 20,
+			"matched_plate_hit": "stolen_vehicle"
+		}
+	],
+	"source": "emulated_anpr"
+}

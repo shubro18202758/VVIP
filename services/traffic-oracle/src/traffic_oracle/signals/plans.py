@@ -46,16 +46,21 @@ share with the minimum floor — a BLACK plan drives cross phases to their
 posture, expressed as a bounded, reversible split change rather than an
 unsafe infinite red.
 
-``active_phase`` / ``phase_timeline``: deterministic phase-in-effect
-function of (epoch seconds, cycle, offset, phases) — the twin's
-clock discipline, reused by GET /api/v1/signals/state so the canvas
-renders the same phase the simulator would.
+``phase_at``: THE shared phase clock — one pure function of (program,
+Unix epoch seconds).  ``pos = (floor(epoch) - offset) mod cycle``, then
+the phases are walked back-to-back from position 0; whatever the greens
+leave over at the end of the cycle is lost time (amber/all-red).  Both
+consumers call it: GET /api/v1/signals/state (the canvas ring, through
+``active_phase``) and the e-challan engine (``enforcement/rules.py``
+``phase_state_at``), so the ring an operator sees and the signal state a
+recommendation cites can never disagree.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Iterable, Mapping, Sequence
+import math
+from dataclasses import dataclass, field
+from typing import Any, Iterable, Mapping, Sequence
 
 from traffic_oracle.adaptive.enums import SituationClass
 
@@ -124,7 +129,12 @@ def city_band_from_status(movements: Mapping[str, Mapping]) -> str:
 
 
 def _phases(raw: object) -> list[dict]:
-    """Coerce a program's ``phases`` JSONB (list | JSON str) to list[dict]."""
+    """Coerce a program's ``phases`` to list[dict].
+
+    Accepts the 006 JSONB shape (list of ``{green_sec, movements}`` or its
+    JSON text) and the rules engine's frozen ``((green_sec, movements),)``
+    tuples, so every caller feeds the same clock.
+    """
     if isinstance(raw, (str, bytes)):
         import json
 
@@ -138,6 +148,13 @@ def _phases(raw: object) -> list[dict]:
     for p in raw:
         if isinstance(p, dict):
             out.append(dict(p))
+        elif (
+            isinstance(p, Sequence)
+            and not isinstance(p, (str, bytes))
+            and len(p) == 2
+        ):
+            green, movements = p
+            out.append({"green_sec": green, "movements": list(movements or ())})
     return out
 
 
@@ -151,66 +168,185 @@ def green_ratio(phases: object, cycle_sec: int) -> float:
     return max(0.05, min(0.95, greens / cycle_sec))
 
 
-def phase_timeline(phases: object, cycle_sec: int, offset_sec: int) -> list[dict]:
-    """Expand phases onto [0, cycle) with start/end offsets applied.
+#: Amber (yellow) interval after every green, seconds — the IRC:93 urban
+#: signal practice.  The seeded programs carry only greens plus a lump of
+#: lost time, so the amber is modelled as the first AMBER_SEC after a
+#: movement's green ends: neither green nor red.  The e-challan engine
+#: never recommends a red-light challan inside it (benefit of the doubt).
+AMBER_SEC = 3
 
-    Deterministic: position k in the list starts at
-    (offset + Σ green[0..k)) mod cycle and runs green_sec.  The remainder
-    of the cycle after the last phase is unallocated lost time (amber/
-    all-red), matching the 006 seed discipline (e.g. cycle 110 = 50+42
-    greens + 18 s lost time).
+
+@dataclass(frozen=True)
+class PhaseState:
+    """What a junction's program shows at one instant (``phase_at``).
+
+    ``index``/``movements``/``green_sec`` name the phase in effect; inside
+    the trailing lost time they name the phase whose green just ended
+    (amber/all-red trails the preceding green) and ``lost`` is True.
+    ``movement_states`` maps EVERY movement label the program defines to
+    green | amber | red; a label the program does not define has no state
+    at all (``state_of`` -> 'none') — never an implied red.
     """
-    ps = _phases(phases)
+
+    index: int | None
+    movements: tuple[str, ...]
+    green_sec: int
+    lost: bool
+    sec_into_cycle: int
+    remaining_sec: int
+    cycle_sec: int
+    movement_states: Mapping[str, str] = field(default_factory=dict)
+
+    def state_of(self, movement: str) -> str:
+        """green | amber | red for a defined movement, 'none' otherwise."""
+        return self.movement_states.get(movement, "none")
+
+    def to_dict(self) -> dict:
+        return {
+            "index": self.index,
+            "movements": list(self.movements),
+            "green_sec": self.green_sec,
+            "lost": self.lost,
+            "sec_into_cycle": self.sec_into_cycle,
+            "remaining_sec": self.remaining_sec,
+            "movement_states": dict(self.movement_states),
+        }
+
+
+def _program_fields(program: object) -> tuple[int, int, list[dict]]:
+    """(cycle_sec, offset_sec, phases) from a mapping or an attribute object
+    (JunctionProgram, the rules engine's SignalContext, a DB row dict)."""
+    if isinstance(program, Mapping):
+        cycle = program.get("cycle_sec", 0)
+        offset = program.get("offset_sec", 0)
+        phases: Any = program.get("phases", [])
+    else:
+        cycle = getattr(program, "cycle_sec", 0)
+        offset = getattr(program, "offset_sec", 0)
+        phases = getattr(program, "phases", [])
+    return int(cycle or 0), int(offset or 0), _phases(phases)
+
+
+def phase_timeline(phases: object, cycle_sec: int) -> list[dict]:
+    """The program's green windows in CYCLE-POSITION time.
+
+    Position 0 is the start of phase 0; phase k runs
+    [Σ green[0..k), Σ green[0..k] ) and the remainder of the cycle after
+    the last green is unallocated lost time (amber/all-red), matching the
+    006 seed discipline (e.g. cycle 110 = 50 + 42 greens + 18 s lost).
+    The junction offset is NOT in these windows: it only shifts the
+    epoch -> position mapping (``phase_at``), so no window ever wraps.
+    """
     timeline: list[dict] = []
-    cursor = int(offset_sec) % int(cycle_sec) if cycle_sec > 0 else 0
-    for idx, p in enumerate(ps):
+    cursor = 0
+    for idx, p in enumerate(_phases(phases)):
         green = max(0, int(p.get("green_sec", 0) or 0))
         timeline.append(
             {
                 "index": idx,
-                "movements": list(p.get("movements", []) or []),
+                "movements": [str(m) for m in (p.get("movements", []) or [])],
                 "start_sec": cursor,
                 "end_sec": cursor + green,
                 "green_sec": green,
             }
         )
         cursor += green
+    if cycle_sec > 0:
+        # an over-allocated program (Σgreen > cycle) is clipped to the cycle
+        for t in timeline:
+            t["start_sec"] = min(t["start_sec"], cycle_sec)
+            t["end_sec"] = min(t["end_sec"], cycle_sec)
+            t["green_sec"] = t["end_sec"] - t["start_sec"]
     return timeline
+
+
+def phase_at(program: object, epoch_s: float) -> PhaseState:
+    """THE phase clock: the program's state at Unix time ``epoch_s`` (pure).
+
+    ``pos = (floor(epoch_s) - offset_sec) mod cycle_sec``; the phases are
+    walked back-to-back from position 0 and the phase whose green window
+    holds ``pos`` is in effect.  Past the last green the junction is in
+    lost time.  Per movement: green while a phase listing it is in effect,
+    amber for AMBER_SEC after one of its greens ends, red otherwise.
+
+    The SAME function feeds the canvas ring (GET /signals/state through
+    ``active_phase``) and the e-challan engine (``phase_state_at``), so
+    the display and the evidence cannot disagree.  A degenerate program
+    (cycle <= 0 or no green at all) defines no movement state — callers
+    then make no signal decision.
+    """
+    cycle, offset, phases = _program_fields(program)
+    timeline = phase_timeline(phases, cycle)
+    greens = [t for t in timeline if t["green_sec"] > 0]
+    if cycle <= 0 or not greens:
+        return PhaseState(
+            index=None, movements=(), green_sec=0, lost=True,
+            sec_into_cycle=0, remaining_sec=0, cycle_sec=max(cycle, 0),
+        )
+    pos = (math.floor(epoch_s) - offset) % cycle
+
+    active = None
+    for t in greens:
+        if t["start_sec"] <= pos < t["end_sec"]:
+            active = t
+            break
+
+    labels: list[str] = []
+    for t in timeline:
+        for m in t["movements"]:
+            if m not in labels:
+                labels.append(m)
+    states: dict[str, str] = {}
+    for m in labels:
+        if active is not None and m in active["movements"]:
+            states[m] = "green"
+            continue
+        in_amber = any(
+            (pos - t["end_sec"]) % cycle < AMBER_SEC
+            for t in greens
+            if m in t["movements"]
+        )
+        states[m] = "amber" if in_amber else "red"
+
+    if active is not None:
+        return PhaseState(
+            index=active["index"],
+            movements=tuple(active["movements"]),
+            green_sec=active["green_sec"],
+            lost=False,
+            sec_into_cycle=pos,
+            remaining_sec=active["end_sec"] - pos,
+            cycle_sec=cycle,
+            movement_states=states,
+        )
+    last = greens[-1]
+    return PhaseState(
+        index=last["index"],
+        movements=tuple(last["movements"]),
+        green_sec=last["green_sec"],
+        lost=True,
+        sec_into_cycle=pos,
+        remaining_sec=cycle - pos,
+        cycle_sec=cycle,
+        movement_states=states,
+    )
 
 
 def active_phase(
     phases: object, cycle_sec: int, offset_sec: int, epoch_sec: float
 ) -> dict:
-    """Phase in effect at ``epoch_sec`` — the twin's clock discipline.
+    """Phase in effect at ``epoch_sec`` for GET /signals/state (C1 shape).
 
-    The cycle position is ``floor(epoch) mod cycle``; the phase whose
-    [start, end) window (from ``phase_timeline``) contains it wins; a
-    position in lost time returns the LAST phase with green_sec > 0
-    (amber/all-red trails the preceding green), or a synthetic empty
-    phase when the program has no greens at all.
+    A thin view over ``phase_at`` — the keys index / movements / green_sec
+    / lost keep their contract meaning (lost time names the phase whose
+    green just ended); sec_into_cycle, remaining_sec and movement_states
+    are additive so the canvas can draw the same green/amber/red the
+    e-challan engine evaluates.
     """
-    if cycle_sec <= 0:
-        return {"index": None, "movements": [], "green_sec": 0, "lost": True}
-    pos = int(epoch_sec) % int(cycle_sec)
-    timeline = phase_timeline(phases, cycle_sec, offset_sec)
-    greens = [t for t in timeline if t["green_sec"] > 0]
-    if not greens:
-        return {"index": None, "movements": [], "green_sec": 0, "lost": True}
-    for t in timeline:
-        if t["green_sec"] > 0 and t["start_sec"] <= pos < t["end_sec"]:
-            return {
-                "index": t["index"],
-                "movements": t["movements"],
-                "green_sec": t["green_sec"],
-                "lost": False,
-            }
-    last = greens[-1]
-    return {
-        "index": last["index"],
-        "movements": last["movements"],
-        "green_sec": last["green_sec"],
-        "lost": True,
-    }
+    return phase_at(
+        {"cycle_sec": cycle_sec, "offset_sec": offset_sec, "phases": phases},
+        epoch_sec,
+    ).to_dict()
 
 
 # ---------------------------------------------------------------------------
@@ -299,13 +435,16 @@ def band_plan_table_doc() -> list[dict]:
 
 
 __all__ = [
+    "AMBER_SEC",
     "BAND_PLAN_TABLE",
     "BandPlanSpec",
     "JunctionProgram",
+    "PhaseState",
     "active_phase",
     "band_plan_table_doc",
     "city_band_from_status",
     "green_ratio",
+    "phase_at",
     "phase_timeline",
     "plan_city",
     "plan_for_junction",

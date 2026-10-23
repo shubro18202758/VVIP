@@ -180,6 +180,44 @@ ORCHESTRATOR_TURNS = Counter(
     ["workflow"],
 )
 
+# ─── Live escort (R9 loop; contracts C-B / C-J) ──────────────────
+
+ESCORT_TASKS_RUNNING = Gauge(
+    "vvip_escort_tasks_running",
+    "Live-escort background tasks currently running in this brain process",
+)
+
+ESCORT_TICKS = Counter(
+    "vvip_escort_ticks_total",
+    "Live-escort monitoring loop iterations, by the escort status of the tick",
+    ["status"],  # running | waiting_for_gps
+)
+
+ESCORT_POSITIONS = Counter(
+    "vvip_escort_positions_total",
+    "Convoy position fixes accepted (and mirrored to convoy:position:*), by source",
+    ["source"],  # gps | emulated_gps
+)
+
+ESCORT_INCIDENTS = Counter(
+    "vvip_escort_incidents_total",
+    "Escort incident outcomes: the action the decider ordered, or operator_approval",
+    ["outcome"],
+)
+
+ESCORT_DEPARTURES = Counter(
+    "vvip_escort_departures_total",
+    "Escort departure postures (phase_transition checkpoint): the posture the "
+    "decider ordered, proceed_on_launch, or operator_approval",
+    ["posture"],
+)
+
+ADAPTIVE_HEALTH_REPORTS = Counter(
+    "vvip_adaptive_health_reports_total",
+    "Model-health snapshots posted to the oracle's /api/v1/adaptive/health",
+    ["role", "outcome"],  # role decider|gemma; outcome ok|error
+)
+
 # ─── Build Info ───────────────────────────────────────────────────
 
 BUILD_INFO = Info(

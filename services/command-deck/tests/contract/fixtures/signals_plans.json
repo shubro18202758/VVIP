@@ -1,0 +1,39 @@
+{
+	"writer_enabled": false,
+	"writer_flag_env": "VVIP_SIGNAL_POLICY_WRITER",
+	"city_band": "GREEN",
+	"band_subjects": 6,
+	"band_plan_table": [
+		{
+			"band": "GREEN",
+			"priority_share": 0,
+			"cross_green_floor_sec": 30,
+			"writes": false
+		},
+		{
+			"band": "AMBER",
+			"priority_share": 0.06,
+			"cross_green_floor_sec": 18,
+			"writes": true
+		},
+		{
+			"band": "RED",
+			"priority_share": 0.12,
+			"cross_green_floor_sec": 14,
+			"writes": true
+		},
+		{
+			"band": "BLACK",
+			"priority_share": 0.18,
+			"cross_green_floor_sec": 10,
+			"writes": true
+		}
+	],
+	"last_plan": null,
+	"gate": {
+		"writer_active": false,
+		"writer_waiters": 0,
+		"twin_in_flight": 0
+	},
+	"scope": "city (all programmed junctions); per-junction RL stays corridor-scoped"
+}

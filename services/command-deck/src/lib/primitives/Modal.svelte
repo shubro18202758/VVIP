@@ -4,8 +4,14 @@
 	 * hairline. Focus trap + Escape + focus return. NEVER for fail-closed
 	 * signal refusals — those render inline 'held at baseline' (motion
 	 * doctrine); this component is for evidence detail and confirmations.
+	 *
+	 * Opening focus goes to the FIRST field (an autofocus control, else the
+	 * first input, else the dialog) — and never moves once focus is already
+	 * inside the dialog: a fast typist or an autofill writing the officer's
+	 * name in the first frame must not lose characters to a late refocus.
 	 */
 	import { t } from '$lib/i18n/strings';
+	import { commandBar } from '$lib/shell/command-bar.svelte';
 
 	interface Props {
 		open: boolean;
@@ -53,7 +59,13 @@
 	$effect(() => {
 		if (!open) return;
 		restoreFocus = (document.activeElement as HTMLElement) ?? null;
-		const raf = requestAnimationFrame(() => dialogEl?.focus());
+		const raf = requestAnimationFrame(() => {
+			if (!dialogEl || dialogEl.contains(document.activeElement)) return;
+			const first =
+				dialogEl.querySelector<HTMLElement>('[autofocus]') ??
+				dialogEl.querySelector<HTMLElement>('input:not([type="hidden"]):not([disabled]), select, textarea');
+			(first ?? dialogEl).focus();
+		});
 		return () => {
 			cancelAnimationFrame(raf);
 			restoreFocus?.focus?.();
@@ -79,7 +91,7 @@
 		>
 			<header class="head">
 				<h2 class="title">{title}</h2>
-				<button class="close" type="button" onclick={onClose} aria-label={t('en', 'btn_close')}>
+				<button class="close" type="button" onclick={onClose} aria-label={t(commandBar.lang, 'btn_close')}>
 					×
 				</button>
 			</header>

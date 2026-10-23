@@ -1,0 +1,6 @@
+# The three host model services of the Veer stack. Stopping or restarting
+# this target (or veer.target) stops/restarts all three (PartOf=).
+[Unit]
+Description=Veer model hosts: decider :8083, Gemma :8084, embeddings :8085
+Wants=veer-llama.service veer-decider.service veer-embed.service
+PartOf=veer.target

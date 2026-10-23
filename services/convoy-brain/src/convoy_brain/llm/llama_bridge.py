@@ -20,6 +20,18 @@ llama-server build 69bf643 is smoke-tested by VVIP/scripts/smoke_models.sh):
 ``suppress_thinking`` is accepted and deliberately IGNORED: it is leftover
 vocabulary from the retired stack (``/no_think`` + ``think=False``) with no
 llama-server meaning. We log that once for operators.
+
+Truncation is visible: :meth:`LlamaBridge.generate_with_meta` returns the
+choice's ``finish_reason`` with the content, so a structured agent whose
+reply was cut at ``max_tokens`` (``"length"``) knows that repeating the
+identical call cannot succeed (the live plan lost ~2 × 23 s per agent to
+exactly that before falling back with no reason logged).
+
+The per-call HTTP wall covers the call's own budget: ``timeout_sec`` is a
+floor, stretched to LLAMA_PREFILL_ALLOWANCE_SEC + max_tokens /
+LLAMA_DECODE_FLOOR_TOK_PER_SEC. A flat 30 s wall killed a 704-token reply
+the budget allowed (decoding at 24 tok/s it needed 30.0 s); the plan and
+chat-turn deadlines still bound every call from outside.
 """
 
 from __future__ import annotations
@@ -30,18 +42,28 @@ from typing import Any
 import httpx
 import structlog
 
-from convoy_brain.config import DEFAULT_LLAMA_URL, GEMMA_MODEL_ID, LLAMA_CALL_TIMEOUT_SEC
+from convoy_brain.config import (
+    DEFAULT_LLAMA_URL,
+    GEMMA_MODEL_ID,
+    LLAMA_CALL_TIMEOUT_SEC,
+    LLAMA_DECODE_FLOOR_TOK_PER_SEC,
+    LLAMA_PREFILL_ALLOWANCE_SEC,
+)
 from convoy_brain.http_guard import assert_platform_service_url
 
 logger = structlog.get_logger(__name__)
 
-DEFAULT_TIMEOUT_SEC = LLAMA_CALL_TIMEOUT_SEC  # per-call wall bound (was 120 s)
+DEFAULT_TIMEOUT_SEC = LLAMA_CALL_TIMEOUT_SEC  # per-call wall floor (was 120 s)
 DEFAULT_MAX_TOKENS = 512
 DEFAULT_TEMPERATURE = 0.2  # low temperature for deterministic tactical output
 
 
 class LlamaUnavailable(Exception):
     """llama-server is unreachable or persistently erroring."""
+
+
+#: ``finish_reason`` of a reply cut at ``max_tokens`` (OpenAI-compatible).
+FINISH_LENGTH = "length"
 
 
 class LlamaBridge:
@@ -79,6 +101,18 @@ class LlamaBridge:
             await self._client.aclose()
             self._client = None
 
+    def call_wall(self, max_tokens: int | None) -> float:
+        """HTTP wall (seconds) for one completion of ``max_tokens``.
+
+        Never shorter than the budget takes to decode at the decode floor:
+        a wall below that kills a reply the budget allowed.
+        """
+        tokens = max_tokens if isinstance(max_tokens, int) and max_tokens > 0 else self._max_tokens
+        return max(
+            self._timeout,
+            LLAMA_PREFILL_ALLOWANCE_SEC + tokens / LLAMA_DECODE_FLOOR_TOK_PER_SEC,
+        )
+
     async def check_health(self) -> bool:
         """True when llama-server /health responds 200."""
         try:
@@ -103,7 +137,41 @@ class LlamaBridge:
         extra_messages: list[dict[str, str]] | None = None,
         max_tokens: int | None = None,
     ) -> str:
-        """Generate one completion from the tactical model.
+        """Generate one completion from the tactical model (content only).
+
+        Same call as :meth:`generate_with_meta`; callers that need to know
+        whether the reply was cut at the token cap use that one.
+        """
+        content, _finish = await self.generate_with_meta(
+            system_prompt,
+            user_prompt,
+            json_mode,
+            suppress_thinking,
+            schema=schema,
+            schema_name=schema_name,
+            temperature=temperature,
+            extra_messages=extra_messages,
+            max_tokens=max_tokens,
+        )
+        return content
+
+    async def generate_with_meta(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        json_mode: bool = True,
+        suppress_thinking: bool = True,
+        *,
+        schema: dict[str, Any] | None = None,
+        schema_name: str = "response",
+        temperature: float = DEFAULT_TEMPERATURE,
+        extra_messages: list[dict[str, str]] | None = None,
+        max_tokens: int | None = None,
+    ) -> tuple[str, str | None]:
+        """Generate one completion: ``(content, finish_reason)``.
+
+        ``finish_reason`` is llama-server's own (``"stop"``, ``"length"`` when
+        the reply hit ``max_tokens``), or None when the server sent none.
 
         Args:
             system_prompt: agent system instructions (kept Gemma-native —
@@ -164,22 +232,22 @@ class LlamaBridge:
                 },
             }
             try:
-                content = await self._post_completion(
+                content, finish = await self._post_completion(
                     client, build_payload(response_format, user_prompt)
                 )
                 if content is not None:
-                    return content
+                    return content, finish
             except _SchemaUnsupported:
                 logger.warning("llama_bridge.json_schema_unsupported_fallback")
 
         # Ladder step 2: generic JSON object mode
         if json_mode:
             try:
-                content = await self._post_completion(
+                content, finish = await self._post_completion(
                     client, build_payload({"type": "json_object"}, user_prompt)
                 )
                 if content is not None:
-                    return content
+                    return content, finish
             except _SchemaUnsupported:
                 pass
 
@@ -195,20 +263,26 @@ class LlamaBridge:
                 f"{user_prompt}\n\nRespond with a single valid JSON object and "
                 f"nothing else — no markdown fences, no commentary."
             )
-        content = await self._post_completion(client, build_payload(None, prompt), strict=True)
+        content, finish = await self._post_completion(
+            client, build_payload(None, prompt), strict=True
+        )
         if content is None:
             raise LlamaUnavailable("tactical model returned an empty completion")
-        return content
+        return content, finish
 
     async def _post_completion(
         self, client: httpx.AsyncClient, payload: dict, strict: bool = False
-    ) -> str | None:
-        """POST /v1/chat/completions once. Returns content or None (retryable)."""
+    ) -> tuple[str | None, str | None]:
+        """POST /v1/chat/completions once.
+
+        Returns ``(content, finish_reason)``; content None means retryable
+        (the next rung of the ladder is tried).
+        """
         try:
             resp = await client.post(
                 f"{self._base_url}/v1/chat/completions",
                 json=payload,
-                timeout=self._timeout,
+                timeout=self.call_wall(payload.get("max_tokens")),
             )
         except httpx.HTTPError as exc:
             raise LlamaUnavailable(f"chat/completions transport error: {exc}") from exc
@@ -230,19 +304,28 @@ class LlamaBridge:
         except ValueError as exc:
             if strict:
                 raise LlamaUnavailable("chat/completions returned non-JSON body") from exc
-            return None
+            return None, None
 
         try:
-            content: str = body["choices"][0]["message"]["content"] or ""
+            choice = body["choices"][0]
+            content: str = choice["message"]["content"] or ""
         except (KeyError, IndexError, TypeError) as exc:
             if strict:
                 raise LlamaUnavailable("chat/completions response missing choices/content") from exc
-            return None
+            return None, None
+        finish = choice.get("finish_reason") if isinstance(choice, dict) else None
+        finish = finish if isinstance(finish, str) else None
+        if finish == FINISH_LENGTH:
+            logger.info(
+                "llama_bridge.reply_cut_at_cap",
+                max_tokens=payload.get("max_tokens"),
+                chars=len(content),
+            )
 
         content = content.strip()
         if strict and not content:
             raise LlamaUnavailable("chat/completions returned empty content")
-        return content or None
+        return (content or None), finish
 
 
 class _SchemaUnsupported(Exception):

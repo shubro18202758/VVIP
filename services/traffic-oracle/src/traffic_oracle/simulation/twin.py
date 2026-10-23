@@ -35,7 +35,7 @@ from traffic_oracle.simulation.engine import (
 from traffic_oracle.simulation.events import EventConfig, ScheduledEvent
 from traffic_oracle.simulation.network import SimNetwork, default_network
 from traffic_oracle.simulation.rng import derive_seed
-from traffic_oracle.simulation.tod import WeatherState
+from traffic_oracle.simulation.tod import WeatherState, to_ist
 
 # Discrete action grid: (advance_closure_sec, closure_type).
 DEFAULT_ACTIONS: tuple[dict[str, Any], ...] = tuple(
@@ -196,8 +196,9 @@ class TwinEnv:
             "segment_congestion": [round(c, 3) for c in cong],
             "segment_speed_kmh": [round(s, 1) for s in speed],
             "max_queue_length_m": round(r.max_queue_length_m, 1),
-            "hour": self._departure_time.hour,
-            "day_of_week": self._departure_time.weekday(),
+            # clock features in IST (the demand curves' local time)
+            "hour": to_ist(self._departure_time).hour,
+            "day_of_week": to_ist(self._departure_time).weekday(),
             "monsoon": bool(self._weather.monsoon) if self._weather else False,
             "n_events_last_epoch": r.n_events,
             "cumulative_reward": round(self._cumulative_reward, 3),

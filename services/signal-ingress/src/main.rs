@@ -13,11 +13,23 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     tracing::info!("signal-ingress starting — VVIP corridor traffic feed aggregator");
+    tracing::info!(
+        segments = feeds::city::segments().len(),
+        fingerprint = feeds::segments_ahmedabad::SOURCE_FINGERPRINT,
+        city_seed = feeds::city::city_seed_from_env(),
+        "Ahmedabad corridor network loaded — EDGE SYNTHETIC MODE: no live ITMS/AVL/crowd/\
+         mapping connectors; every row is published with data_quality=synthetic"
+    );
 
-    // Initialize NATS connection for downstream IPC
+    // Initialize NATS connection for downstream IPC. The connection name
+    // lets operators (scripts/veer_up.sh --status, NATS /connz) tell the
+    // ingress publisher apart from subscribers.
     let nats_url =
         std::env::var("NATS_URL").unwrap_or_else(|_| "nats://localhost:4222".to_string());
-    let nats_client = async_nats::connect(&nats_url).await?;
+    let nats_client = async_nats::ConnectOptions::new()
+        .name("signal-ingress")
+        .connect(&nats_url)
+        .await?;
     tracing::info!(nats_url = %nats_url, "connected to NATS message bus");
 
     // Create bounded pipeline channels

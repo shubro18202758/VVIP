@@ -158,13 +158,14 @@ _register(ScenarioSpec(
     name="Monsoon Evening Peak",
     description=(
         "MANDATED ANCHOR — monsoon evening. Z+ airport arrival into the city "
-        "at 18:30 in active monsoon (18 mm/h rain). The Gandhinagar Highway "
-        "approach (1024) runs through the low-lying Kalupur underpass — its "
+        "at 18:30 in active monsoon (18 mm/h rain): Airport Road into "
+        "Shahibaug, Dr. Ambedkar Road and Relief Road to the Kalupur station "
+        "approach (1014) — its "
         "scheduled waterlogging plus evening-peak demand and weather-damped "
         "free-flow make this the worst single-weather case."
     ),
     category="weather",
-    route_segment_ids=(1028, 1027, 1024, 1014),
+    route_segment_ids=(1028, 1027, 1043, 1005, 1014),
     departure_time="2026-07-21T18:30:00+05:30",
     vvip_class="Z+",
     closure_policy={"advance_closure_sec": 180, "closure_type": "full_closure"},
@@ -175,9 +176,9 @@ _register(ScenarioSpec(
     weather={"monsoon": True, "rain_intensity_mm_h": 18.0},
     event_overrides={"waterlogging": 2.5, "breakdown": 1.4},
     forced_events=(
-        {"type": "waterlogging", "segment_id": 1024, "start_sec": 300.0,
+        {"type": "waterlogging", "segment_id": 1014, "start_sec": 300.0,
          "duration_sec": 2700.0, "severity": 0.7,
-         "label": "Kalupur underpass waterlogged — 45 min pump-out"},
+         "label": "Kalupur station approach waterlogged — 45 min pump-out"},
     ),
     expected_features=("monsoon", "evening_peak", "waterlogging_prone", "low_visibility_speed"),
 ))
@@ -187,13 +188,14 @@ _register(ScenarioSpec(
     name="Multi-Event Collision at Kalupur",
     description=(
         "MANDATED ANCHOR — multi-event collision. A Z movement through the "
-        "Kalupur junction complex (J8) at 17:50 Friday while a double-lane "
+        "Kalupur junction complex (J8/J15) at 17:50 Friday while a double-lane "
         "breakdown blocks Station Road, a signal fault collapses the J8 "
-        "greens, and a monsoon shower waterlogs the Gandhinagar Highway "
-        "approach — three simultaneous capacity hits on one junction."
+        "greens, and a monsoon shower waterlogs the Relief Road "
+        "approach to Kalupur — three simultaneous capacity hits on one "
+        "junction complex, all on the convoy's path."
     ),
     category="multi_event",
-    route_segment_ids=(1030, 1014, 1024),
+    route_segment_ids=(1030, 1014, 1005),
     departure_time="2026-08-14T17:50:00+05:30",
     vvip_class="Z",
     closure_policy={"advance_closure_sec": 150, "closure_type": "full_closure"},
@@ -209,9 +211,9 @@ _register(ScenarioSpec(
         {"type": "signal_fault", "segment_id": 1014, "start_sec": 480.0,
          "duration_sec": 1500.0, "severity": 0.8,
          "label": "J8 signal controller fault — flashing amber"},
-        {"type": "waterlogging", "segment_id": 1024, "start_sec": 900.0,
+        {"type": "waterlogging", "segment_id": 1005, "start_sec": 900.0,
          "duration_sec": 2400.0, "severity": 0.65,
-         "label": "waterlogged underpass on GN Highway approach"},
+         "label": "waterlogged Relief Road approach to Kalupur"},
     ),
     expected_features=("multi_event", "simultaneous_capacity_loss", "friday_peak",
                        "long_recovery"),
@@ -223,11 +225,11 @@ _register(ScenarioSpec(
     description=(
         "MANDATED ANCHOR — Z+ at peak. Head-of-state class run city → airport "
         "at 08:45 Monday: maximum protocol closure (180 s advance), full "
-        "closure type, morning-peak demand on the Gandhinagar Highway "
-        "corridor, plus the Monday commute peak in full swing."
+        "closure type, morning-peak demand on the Relief Road - Dr. Ambedkar "
+        "Road - Airport Road corridor, plus the Monday commute peak in full swing."
     ),
     category="baseline",
-    route_segment_ids=(1014, 1024, 1027, 1028),
+    route_segment_ids=(1014, 1005, 1043, 1027, 1029),
     departure_time="2026-10-12T08:45:00+05:30",
     vvip_class="Z+",
     closure_policy={"advance_closure_sec": 180, "closure_type": "full_closure"},
@@ -242,11 +244,12 @@ _register(ScenarioSpec(
     name="Sunday Market Spillover (Old City)",
     description=(
         "Y-class run through the Lal Darwaja bazaar cluster at 11:00 Sunday: "
-        "market spillover demand saturates Relief/Gandhi/Tilak Roads while "
+        "market spillover demand saturates Relief/Gandhi/Swami Vivekananda "
+        "Roads while "
         "Sunday shoppers queue at the J3/J5 signals."
     ),
     category="event",
-    route_segment_ids=(1015, 1005, 1013),
+    route_segment_ids=(1015, 1005, 1049, 1013),
     departure_time="2026-10-18T11:00:00+05:30",
     vvip_class="Y",
     closure_policy={"advance_closure_sec": 90, "closure_type": "partial_closure"},
@@ -295,7 +298,7 @@ _register(ScenarioSpec(
         "collapse under saturated demand without any physical blockage."
     ),
     category="ops",
-    route_segment_ids=(1003, 1004, 1001),
+    route_segment_ids=(1003, 1004, 1002, 1001),
     departure_time="2026-10-16T18:00:00+05:30",
     vvip_class="X",
     closure_policy={"advance_closure_sec": 60, "closure_type": "signal_hold"},
@@ -387,7 +390,7 @@ _register(ScenarioSpec(
         "Z-class movement brings the dignitary out through the same corridor."
     ),
     category="event",
-    route_segment_ids=(1009, 1032),
+    route_segment_ids=(1009, 1041, 1032),
     departure_time="2026-10-19T20:15:00+05:30",
     vvip_class="Z",
     closure_policy={"advance_closure_sec": 120, "closure_type": "full_closure"},
@@ -459,7 +462,7 @@ _register(ScenarioSpec(
         "window."
     ),
     category="event",
-    route_segment_ids=(1028, 1027, 1024, 1025),
+    route_segment_ids=(1029, 1028, 1048, 1024, 1025),
     departure_time="2027-01-26T09:15:00+05:30",
     vvip_class="Z",
     closure_policy={"advance_closure_sec": 150, "closure_type": "full_closure"},
@@ -480,7 +483,7 @@ _register(ScenarioSpec(
 # shared use-case library configs — the per-use-case scenario wiring the
 # event-agnostic re-engineering consumes).  The VVIP base case is the
 # reference every other use case generalizes; the other seven exercise
-# the public-event archetypes on the same seed network.
+# the public-event archetypes on the same corridor network.
 # ────────────────────────────────────────────────────────────────────────────
 
 _register(ScenarioSpec(
@@ -488,14 +491,16 @@ _register(ScenarioSpec(
     name="VVIP Convoy — Base Case (Z+ state-capital run)",
     description=(
         "BASE CASE. Z+ protected movement from Gandhinagar into the city "
-        "core on a Monday mid-morning: the GN Highway spine (1026-1025-1024) "
-        "down through Kalupur (1014) onto Naroda Road (1030). Maximum-"
+        "core on a Monday mid-morning: down the Gandhinagar-Ahmedabad "
+        "Highway (1026-1025-1024) through Koba and Bhat Circles, over the "
+        "Indira Bridge (1048), along Airport Road (1028-1027) to Shahibaug "
+        "and in on Dr. Ambedkar Road (1043) to Lal Darwaja. Maximum-"
         "protocol closure (180 s advance, full closure), default event "
         "rates, no weather — the reference movement every other use case is "
         "a generalization of."
     ),
     category="baseline",
-    route_segment_ids=(1026, 1025, 1024, 1014, 1030),
+    route_segment_ids=(1026, 1025, 1024, 1048, 1028, 1027, 1043),
     departure_time="2026-11-02T10:10:00+05:30",
     vvip_class="Z+",
     closure_policy={"advance_closure_sec": 180, "closure_type": "full_closure"},
@@ -515,15 +520,18 @@ _register(ScenarioSpec(
     description=(
         "148th Ahmedabad Rath Yatra (27 Jun 2025): three chariots step off "
         "at 07:00 from the ~400-year-old Jamalpur temple and crawl the "
-        "old-city bazaar belt — Gandhi Road, Nehru Bridge, Relief Road, "
-        "Tilak Road — the ~14 km route of India's second-largest Rath "
-        "Yatra. Modeled as an X-class managed movement (the procession "
+        "old-city bazaar belt of India's second-largest Rath Yatra (~14 km "
+        "in all). Modeled on the walled city's real streets: east along "
+        "one-way Gandhi Road to Kalupur (1012), south past Sarangpur "
+        "Darwaja (1049) and west along one-way Swami Vivekananda Road "
+        "toward Jamalpur (1013), with Relief Road (1005) shut alongside. "
+        "Modeled as an X-class managed movement (the procession "
         "itself, not a protected person) at chariot pace (8 km/h, the "
         "engine floor) with full street closure rolling ahead of it and "
         "lakhs-strong crowd load on every segment."
     ),
     category="event",
-    route_segment_ids=(1012, 1015, 1005, 1013),
+    route_segment_ids=(1012, 1049, 1013),
     departure_time="2025-06-27T07:00:00+05:30",
     vvip_class="X",
     closure_policy={"advance_closure_sec": 120, "closure_type": "full_closure"},
@@ -545,7 +553,7 @@ _register(ScenarioSpec(
                   "closed"},
         {"type": "market_spillover", "segment_id": 1013, "start_sec": 0.0,
          "duration_sec": 10800.0, "severity": 0.75,
-         "label": "Tilak Road bazaar crowd pinned behind barricades"},
+         "label": "Swami Vivekananda Road bazaar crowd pinned behind barricades"},
     ),
     expected_features=("public_procession", "extreme_crowd",
                        "narrow_old_city_roads", "slow_rolling_closure"),
@@ -573,16 +581,17 @@ _register(ScenarioSpec(
         "Yatra morning of 27 Jun 2025 (procession stepped off 07:00 from "
         "Jamalpur): three chariots crawl Gandhi Road and Relief Road with "
         "lakhs on the street, a monsoon burst at 18 mm/h waterlogs the "
-        "Nehru Bridge approach, bazaar crowds stand behind Tilak Road "
-        "barricades — and a 108 ambulance carrying a cardiac patient "
-        "requests a green corridor across the river: Relief Road -> Nehru "
-        "Bridge -> Riverfront West -> Ashram South (1005->1015->1006->"
-        "1001). The engine's answer: closure_policy = signal_hold at 45 s "
+        "Nehru Bridge approach, bazaar crowds stand behind Swami "
+        "Vivekananda Road barricades — and a 108 ambulance carrying a "
+        "cardiac patient requests a green corridor across the river: "
+        "Relief Road -> Nehru Bridge -> Ashram Road south -> Riverfront "
+        "West (1005->1015->1001->1006). The engine's answer: "
+        "closure_policy = signal_hold at 45 s "
         "advance, threading a medical convoy between a public festival "
         "and the weather."
     ),
     category="multi_event",
-    route_segment_ids=(1005, 1015, 1006, 1001),
+    route_segment_ids=(1005, 1015, 1001, 1006),
     departure_time="2025-06-27T09:20:00+05:30",
     vvip_class="X",
     closure_policy={"advance_closure_sec": 45, "closure_type": "signal_hold"},
@@ -609,7 +618,7 @@ _register(ScenarioSpec(
                   "approach (scheduled waterlogging)"},
         {"type": "market_spillover", "segment_id": 1013, "start_sec": 0.0,
          "duration_sec": 3600.0, "severity": 0.75,
-         "label": "Tilak Road bazaar crowd behind barricades"},
+         "label": "Swami Vivekananda Road bazaar crowd behind barricades"},
         {"type": "emergency_vehicle", "segment_id": 1005, "start_sec": 600.0,
          "duration_sec": 300.0, "severity": 0.9,
          "label": "108 cardiac green-corridor window — Relief Road "
@@ -642,14 +651,15 @@ _register(ScenarioSpec(
         "~660 million visits over the mela, largest gathering on earth). "
         "The corridor problem inverts: the zone interior is car-free and "
         "frozen; what the engine manages is the perimeter ring and the "
-        "ingress surges. Modeled on the seed network's riverfront cluster "
-        "— Ashram Road south (1001) onto Riverfront West (1006) toward "
-        "Usmanpura (1010) — with an X-class supply/medical shuttle "
+        "ingress surges. Modeled on the corridor network's riverfront "
+        "cluster — Ashram Road south (1001) onto Riverfront West (1006) and "
+        "up Ashram Road through Usmanpura (1009) — with an X-class "
+        "supply/medical shuttle "
         "entering the zone at 04:30 pre-dawn under signal_hold (signals "
         "keep cycling: staged ingress, not blanket freeze)."
     ),
     category="event",
-    route_segment_ids=(1001, 1006, 1010),
+    route_segment_ids=(1001, 1006, 1009),
     departure_time="2025-01-29T04:30:00+05:30",
     vvip_class="X",
     closure_policy={"advance_closure_sec": 90, "closure_type": "signal_hold"},
@@ -686,14 +696,14 @@ _register(ScenarioSpec(
         "Adani Ahmedabad Marathon class (9th edition: 24,000+ runners on "
         "the Sabarmati Riverfront, 24 Nov 2024; World Athletics calendar). "
         "A 05:45 gun start means the race corridor (Riverfront East 1007 - "
-        "Ashram South 1001 - Riverfront West 1006 - Usmanpura 1010) is "
+        "Nehru Bridge 1015 - Ashram South 1001 - Riverfront West 1006) is "
         "closed to vehicles in the dark and reopens in stages behind the "
         "sweep. Modeled as an X-class pace/sweep convoy at 12 km/h under "
         "full closure with spectator spillover forced on the two approach "
         "segments."
     ),
     category="event",
-    route_segment_ids=(1007, 1001, 1006, 1010),
+    route_segment_ids=(1007, 1015, 1001, 1006),
     departure_time="2024-11-24T05:45:00+05:30",
     vvip_class="X",
     closure_policy={"advance_closure_sec": 60, "closure_type": "full_closure"},
@@ -727,13 +737,14 @@ _register(ScenarioSpec(
         "Day (26 Jan 2025) the Governor hoisted the flag and took the "
         "parade salute with the CM present (Gujarat CMO) — a Z-class "
         "protected movement to the venue up the GN Highway strip. Modeled: "
-        "dignitary runs airport (1028-1027) onto the GN Highway parade "
-        "strip (1024-1025) at 08:35, arriving before the 09:00 flag, while "
+        "dignitary runs from SVPI airport (1029-1028) over the Indira "
+        "Bridge (1048) onto the GN Highway parade strip at Bhat "
+        "(1024-1025) at 08:35, arriving before the 09:00 flag, while "
         "spectator and parking load saturates the strip itself. "
         "Independence Day (15 Aug) is the calendar mirror."
     ),
     category="event",
-    route_segment_ids=(1028, 1027, 1024, 1025),
+    route_segment_ids=(1029, 1028, 1048, 1024, 1025),
     departure_time="2027-01-26T08:35:00+05:30",
     vvip_class="Z",
     closure_policy={"advance_closure_sec": 150, "closure_type": "full_closure"},
@@ -770,12 +781,13 @@ _register(ScenarioSpec(
         "final. The corridor event is the 90-120 min egress surge — "
         "modeled at 20:05, just after a final ball: an X-class ambulance "
         "with a green-corridor request fights the dispersal wave from "
-        "Motera Stadium Road (1032) down the Ashram spine (1002-1001) "
+        "Motera Stadium Road (1032) over the Chimanbhai Patel Flyover "
+        "(1041) down the Ashram spine (1009-1002-1001) "
         "under signal_hold, with the surge and one stalled car forced on "
         "the egress segments."
     ),
     category="event",
-    route_segment_ids=(1032, 1002, 1001),
+    route_segment_ids=(1032, 1041, 1009, 1002, 1001),
     departure_time="2026-03-08T20:05:00+05:30",
     vvip_class="X",
     closure_policy={"advance_closure_sec": 60, "closure_type": "signal_hold"},
@@ -815,7 +827,7 @@ _register(ScenarioSpec(
         "Gujarat floods, 27 Aug 2024 class: ~280 mm of rain in 24 h, 28+ "
         "dead, 24,000+ relocated statewide, NDRF and Army columns running "
         "boat rescues as low-lying city cores went under. Modeled on the "
-        "seed network: the low-lying river spine (1001/1006/1015) "
+        "corridor network: the low-lying river spine (1001/1006/1015) "
         "waterlogs while an X-class relief column runs the reverse-flow "
         "evacuation spine — Sarkhej (1040) onto SP Ring Road "
         "(1021-1022-1008), the high-ground detour — at 11:20 in 22 mm/h "
@@ -869,13 +881,14 @@ _register(ScenarioSpec(
         "network approved) put Kankaria Road under a published 3 Jul - 30 "
         "Sep closure with diversions, and ~100 m at Kalupur Bridge shut "
         "for bullet-train pillar work. Modeled: an X-class inspection "
-        "convoy at 09:15 runs CTM Road (1031) through the Kalupur pinch "
-        "(1014) onto GN Highway south (1024) while both work zones hold "
-        "two barricaded lanes (long-duration forced lane-loss) and "
-        "diverted bazaar traffic squeezes Kankaria Road (1038)."
+        "convoy at 09:15 runs Kasturba Gandhi Road (1031) through the "
+        "Kalupur pinch (1014), south past Sarangpur Darwaja (1049) and onto "
+        "Kankaria Road (1038) while both work zones hold two barricaded "
+        "lanes (long-duration forced lane-loss) and diverted bazaar traffic "
+        "squeezes Kankaria Road itself."
     ),
     category="ops",
-    route_segment_ids=(1031, 1014, 1024),
+    route_segment_ids=(1031, 1014, 1049, 1038),
     departure_time="2025-08-14T09:15:00+05:30",
     vvip_class="X",
     closure_policy={"advance_closure_sec": 60, "closure_type": "partial_closure"},
@@ -948,6 +961,8 @@ def export_library(*, include_network: bool = True) -> dict:
     return {
         "format": "veer/scenario-library/1",
         "generator": "traffic_oracle.simulation.scenarios.export_library",
+        "attribution": "network facts from the seed's roads on OpenStreetMap — "
+                       "(c) OpenStreetMap contributors, ODbL 1.0",
         "n_scenarios": len(SCENARIO_LIBRARY),
         "scenarios": [s.to_dict() for s in SCENARIO_LIBRARY.values()],
         **({"network": network.to_dict()} if include_network else {}),

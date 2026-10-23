@@ -3,9 +3,7 @@
 //! Tests PipelineChannels creation, MicroBatcher flush semantics,
 //! Arrow RecordBatch schema correctness, and end-to-end channel flow.
 
-use std::sync::Arc;
-
-use arrow::array::{AsArray, Float32Array, Float64Array, Int64Array, UInt8Array};
+use arrow::array::{Float32Array, Float64Array, Int64Array, UInt8Array};
 use arrow::datatypes::DataType;
 use signal_ingress::pipeline::batch::MicroBatcher;
 use signal_ingress::pipeline::channels::PipelineChannels;
@@ -16,8 +14,8 @@ use signal_ingress::{DataQuality, FeedSource, TrafficObservation};
 fn make_obs(segment_id: &str, speed: f32, quality: DataQuality) -> TrafficObservation {
     TrafficObservation {
         timestamp_ms: 1710000000000,
-        lon: 77.2090,
-        lat: 28.6139,
+        lon: 72.5747,
+        lat: 23.02875,
         segment_id: segment_id.to_string(),
         speed_kmh: speed,
         congestion_index: 0.3,
@@ -123,8 +121,8 @@ fn batcher_preserves_observation_values() {
     let mut batcher = MicroBatcher::new(10);
     let obs = TrafficObservation {
         timestamp_ms: 1710099999000,
-        lon: 77.5,
-        lat: 28.1,
+        lon: 72.5,
+        lat: 23.1,
         segment_id: "seg_42".to_string(),
         speed_kmh: 88.5,
         congestion_index: 0.72,
@@ -140,10 +138,10 @@ fn batcher_preserves_observation_values() {
     assert_eq!(ts.value(0), 1710099999000);
 
     let lon = batch.column(1).as_any().downcast_ref::<Float64Array>().unwrap();
-    assert!((lon.value(0) - 77.5).abs() < 0.001);
+    assert!((lon.value(0) - 72.5).abs() < 0.001);
 
     let lat = batch.column(2).as_any().downcast_ref::<Float64Array>().unwrap();
-    assert!((lat.value(0) - 28.1).abs() < 0.001);
+    assert!((lat.value(0) - 23.1).abs() < 0.001);
 
     let speed = batch.column(4).as_any().downcast_ref::<Float32Array>().unwrap();
     assert!((speed.value(0) - 88.5).abs() < 0.01);
@@ -178,12 +176,12 @@ fn batcher_source_enum_mapping_all_variants() {
         batcher
             .push(TrafficObservation {
                 timestamp_ms: 1710000000000,
-                lon: 77.0,
-                lat: 28.0,
+                lon: 72.6,
+                lat: 23.0,
                 segment_id: "seg_1".to_string(),
                 speed_kmh: 50.0,
                 congestion_index: 0.3,
-                source: src.clone(),
+                source: *src,
                 data_quality: DataQuality::Real,
                 confidence: 1.0,
             })
@@ -442,8 +440,8 @@ fn observation_default_data_quality_in_json() {
     // Deserialize JSON without data_quality field — should default to Real
     let json = r#"{
         "timestamp_ms": 1710000000000,
-        "lon": 77.0,
-        "lat": 28.0,
+        "lon": 72.6,
+        "lat": 23.0,
         "segment_id": "seg_1",
         "speed_kmh": 50.0,
         "congestion_index": 0.3,

@@ -1,0 +1,69 @@
+# Anomaly Detector Configuration — Tier 1 Inline (Rust, signal-ingress)
+# Target: ~500ns per observation check
+# Thresholds for the Ahmedabad corridor network (corridor.road_segments,
+# compiled into the binary as src/feeds/segments_ahmedabad.rs).
+#
+# Resolution order at start-up (src/anomaly/config.rs):
+#   1. $ANOMALY_CONFIG_PATH
+#   2. /etc/signal-ingress/anomaly_detector.yaml (shipped in the image)
+#   3. this file, embedded into the binary at build time
+# The service never runs without thresholds and never warns about a missing
+# optional file.
+
+# Z-score threshold for speed outlier detection
+z_score_threshold: 3.0
+
+# IQR multiplier for box-plot outlier detection on congestion index
+iqr_multiplier: 1.5
+
+# Maximum plausible speed change between consecutive readings (km/h)
+max_speed_jump_kmh: 40.0
+
+# Observation older than this is considered stale (milliseconds)
+# 5 minutes = 300,000ms
+stale_threshold_ms: 300000
+
+# Tolerance for future timestamps due to clock skew (milliseconds)
+# 30 seconds = 30,000ms
+future_tolerance_ms: 30000
+
+# Max distance from the claimed segment's polyline for the spatial check
+# (meters). Phone GPS in crowd reports is ~12 m (1 sigma per axis).
+spatial_tolerance_m: 50.0
+
+# Minimum observations in rolling window before statistical checks activate
+min_observations: 10
+
+# Number of identical consecutive readings to flag as phantom sensor
+phantom_repeat_threshold: 5
+
+# Rolling window size for per-segment statistics
+rolling_window_size: 50
+
+# Samples older than this (relative to the newest one) leave the rolling
+# window, so a reading is judged against current conditions rather than a
+# stale history (milliseconds). 30 minutes = 1,800,000ms — long enough for
+# sparse sources (a few crowd reports per segment per minute) to reach
+# min_observations; dense sources are bounded by rolling_window_size first.
+max_window_age_ms: 1800000
+
+# Per-source min_observations for sources too sparse to collect
+# min_observations readings per segment within max_window_age_ms. Keys are
+# feed source names (GovernmentTraffic, MappingApi, FleetGps, Crowdsource).
+# The mapping provider refreshes every 5 minutes (src/feeds/mapping_api.rs):
+# a 30-minute window holds at most 7 of its snapshots, so with 10 its
+# z-score and congestion-IQR checks could never activate. 6 leaves one for a
+# late refresh. (Widening the provider's window to 55 minutes instead was
+# measured as well: judged against a staler history it flagged twice as
+# many honest readings at the evening peak.)
+source_min_observations:
+  MappingApi: 6
+
+# Scale floors for the statistical checks (each source is judged against
+# its own history on the segment). Deviations within ordinary traffic
+# variation are never statistical outliers, however steady the recent window
+# happened to be: individual probe vehicles routinely differ from each other
+# by ~10% of the limit, so a vehicle following another one onto a segment
+# must not be flagged for driving at its own pace.
+min_speed_std_kmh: 4.0
+min_congestion_iqr: 0.12

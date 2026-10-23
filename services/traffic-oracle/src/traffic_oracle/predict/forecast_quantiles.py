@@ -63,9 +63,13 @@ class FoundationInputError(ValueError):
 def derive_congestion_idx(speed_kmh: float, free_flow_kmh: float) -> float:
     """congestion_idx = clip(1 - speed/free_flow, 0, 1) — labelled derivation.
 
-    Same formula the simulation engine uses for its speed->congestion view;
-    free_flow defaults to the 60 km/h corridor-wide convention that also
-    backs ``speed_norm = speed_kmh / 60.0`` in the DSTGAT feature build.
+    Same formula the simulation engine uses for its speed->congestion view.
+    Callers pass the SEGMENT's own free flow — the foundation adapter uses
+    each segment's speed limit (``corridor.road_segments.speed_limit_kmh``,
+    fed by predict/history_feed.py), so a 100 km/h expressway crawling at
+    60 km/h reads 0.4 congested instead of 0.0 — and fall back to the 60 km/h
+    convention (``speed_norm = speed_kmh / 60.0`` in the DSTGAT feature
+    build) only for a segment without one.
     """
     if free_flow_kmh <= 0:
         raise ValueError(f"free_flow_not_positive: {free_flow_kmh!r}")

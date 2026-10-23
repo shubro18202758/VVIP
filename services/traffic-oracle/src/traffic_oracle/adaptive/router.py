@@ -4,16 +4,27 @@ Endpoints (mounted under ``/api/v1`` by ``__main__``):
 
     GET  /adaptive/params?movement_id=&vvip_class=
          → C4 response: {situation_class, params, source, shadow_eval,
-                          evidence}   (params mirrored to Valkey TTL 30 s)
+                          evidence}.  READ-ONLY: the subject's last
+           published decision (the situation-engine loop decides,
+           persists and mirrors); an unknown or missing movement_id gets
+           the tier's floor-clamped baseline.  No audit row, no mirror
+           write, no subject state is ever created by a reader.
 
     GET  /adaptive/status
-         → degradation tier + audit trail + per-movement situations
+         → degradation tier + audit trail + the loop-tracked subjects
+           (``movements``) + the city band and when it last changed
+           (``city_band.since`` / ``city_band_since``) + engine-loop
+           health with per-subject ``last_inputs_age_sec`` and
+           ``skipped_no_inputs`` (``engine_loop``) + what each band stands
+           on (``simulated_feed`` / ``inputs_data_quality``, also on the
+           city band) + twin calibration state + the forecaster's history
+           feed
 
     POST /adaptive/observe
-         → feed one observation for a movement (used by the situation
-           engine loop and by tests); body carries raw feed scores and
-           optional escalation side inputs; returns the effective
-           situation and the current C4 param response.
+         → feed one observation for a movement (tests / explicit feeds);
+           body carries raw feed scores and optional escalation side
+           inputs; returns the effective situation and the C4 decision
+           (persisted only when it changed).
 
 The router never instantiates I/O itself: it looks up the
 ``AdaptiveService`` wired into ``app.state.adaptive`` by the startup
@@ -79,10 +90,10 @@ def _fallback_params_response(vvip_class: str) -> dict:
 @router.get("/params")
 async def adaptive_params(
     request: Request,
-    movement_id: str = Query(default="default", max_length=128),
+    movement_id: str | None = Query(default=None, max_length=128),
     vvip_class: str = Query(default="Z"),
 ) -> dict:
-    """C4 parameter endpoint (contract shape; see module docstring)."""
+    """C4 parameter endpoint — read-only (see module docstring)."""
     service = getattr(request.app.state, "adaptive", None)
     if service is None:
         try:
@@ -97,17 +108,52 @@ async def adaptive_params(
         from fastapi import HTTPException
 
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return await service.params_for(movement_id, tier)
+    return service.current_params(movement_id, tier)
+
+
+def _twin_calibration() -> dict | None:
+    """The twin's calibration state (shadow-eval prerequisite), if mounted."""
+    try:
+        from traffic_oracle.simulation.calibration import CALIBRATION
+    except ImportError:  # pragma: no cover - simulation stream absent
+        return None
+    return CALIBRATION.to_dict()
 
 
 @router.get("/status")
 async def adaptive_status(request: Request) -> dict:
-    """Degradation + per-movement situation status."""
+    """Degradation, tracked subjects, city band, loop + feed health."""
     service = getattr(request.app.state, "adaptive", None)
     if service is None:
         return {"service": "not_configured"}
     status = service.status()
     status["service"] = "ok"
+    # Model-role health at the top level too (the degradation block keeps
+    # its own copy): .roles.decider.last_ok is what operators look for.
+    status["roles"] = status["degradation"].get("roles", {})
+    loop = getattr(request.app.state, "adaptive_engine_loop", None)
+    loop_health = loop.health.snapshot() if loop is not None else None
+    status["engine_loop"] = (
+        loop_health
+        if loop_health is not None
+        else {"running": False, "reason": "situation engine not started"}
+    )
+    # One row per loop-active subject: its input health and (when it has
+    # one) its band — a skipped subject shows WHY it has no band.
+    subjects: dict[str, dict] = {}
+    for sid, health in (loop_health or {}).get("subjects", {}).items():
+        band = status["movements"].get(sid)
+        subjects[sid] = {
+            **health,
+            "band": band.get("effective_class") if band else None,
+            "band_since": band.get("band_since") if band else None,
+            "simulated_feed": band.get("simulated_feed") if band else None,
+        }
+    status["subjects"] = subjects
+    status["twin_calibration"] = _twin_calibration()
+    feed = getattr(request.app.state, "history_feed", None)
+    if feed is not None:
+        status["forecast_history"] = feed.health()
     return status
 
 

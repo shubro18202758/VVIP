@@ -2,7 +2,7 @@
  * Screens-verify — the interface-revamp UI acceptance camera.
  *
  * Photographs EVERY revamped surface of the ONE deck (the SvelteKit
- * command-deck serving :5173 as container vvip-command-deck) under the
+ * command-deck serving :5273 as container vvip-argus-command-deck) under the
  * red-team-validated SwiftShader software-WebGL flags and proves, per
  * surface:
  *
@@ -23,10 +23,17 @@
  *   /comms     the trilingual advisory desk — EN/HI/GU columns
  *   /chat      the takeover chat console
  *
+ * Operator gate: the deck surfaces (/ops, /gods-eye, /comms, /chat) are
+ * shot SIGNED IN — one sign-in through tests/lib/operator-session.mjs (one
+ * attempt, PIN read at run time, never logged; the cookie is set before each
+ * page's first navigation; revoked on exit). The public surfaces (/citizen,
+ * /driver) are shot anonymously, as the public sees them.
+ *
  * Usage: node tests/screens-verify.mjs [origin] [outDir]
- *        defaults: origin http://127.0.0.1:5173 (the container),
+ *        defaults: origin http://127.0.0.1:5273 (the container),
  *                  outDir tests/artifacts/screens
- * Env:   CHROME_PATH (defaults to the puppeteer cache path)
+ * Env:   CHROME_PATH (defaults to the puppeteer cache path); VEER_OPERATOR_PIN,
+ *        else VEER_OPERATOR_PIN_FILE (a sandbox deck's PIN), else veer.env
  * Exit 0 all checks pass; 1 any failure. Manifest:
  *        <outDir>/screens_manifest.json (per-check ok/detail evidence).
  */
@@ -34,11 +41,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { puppeteerCookies, signIn, signOut } from './lib/operator-session.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const DECK = path.resolve(HERE, '..');
 
-const ORIGIN = process.argv[2] ?? 'http://127.0.0.1:5173';
+const ORIGIN = (process.argv[2] ?? 'http://127.0.0.1:5273').replace(/\/+$/, '');
 const OUT = process.argv[3] ?? path.join(DECK, 'tests', 'artifacts', 'screens');
 
 const CHROME =
@@ -81,6 +89,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const results = { origin: ORIGIN, chrome: CHROME, screens: {} };
 let failures = 0;
+/** The operator session for the gated deck surfaces ({gate:false} when the gate is off). */
+let session = null;
 function record(screen, name, ok, detail = '') {
 	const entry = (results.screens[screen] ||= { checks: {} });
 	entry.checks[name] = { ok, detail };
@@ -119,9 +129,10 @@ async function pngNonBlank(browser, pngPath) {
 }
 
 /** Shoot one surface: key-element probe + PNG + non-blank proof. */
-async function shoot(browser, screen, route, probe, { viewport = { width: 1440, height: 900 }, settle = 1200 } = {}) {
+async function shoot(browser, screen, route, probe, { viewport = { width: 1440, height: 900 }, settle = 1200, anonymous = false } = {}) {
 	const page = await browser.newPage();
 	await page.setViewport(viewport);
+	if (!anonymous && session) await page.setCookie(...puppeteerCookies(session));
 	const consoleErrors = [];
 	page.on('pageerror', (e) => consoleErrors.push(`pageerror: ${String(e).slice(0, 160)}`));
 	try {
@@ -151,7 +162,6 @@ async function shoot(browser, screen, route, probe, { viewport = { width: 1440, 
 function panelTitleProbe(page) {
 	return page.evaluate(() => {
 		const titles = [...document.querySelectorAll('section.panel h2.title')].map((h) => h.textContent.trim());
-		const count = (t) => titles.filter((x) => x === t).length;
 		return {
 			titles,
 			masthead: document.querySelectorAll('[data-prim="band-masthead"]').length,
@@ -166,6 +176,8 @@ function panelTitleProbe(page) {
 
 async function main() {
 	fs.mkdirSync(OUT, { recursive: true });
+	session = await signIn(ORIGIN, 'Screens verify (automated check)');
+	results.operatorGate = session.gate ? 'on (deck surfaces signed in)' : 'off';
 	const browser = await puppeteer.launch({ executablePath: CHROME, headless: 'new', args: SWIFTSHADER_ARGS });
 	try {
 		// ── /ops — THE SITUATION WALL ─────────────────────────────────────
@@ -278,10 +290,16 @@ async function main() {
 					'advisory kicker': { ok: p.kicker.length > 0, detail: p.kicker },
 				};
 			},
-			{ settle: 1500 },
+			{ settle: 1500, anonymous: true },
 		);
 
-		// ── /driver — THE WINDOW, DRIVEN end-to-end ───────────────────────
+		// ── /driver — the 108 flow (public: anonymous) ───────────────────
+		// Driven end-to-end ONLY in its labelled scripted fallback
+		// (data-mode="scripted": nothing is sent, the approval is scripted).
+		// In live mode a request is a REAL 'requested' dispatch row on the
+		// duty officer's wall, and only a named officer opens the window
+		// (C6) — so the camera asserts the idle request card and never
+		// presses the request button. Seven checks either way.
 		{
 			const page = await browser.newPage();
 			await page.setViewport({ width: 1440, height: 900 });
@@ -290,30 +308,57 @@ async function main() {
 			try {
 				await page.goto(`${ORIGIN}/driver`, { waitUntil: 'domcontentloaded', timeout: 60000 });
 				await page.waitForSelector('[data-screen="driver"]', { timeout: 30000 });
-				const phaseOf = () => page.$eval('[data-screen="driver"]', (el) => el.getAttribute('data-phase'));
-				record('driver', 'flow mounts at idle', (await phaseOf()) === 'idle', `phase=${await phaseOf()}`);
+				// the public feed settles the mode (connecting → live | scripted)
+				await page
+					.waitForSelector('[data-screen="driver"]:not([data-mode="connecting"])', { timeout: 30000 })
+					.catch(() => null);
+				const attrOf = (name) => page.$eval('[data-screen="driver"]', (el, n) => el.getAttribute(n), name);
+				const phaseOf = () => attrOf('data-phase');
+				const mode = await attrOf('data-mode');
+				record('driver', 'flow mounts at idle', (await phaseOf()) === 'idle', `phase=${await phaseOf()} mode=${mode}`);
+				results.screens.driver.mode = mode; // the checks below depend on it (the consistency oracle reads it)
 				// the golden-hour counter must tick (two reads 1.2 s apart)
 				const g1 = await page.$eval('[data-golden-seconds]', (el) => Number(el.getAttribute('data-golden-seconds')));
 				await sleep(1300);
 				const g2 = await page.$eval('[data-golden-seconds]', (el) => Number(el.getAttribute('data-golden-seconds')));
 				record('driver', 'golden-hour counter ticks', g2 > g1, `${g1} → ${g2}`);
-				// pick the first stretch, request, ride evaluating → proposal
-				await page.select('[data-testid="stretch-select"]', await page.$eval('[data-testid="stretch-select"] option:not([value=""])', (o) => o.value));
-				await page.evaluate(() => {
-					const btns = [...document.querySelectorAll('button')];
-					btns.find((b) => b.closest('.request-row'))?.click();
-				});
-				await page.waitForSelector('[data-testid="evaluating"], [data-testid="proposal"]', { timeout: 20000 });
-				record('driver', 'evaluating state mounts', true, `phase=${await phaseOf()}`);
-				await page.waitForSelector('[data-testid="proposal"]', { timeout: 30000 });
-				record('driver', 'proposal mounts (duty-officer approve present)', true, `phase=${await phaseOf()}`);
-				await page.evaluate(() => {
-					const btns = [...document.querySelectorAll('[data-testid="proposal"] button')];
-					btns.find((b) => /approve|મંજૂર/i.test(b.textContent ?? ''))?.click();
-				});
-				await page.waitForSelector('[data-testid="window-open"]', { timeout: 20000 });
-				const cd = await page.$eval('[data-countdown]', (el) => Number(el.getAttribute('data-countdown')));
-				record('driver', 'approved open window (live countdown)', cd > 0, `phase=${await phaseOf()} countdown=${cd}s`);
+				if (mode === 'scripted') {
+					// pick the first stretch, request, ride evaluating → proposal
+					await page.select('[data-testid="stretch-select"]', await page.$eval('[data-testid="stretch-select"] option:not([value=""])', (o) => o.value));
+					await page.evaluate(() => {
+						const btns = [...document.querySelectorAll('button')];
+						btns.find((b) => b.closest('.request-row'))?.click();
+					});
+					await page.waitForSelector('[data-testid="evaluating"], [data-testid="proposal"]', { timeout: 20000 });
+					record('driver', 'evaluating state mounts', true, `phase=${await phaseOf()}`);
+					await page.waitForSelector('[data-testid="proposal"]', { timeout: 30000 });
+					record('driver', 'proposal mounts (duty-officer approve present)', true, `phase=${await phaseOf()}`);
+					await page.evaluate(() => {
+						const btns = [...document.querySelectorAll('[data-testid="proposal"] button')];
+						btns.find((b) => /approve|મંજૂર/i.test(b.textContent ?? ''))?.click();
+					});
+					await page.waitForSelector('[data-testid="window-open"]', { timeout: 20000 });
+					const cd = await page.$eval('[data-countdown]', (el) => Number(el.getAttribute('data-countdown')));
+					record('driver', 'approved open window (live countdown)', cd > 0, `phase=${await phaseOf()} countdown=${cd}s`);
+				} else {
+					// live (or a feed that never settled): read the idle card, file nothing
+					const card = await page.evaluate(() => {
+						const btn = [...document.querySelectorAll('.request-row button')][0] ?? null;
+						return {
+							stretches: document.querySelectorAll('[data-testid="stretch-select"] option:not([value=""])').length,
+							unitInput: !!document.querySelector('[data-testid="unit-input"]'),
+							requestButton: !!btn,
+							requestHeld: !!btn && btn.disabled,
+						};
+					});
+					record('driver', 'live mode: live corridor stretches on offer', mode === 'live' && card.stretches >= 1,
+						`mode=${mode} stretches=${card.stretches}`);
+					record('driver', 'live mode: the request must name a 108 unit (button held until one is typed)',
+						card.unitInput && card.requestButton && card.requestHeld,
+						`unit input=${card.unitInput} request button=${card.requestButton} held=${card.requestHeld}`);
+					record('driver', 'live mode: nothing filed by the camera (still idle)', (await phaseOf()) === 'idle',
+						`phase=${await phaseOf()} — a window opens only on a named duty officer's approval on /ops`);
+				}
 				record('driver', 'no-page-errors', consoleErrors.length === 0, consoleErrors.slice(0, 3).join(' | ') || 'none');
 				await sleep(1200);
 				const file = 'screen_driver.png';
@@ -342,13 +387,18 @@ async function main() {
 				const p = await page.evaluate(() => {
 					const cols = [...document.querySelectorAll('.lang-col')];
 					const texts = cols.map((c) => c.querySelector('.adv-text')?.textContent?.trim() ?? '');
+					// Signed in, the desk drafts from the live event (not the
+					// offline fixture): its road names ride verbatim in Latin
+					// script inside the Hindi and Gujarati advisories, so they
+					// are read from those columns, never hard-coded.
+					const latin = (t) => (t.match(/[A-Za-z][A-Za-z0-9.'’()–-]*(?:[ /]+[A-Za-z0-9(][A-Za-z0-9.'’()–-]*)*/g) ?? []).map((x) => x.trim());
+					const byLang = (l) => texts[cols.findIndex((c) => c.getAttribute('data-lang') === l)] ?? '';
+					const facts = [...new Set([...latin(byLang('hi')), ...latin(byLang('gu'))])];
 					return {
 						langs: cols.map((c) => c.getAttribute('data-lang')),
 						filled: texts.filter((t) => t.length > 10).length,
-						sameRoad: (() => {
-							const road = 'SP Ring Road / Riverfront Road';
-							return cols.length > 0 && cols.every((c) => (c.textContent ?? '').includes(road));
-						})(),
+						facts,
+						sameRoad: facts.length > 0 && ['en', 'hi', 'gu'].every((l) => facts.every((f) => byLang(l).includes(f))),
 					};
 				});
 				return {
@@ -357,7 +407,7 @@ async function main() {
 						detail: `langs=[${p.langs.join(',')}]`,
 					},
 					'all three advisories non-empty': { ok: p.filled === 3, detail: `filled=${p.filled}/3` },
-					'same facts in all three (road name verbatim)': { ok: p.sameRoad, detail: '' },
+					'same facts in all three (road name verbatim)': { ok: p.sameRoad, detail: `facts=[${p.facts.join(' | ')}]` },
 				};
 			},
 			{ settle: 1500 },
@@ -386,6 +436,7 @@ async function main() {
 		);
 	} finally {
 		await browser.close();
+		await signOut(session);
 		fs.writeFileSync(path.join(OUT, 'screens_manifest.json'), JSON.stringify(results, null, 2));
 	}
 	console.log(JSON.stringify(results, null, 2));
@@ -393,7 +444,8 @@ async function main() {
 	process.exit(failures === 0 ? 0 : 1);
 }
 
-main().catch((e) => {
+main().catch(async (e) => {
+	await signOut(session);
 	console.error('HARNESS ERROR', e);
 	fs.writeFileSync(path.join(OUT, 'screens_manifest.json'), JSON.stringify({ ...results, error: String(e) }, null, 2));
 	process.exit(2);

@@ -29,6 +29,12 @@ const en: Pack = {
 	kind_egress_surge: 'Stadium egress surge',
 	kind_emergency_evacuation: 'Flood evacuation / relief',
 	kind_work_zone: 'Infrastructure work zone',
+	// Operator-only kinds (watchlist-anpr, migration 010) — labelled in the
+	// core so no surface ever renders the raw key; public surfaces never
+	// receive these events at all (holds.ts PUBLIC_EVENT_KINDS).
+	kind_vehicle_pursuit: 'Vehicle pursuit',
+	kind_crime_incident: 'Crime incident',
+	kind_unknown: 'Corridor event',
 
 	// ── Crowd classes ──────────────────────────────────────────────────
 	crowd_LOW: 'Low crowd',
@@ -117,11 +123,11 @@ const en: Pack = {
 	// ── Citizen advisory (ported) ─────────────────────────────────────
 	brand: 'Corridor Alerts · Ahmedabad',
 	tagline: 'Know before the barricade goes up.',
-	updated: 'Updated live from the traffic control room',
+	updated: 'Advisories last checked',
 	statusActive: 'Corridor event in progress',
 	statusActiveSub: 'Rolling holds of ~2–3 minutes per stretch — not a full freeze.',
 	statusClear: 'No active corridor restrictions',
-	statusClearSub: 'Normal traffic across all city corridors.',
+	statusClearSub: 'These advisories cover planned corridor holds only — not general traffic.',
 	statusDone: 'Event completed — corridor released',
 	statusDoneSub: 'Traffic returning to normal flow.',
 	startDemo: 'Play a demo movement',
@@ -190,6 +196,9 @@ const hi: Pack = {
 	kind_egress_surge: 'स्टेडियम निकासी भीड़',
 	kind_emergency_evacuation: 'बाढ़ राहत / खाली करने का काफ़िला',
 	kind_work_zone: 'बुनियादी कार्य क्षेत्र',
+	kind_vehicle_pursuit: 'वाहन पर्सुट',
+	kind_crime_incident: 'अपराध घटना',
+	kind_unknown: 'कॉरिडोर घटना',
 
 	crowd_LOW: 'कम भीड़',
 	crowd_MODERATE: 'मध्यम भीड़',
@@ -270,11 +279,11 @@ const hi: Pack = {
 
 	brand: 'कॉरिडोर अलर्ट · अहमदाबाद',
 	tagline: 'बैरिकेड लगने से पहले ही जानें।',
-	updated: 'ट्रैफ़िक कंट्रोल रूम से सीधे अपडेट',
+	updated: 'सूचनाएँ पिछली बार जाँची गईं',
 	statusActive: 'कॉरिडोर घटना चल रही है',
-	statusActiveSub: 'हर हिस्से पर ~2–3 मिनट के छोटे रोक — पूरी सड़क बंद नहीं।',
+	statusActiveSub: 'हर हिस्से पर ~२–३ मिनट के छोटे रोक — पूरी सड़क बंद नहीं।',
 	statusClear: 'इस समय कोई सड़क प्रतिबंध नहीं',
-	statusClearSub: 'शहर के सभी कॉरिडोर पर सामान्य यातायात।',
+	statusClearSub: 'ये सूचनाएँ केवल नियोजित कॉरिडोर ठहराव बताती हैं — सामान्य यातायात नहीं।',
 	statusDone: 'घटना पूरी — कॉरिडोर खुल गया',
 	statusDoneSub: 'यातायात सामान्य हो रहा है।',
 	startDemo: 'डेमो काफ़िला चलाएँ',
@@ -287,11 +296,11 @@ const hi: Pack = {
 	passed: 'खुल गया',
 	why: 'इतना छोटा रोक क्यों?',
 	whyBody:
-		'रोक घटना की लाइव स्थिति (60–180 सेकंड पहले) और ट्रैफ़िक पूर्वानुमान से तय होती है — सड़क सिर्फ़ तब बंद रहती है जब काफ़िला सच में पास हो।',
+		'रोक घटना की लाइव स्थिति (६०–१८० सेकंड पहले) और ट्रैफ़िक पूर्वानुमान से तय होती है — सड़क सिर्फ़ तब बंद रहती है जब काफ़िला सच में पास हो।',
 	subscribeTitle: 'अपने फ़ोन पर अलर्ट पाएँ',
 	subscribeSub: 'SMS / WhatsApp, नःशुल्क, आपकी भाषा में।',
 	phoneLabel: 'मोबाइल नंबर',
-	phonePlaceholder: '10 अंकों का नंबर',
+	phonePlaceholder: '१० अंकों का नंबर',
 	languageLabel: 'अलर्ट की भाषा',
 	subscribeBtn: 'सब्सक्राइब करें',
 	demoBadge: 'डेमो पूर्वावलोकन — कोई असली SMS/WhatsApp नहीं भेजा जाता',
@@ -325,7 +334,7 @@ const hi: Pack = {
 	windowClosesIn: 'विंडो बंद होगी',
 	minutesReturned: 'मिनट गोल्डन आवर को लौटाए गए',
 	holdPosition: 'रुकें — अगली विंडो',
-	baselineNote: 'अनुरोध का कोई रास्ता न हो तो: दर्ज आँकड़ों में एम्बुलेंस 5–20 मिनट रुकती है।',
+	baselineNote: 'अनुरोध का कोई रास्ता न हो तो: दर्ज आँकड़ों में एम्बुलेंस ५–२० मिनट रुकती है।',
 	openDriverView: '108 ड्राइवर व्यू खोलें',
 	demoNote: 'स्क्रिप्टेड सिमुलेशन पर चलने वाला डेमो — कोई असली डिस्पैच नहीं।',
 };
@@ -339,6 +348,9 @@ const gu: Pack = {
 	kind_egress_surge: 'સ્ટેડિયમ નિકાસ ભીડ',
 	kind_emergency_evacuation: 'પૂર રાહત / ખાલી કરવાનો કાફલો',
 	kind_work_zone: 'મૂળભૂત સુવિધા કામગીરી',
+	kind_vehicle_pursuit: 'વાહન પર્સ્યુટ',
+	kind_crime_incident: 'ગુનાહી ઘટના',
+	kind_unknown: 'કોરિડોર ઘટના',
 
 	crowd_LOW: 'ઓછી ભીડ',
 	crowd_MODERATE: 'મધ્યમ ભીડ',
@@ -419,16 +431,16 @@ const gu: Pack = {
 
 	brand: 'કોરિડોર એલર્ટ · અમદાવાદ',
 	tagline: 'અવરોધક ઊભો થાય તે પહેલાં જાણો.',
-	updated: 'ટ્રાફિક કંટ્રોલ રૂમમાંથી સીધા અપડેટ',
+	updated: 'સૂચનાઓ છેલ્લે ચકાસી',
 	statusActive: 'કોરિડોર ઘટના ચાલુ છે',
-	statusActiveSub: 'દરેક ટૂકડા પર ~2–3 મિનિટના ટૂંકા અવરોધ — આખો રસ્તો બંધ નહીં.',
+	statusActiveSub: 'દરેક ટુકડા પર ~૨–૩ મિનિટના ટૂંકા અવરોધ — આખો રસ્તો બંધ નહીં.',
 	statusClear: 'અત્યારે કોઈ રસ્તા પ્રતિબંધ નથી',
-	statusClearSub: 'શહેરના બધા કોરિડોર પર સામાન્ય ટ્રાફિક.',
+	statusClearSub: 'આ સૂચનાઓ ફક્ત આયોજિત કોરિડોર અવરોધ જણાવે છે — સામાન્ય ટ્રાફિક નહીં.',
 	statusDone: 'ઘટના પૂરી — કોરિડોર ખુલ્લો',
 	statusDoneSub: 'ટ્રાફિક સામાન્ય થઈ રહ્યો છે.',
 	startDemo: 'ડેમો કાફલો ચલાવો',
 	freezeTitle: 'ક્યાં અવરોધ શક્ય છે',
-	freezeZone: 'રસ્તાનો ટૂકડો',
+	freezeZone: 'રસ્તાનો ટુકડો',
 	freezeWindow: 'અવરોધનો સમય',
 	freezeMinutes: (m) => `~${m} મિનિટ`,
 	alternate: 'આ બદલે ચાલો',
@@ -436,11 +448,11 @@ const gu: Pack = {
 	passed: 'ખુલ્લો',
 	why: 'આટલો ટૂંકો અવરોધ કેમ?',
 	whyBody:
-		'અવરોધ ઘટનાની લાઇવ સ્થિતિ (60–180 સેકંડ પહેલાં) અને ટ્રાફિક આગાહી પરથી નક્કી થાય છે — રસ્તો માત્ર ત્યારે જ બંધ રહે છે જ્યારે કાફલો સાચે જ પાસે હોય.',
+		'અવરોધ ઘટનાની લાઇવ સ્થિતિ (૬૦–૧૮૦ સેકંડ પહેલાં) અને ટ્રાફિક આગાહી પરથી નક્કી થાય છે — રસ્તો માત્ર ત્યારે જ બંધ રહે છે જ્યારે કાફલો સાચે જ પાસે હોય.',
 	subscribeTitle: 'તમારા ફોન પર એલર્ટ મેળવો',
 	subscribeSub: 'SMS / WhatsApp, મફત, તમારી ભાષામાં.',
 	phoneLabel: 'મોબાઇલ નંબર',
-	phonePlaceholder: '10 આંકડાનો નંબર',
+	phonePlaceholder: '૧૦ આંકડાનો નંબર',
 	languageLabel: 'એલર્ટની ભાષા',
 	subscribeBtn: 'સબ્સ્ક્રાઇબ કરો',
 	demoBadge: 'ડેમો પ્રીવ્યૂ — કોઈ અસલી SMS/WhatsApp મોકલાતો નથી',
@@ -465,7 +477,7 @@ const gu: Pack = {
 	requestBtn: 'કોરિડોર સમયની વિનંતી',
 	evaluating: 'કોરિડોર ગેપ મૂલવાઈ રહી છે…',
 	proposalTitle: 'પ્લેટફોર્મનો સૂચવેલો સમય',
-	convoyReachesIn: 'ઘટના તમારા ટૂકડા પર પહોંચશે',
+	convoyReachesIn: 'ઘટના તમારા ટુકડા પર પહોંચશે',
 	crossBefore: 'આ પહેલાં પસાર કરો',
 	officerLabel: 'ડ્યુટી ઓફિસર (ડેમો)',
 	approveBtn: 'મંજૂર · વિન્ડો ખોલો',
@@ -474,7 +486,7 @@ const gu: Pack = {
 	windowClosesIn: 'વિન્ડો બંધ થશે',
 	minutesReturned: 'મિનિટ ગોલ્ડન આવરને પરત',
 	holdPosition: 'રોકાઓ — આગામી વિન્ડો',
-	baselineNote: 'વિનંતીનો કોઈ રસ્તો ન હોય તો: દર્જ આંકડામાં એમ્બ્યુલન્સ 5–20 મિનિટ રોકાય છે.',
+	baselineNote: 'વિનંતીનો કોઈ રસ્તો ન હોય તો: નોંધાયેલા આંકડા મુજબ એમ્બ્યુલન્સ ૫–૨૦ મિનિટ રોકાય છે.',
 	openDriverView: '108 ડ્રાઇવર વ્યૂ ખોલો',
 	demoNote: 'સ્ક્રિપ્ટેડ સિમ્યુલેશન પર ચાલતો ડેમો — કોઈ અસલી ડિસ્પેચ નથી.',
 };
@@ -486,6 +498,17 @@ export function t(lang: string, key: string, ...args: unknown[]): string {
 	const val = pack[key] ?? PACKS.en[key];
 	if (typeof val === 'function') return String(val(...args));
 	return val != null ? String(val) : key;
+}
+
+/**
+ * Event-kind label with a fallback: the per-language kind name, else the
+ * generic 'Corridor event' wording — NEVER the raw `kind_*` key, whatever
+ * kind string the API sends (new archetypes degrade to the generic label).
+ */
+export function kindLabel(lang: string, kind: string | null | undefined): string {
+	const key = `kind_${kind ?? ''}`;
+	const val = t(lang, key);
+	return val === key ? t(lang, 'kind_unknown') : val;
 }
 
 /** Indic-script digits for the demo alert preview (Indian SMS gateways). */

@@ -19,13 +19,22 @@ Flow of ONE ``apply`` (every step is auditable and reversible):
   5. COMMIT   — single transaction: the FIRST calibrated write per
                 junction snapshots the prior program into
                 ``corridor.signal_program_history`` (kind='snapshot'),
-                then upserts the calibrated program.
+                then upserts the calibrated program, then appends ONE
+                ``corridor.signal_plan_log`` row for the apply (013).
   6. REPORT   — the full decision (band, junctions, shadow outcome) is
                 returned AND kept in-process for GET /signals/plans.
 
 ``restore`` rebuilds ``osm_assumed`` rows from the earliest snapshot per
 junction and appends kind='restore' audit rows — demo state pollution is
 reversible by construction.
+
+Attribution (migration 013): every signal write is a row carrying
+``actor``, the named officer who triggered it (NULL when none was given
+and VVIP_REQUIRE_OFFICER is unset; never a guessed name) — each committed
+apply appends one ``signal_plan_log`` row (band, junctions, snapshots,
+shadow verdict), its first-write snapshot rows carry the same actor, and
+so does every restore row.  A re-apply over already-snapshotted junctions
+is therefore attributed too, not only the first write.
 
 SQL hygiene (house style, cf. adaptive/persistence.py and
 events/__init__.py): every WRITE statement is a LOCAL variable assigned a
@@ -92,7 +101,7 @@ _SQL_RESTORE_TARGETS_ALL = "SELECT DISTINCT ON (h.junction_id) h.junction_id, h.
 
 _SQL_RESTORE_TARGETS_EVENT = "SELECT DISTINCT ON (h.junction_id) h.junction_id, h.cycle_sec, h.phases, h.offset_sec, h.source, h.event_id FROM corridor.signal_program_history h WHERE h.kind = 'snapshot' AND h.event_id = $1::uuid ORDER BY h.junction_id, h.captured_at ASC"  # noqa: E501
 
-_SQL_HISTORY_LIST = "SELECT h.history_id, h.junction_id, h.event_id, h.kind, h.cycle_sec, h.phases, h.offset_sec, h.source, h.reason, h.captured_at FROM corridor.signal_program_history h ORDER BY h.captured_at DESC LIMIT $1"  # noqa: E501
+_SQL_HISTORY_LIST = "SELECT h.history_id, h.junction_id, h.event_id, h.kind, h.cycle_sec, h.phases, h.offset_sec, h.source, h.reason, h.actor, h.captured_at FROM corridor.signal_program_history h ORDER BY h.captured_at DESC LIMIT $1"  # noqa: E501
 
 
 # ---------------------------------------------------------------------------
@@ -109,6 +118,11 @@ def _parse_phases(raw: Any) -> list[dict]:
     if isinstance(raw, list):
         return [dict(p) for p in raw if isinstance(p, dict)]
     return []
+
+
+#: Public name for the program-phases parser (the city fusion snapshot
+#: renders junction phases exactly like GET /signals/state does).
+parse_phases = _parse_phases
 
 
 async def load_programs(pool: Any) -> list[JunctionProgram]:
@@ -315,10 +329,13 @@ async def apply_city_plan(
     writer_flag_value: bool | None = None,
     gate: Any = None,
     shadow_fn: Any = None,
+    actor: str | None = None,
 ) -> dict[str, Any]:
     """Apply one band→city-plan.  See the module docstring for the gate
     chain.  ``shadow_fn``/``gate`` injectable for tests; production uses
-    the module defaults.
+    the module defaults.  ``actor`` (the named officer) is recorded on
+    this apply's ``signal_plan_log`` row and on the snapshot rows it
+    writes.
 
     Returns the plan report (also stored as the last-plan report).  When
     the writer is disabled or the shadow gate fails, NOTHING is written
@@ -332,6 +349,7 @@ async def apply_city_plan(
             "applied": False,
             "reason": "writer_disabled",
             "band": band,
+            "actor": actor,
             "flag_env": WRITER_FLAG_ENV,
             "at": datetime.now(timezone.utc).isoformat(),
         }
@@ -351,6 +369,7 @@ async def apply_city_plan(
             "applied": False,
             "band": band,
             "event_id": event_id,
+            "actor": actor,
             "planned_junctions": [p.junction_id for p in planned],
             "at": datetime.now(timezone.utc).isoformat(),
         }
@@ -388,8 +407,9 @@ async def apply_city_plan(
 
         # Write statements: LOCAL single-line literals, $n params only
         # (house style — see module docstring).
-        snapshot_insert = "INSERT INTO corridor.signal_program_history (junction_id, event_id, kind, cycle_sec, phases, offset_sec, source, reason) VALUES ($1, $2, 'snapshot', $3, $4::jsonb, $5, $6, $7)"  # noqa: E501
+        snapshot_insert = "INSERT INTO corridor.signal_program_history (junction_id, event_id, kind, cycle_sec, phases, offset_sec, source, reason, actor) VALUES ($1, $2, 'snapshot', $3, $4::jsonb, $5, $6, $7, $8)"  # noqa: E501
         program_upsert = "INSERT INTO corridor.signal_programs (junction_id, cycle_sec, phases, offset_sec, source) VALUES ($1, $2, $3::jsonb, $4, $5) ON CONFLICT (junction_id) DO UPDATE SET cycle_sec = EXCLUDED.cycle_sec, phases = EXCLUDED.phases, offset_sec = EXCLUDED.offset_sec, source = EXCLUDED.source, updated_at = NOW()"  # noqa: E501
+        plan_log_insert = "INSERT INTO corridor.signal_plan_log (event_id, band, junction_ids, snapshots_written, shadow_eval, actor) VALUES ($1, $2, $3::bigint[], $4, $5, $6)"  # noqa: E501
 
         planned_ids = [p.junction_id for p in planned]
         current_by_junction = {p.junction_id: p for p in programs}
@@ -414,6 +434,7 @@ async def apply_city_plan(
                             prior.offset_sec,
                             prior.source,
                             _REASON_FIRST_WRITE,
+                            actor,
                         )
                         snapshots_written += 1
                     await conn.execute(
@@ -424,6 +445,17 @@ async def apply_city_plan(
                         prog.offset_sec,
                         "calibrated",
                     )
+                # The apply's own ledger row — in the SAME transaction, so a
+                # program write never exists without its attributed row.
+                await conn.execute(
+                    plan_log_insert,
+                    event_id,
+                    band,
+                    planned_ids,
+                    snapshots_written,
+                    shadow.status,
+                    actor,
+                )
 
         report["applied"] = True
         report["reason"] = "committed"
@@ -435,6 +467,7 @@ async def apply_city_plan(
             junctions=len(planned),
             snapshots=snapshots_written,
             shadow=shadow.status,
+            actor=actor,
         )
         _LAST_PLAN = report
         return report
@@ -446,18 +479,23 @@ async def apply_city_plan(
 
 
 async def restore_programs(
-    pool: Any, *, event_id: str | None = None, restore_all: bool = False
+    pool: Any,
+    *,
+    event_id: str | None = None,
+    restore_all: bool = False,
+    actor: str | None = None,
 ) -> dict[str, Any]:
     """Rebuild ``osm_assumed`` programs from the earliest snapshot per
     junction (``event_id`` scopes to that event's first-write snapshots;
     ``restore_all`` to every snapshotted junction) and append
-    kind='restore' audit rows.  Returns per-junction outcomes.
+    kind='restore' audit rows attributed to ``actor``.  Returns
+    per-junction outcomes.
     """
     if not restore_all and not event_id:
         return {"error": "specify event_id or all=true"}
 
     program_upsert = "INSERT INTO corridor.signal_programs (junction_id, cycle_sec, phases, offset_sec, source) VALUES ($1, $2, $3::jsonb, $4, $5) ON CONFLICT (junction_id) DO UPDATE SET cycle_sec = EXCLUDED.cycle_sec, phases = EXCLUDED.phases, offset_sec = EXCLUDED.offset_sec, source = EXCLUDED.source, updated_at = NOW()"  # noqa: E501
-    restore_marker = "INSERT INTO corridor.signal_program_history (junction_id, event_id, kind, cycle_sec, phases, offset_sec, source, reason) VALUES ($1, $2, 'restore', $3, $4::jsonb, $5, $6, $7)"  # noqa: E501
+    restore_marker = "INSERT INTO corridor.signal_program_history (junction_id, event_id, kind, cycle_sec, phases, offset_sec, source, reason, actor) VALUES ($1, $2, 'restore', $3, $4::jsonb, $5, $6, $7, $8)"  # noqa: E501
 
     async with signal_policy_gate.writer_exclusive():
         async with pool.acquire() as conn:
@@ -490,6 +528,7 @@ async def restore_programs(
                         offset_sec,
                         "osm_assumed",
                         _REASON_RESTORE,
+                        actor,
                     )
                     restored.append(
                         {
@@ -498,12 +537,15 @@ async def restore_programs(
                             "source": "osm_assumed",
                         }
                     )
-    logger.info("signals.restored", junctions=len(restored), event_id=event_id)
+    logger.info(
+        "signals.restored", junctions=len(restored), event_id=event_id, actor=actor
+    )
     return {
         "restored": len(restored),
         "junctions": restored,
         "event_id": event_id,
         "all": restore_all,
+        "actor": actor,
     }
 
 
@@ -523,6 +565,7 @@ async def list_history(pool: Any, limit: int = 50) -> list[dict]:
                 "offset_sec": int(r["offset_sec"] or 0),
                 "source": r["source"],
                 "reason": r["reason"],
+                "actor": r["actor"],
                 "captured_at": r["captured_at"].isoformat(),
             }
         )
@@ -536,6 +579,7 @@ __all__ = [
     "list_history",
     "load_programs",
     "overrides_from_programs",
+    "parse_phases",
     "restore_programs",
     "shadow_evaluate_plan",
     "writer_enabled",

@@ -26,6 +26,7 @@ from traffic_oracle.simulation.network import SegmentSpec, SimNetwork
 from traffic_oracle.simulation.rng import SeededRng
 from traffic_oracle.simulation.tod import (
     hour_demand_multiplier,
+    to_ist,
     waterlogging_rate_multiplier,
 )
 
@@ -259,7 +260,7 @@ def sample_events(
             continue
         for block in range(n_blocks):
             t0 = block * hour_block
-            blk_dt = start_dt + timedelta(seconds=t0)
+            blk_dt = to_ist(start_dt + timedelta(seconds=t0))
             hour, dow = blk_dt.hour, blk_dt.weekday()
             tod_mult = max(hour_demand_multiplier(hour, dow), 0.05)
 

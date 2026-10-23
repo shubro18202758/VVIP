@@ -1,34 +1,66 @@
 {
   "flagship": {
     "name": "God's Eye Morning",
-    "story": "Rath Yatra procession + monsoon burst + a stolen vehicle reported, one morning, one live stack \u2014 pursuit chain, Jan Rakshak spillover dispatch, ambulance green-corridor escalation, and the city signal-policy guard, end to end.",
+    "story": "Rath Yatra procession + monsoon burst + a stolen vehicle reported, one morning, one live stack \u2014 pursuit chain (evidence, never a fine), Jan Rakshak spillover dispatch, ambulance green-corridor escalation, and the city signal-policy guard, end to end.",
     "composition_use_cases": [
       {
         "use_case_id": "rath_yatra_monsoon_ambulance",
-        "run_id": 19,
+        "run_id": 27,
+        "status": "completed",
         "delivery": {
-          "frames": 736,
-          "delivered": 736,
+          "frame": 761,
+          "total": 761,
+          "delivered": 761,
           "failed": 0,
           "skipped": 0,
           "late": 0
         },
-        "event_id": "3ef08290-66d8-511b-a25a-3d2967c79985"
+        "event_id": "c7073ae6-56ae-5048-8bdc-d826d8da5ddc"
       },
       {
         "use_case_id": "watchlist_anpr_sweep",
-        "seed": 20261277,
-        "run_id": 20,
+        "seed": 20261105,
+        "run_id": 28,
+        "status": "completed",
         "delivery": {
-          "delivered": 600
-        }
+          "delivered": 583
+        },
+        "event_id": "f493368e-9630-5c03-a786-48f23234880b"
       }
     ],
-    "route": "Relief Road -> Nehru Bridge -> Riverfront West -> Ashram South (1005->1015->1006->1001)",
+    "route": "Relief Road -> Nehru Bridge Road -> Ashram Road (South) -> Riverfront Road (West) (1005->1015->1001->1006)",
     "closure_policy": {
       "closure_type": "signal_hold",
       "advance_closure_sec": 45
     }
+  },
+  "run_scoped_ids": {
+    "flagship_run_id": 27,
+    "flagship_event_id": "c7073ae6-56ae-5048-8bdc-d826d8da5ddc",
+    "sweep_run_id": 28,
+    "sweep_event_id": "f493368e-9630-5c03-a786-48f23234880b",
+    "pursuit_event_id": "38423ac5-bbd3-4e95-be53-180d734cad38",
+    "pursuit_authorising_recommendation_id": "3614dfa5-2ac8-4758-ae6e-38bef2447da9",
+    "jan_rakshak_dispatch_id": "d8bd77fb-cc9e-4d20-b3d1-e3c820bb04de",
+    "vehicle_id": "1b94e9d2-7e11-4174-a735-7dd3be3189cf"
+  },
+  "scripted_pursuit_closed": true,
+  "approvals": {
+    "officer": "Scripted demo officer (showcase script)",
+    "note": "this script runs unattended: every approval it makes is recorded under this officer label; in the judged demo a signed-in human approves on /ops"
+  },
+  "signal_policy_writer": {
+    "recreated_for_this_run": false,
+    "pre_run_value": null,
+    "restored_to_pre_run_value": null,
+    "note": "already on before the run (left as found)"
+  },
+  "stack": {
+    "oracle": "http://127.0.0.1:8091",
+    "emulator": "http://127.0.0.1:8090",
+    "deck": "http://127.0.0.1:5273",
+    "compose_project": "vvip-argus",
+    "postgis_container": "vvip-argus-postgis"
   },
   "event_types": [
     "procession",
@@ -38,8 +70,8 @@
     "stolen_vehicle_report",
     "anpr_sweep",
     "crime_incident",
-    "echallan_recommendation",
-    "human_approval",
+    "stolen_sighting_evidence",
+    "officer_approval",
     "vehicle_pursuit",
     "interception_plan",
     "jan_rakshak_dispatch",
@@ -49,59 +81,90 @@
     {
       "step": 1,
       "name": "plate_earmarked",
-      "detail": "GJ27EM9001 flagged (stolen_vehicle_fir, FIR 4401/2026, Kalupur PS); earmark_id 0f8d3999-8585-4510-94de-50b7ddd4ad5b",
+      "detail": "GJ27EM9001 flagged (stolen_vehicle_fir, FIR 4401/2026, Kalupur PS); earmark_id 20a8bf70-b5de-4ab4-8c78-49092d6fd6ce",
       "evidence": "POST /api/v1/vehicles/GJ27EM9001/earmark"
     },
     {
       "step": 2,
       "name": "anpr_camera_sightings",
-      "detail": "4 emulated reads this run on cameras ['EM-CAM-01', 'EM-CAM-02', 'EM-CAM-03', 'EM-CAM-04'] at [112.0, 95.0, 101.0, 92.0] km/h (matched_plate_hit=stolen_vehicle, source=emulated_anpr)",
+      "detail": "6 emulated reads this run on cameras ['EM-CAM-01', 'EM-CAM-02', 'EM-CAM-03', 'EM-CAM-04', 'EM-J01B', 'EM-J05'] at [95.0, 102.0, 115.0, 103.0, 110.0, 113.0] km/h (matched_plate_hit=stolen_vehicle, source=emulated_anpr)",
       "evidence": "GET /api/v1/vehicles/1b94e9d2-7e11-4174-a735-7dd3be3189cf/sightings"
     },
     {
       "step": 3,
-      "name": "echallan_recommendation",
-      "detail": "rules fired ['R_SPD_SEGMENT', 'R_SPD_SEGMENT', 'R_SPD_SEGMENT', 'R_SPD_SEGMENT']; chosen: e-challan recommended: GJ27EM9001 read at 95 km/h in a 40 km/h segment",
-      "evidence": "POST /api/v1/enforcement/evaluate x4 -> recommendation e91d4591-390a-4c55-bcb0-ffd10c769c20 PENDING"
+      "name": "stolen_sighting_evidence",
+      "detail": "6 R_STOLEN_SIGHTING (evidence only) for this run's reads; e-challan withheld (penal rules that would have fired: ['R_SIGNAL_VIOLATION', 'R_SPD_SEGMENT']); 0 penal recommendations; chosen: stolen vehicle (FIR 4401/2026) sighted at EM-CAM-03 \u2014 e-challan withheld, vehicle reported stolen",
+      "evidence": "POST /api/v1/enforcement/evaluate x6 -> recommendation 3614dfa5-2ac8-4758-ae6e-38bef2447da9 PENDING"
     },
     {
       "step": 4,
-      "name": "human_style_approval",
-      "detail": "approved by Duty Officer R. Mehta (God's Eye Morning)",
-      "evidence": "POST /api/v1/enforcement/recommendations/{id}/decision (audit tail append-only)"
+      "name": "officer_pursuit_authorisation",
+      "detail": "approved by Scripted demo officer (showcase script) \u2014 'pursuit authorised on a reported-stolen vehicle (evidence, no fine)'; an e-challan approval on the plate is refused: HTTP 409 'e-challan withheld \u2014 vehicle reported stolen'",
+      "evidence": "POST /api/v1/enforcement/recommendations/{id}/decision (audit tail append-only; a penal approval on a reported-stolen vehicle \u2192 409)"
     },
     {
       "step": 5,
       "name": "pursuit_event",
-      "detail": "PURSUIT \u2014 stolen GJ27EM9001 (FIR 4401/2026, Kalupur PS) [planning]",
-      "evidence": "POST /api/v1/events vehicle_pursuit 4508d86d-566b-438f-8414-b3d67fd7e6e4 (metadata vehicle_id+recommendation_id)"
+      "detail": "PURSUIT \u2014 stolen GJ27EM9001 (FIR 4401/2026, Kalupur PS) [planning; closed when the run ended: cancelled by the scripted officer]",
+      "evidence": "POST /api/v1/events vehicle_pursuit 38423ac5-bbd3-4e95-be53-180d734cad38 (metadata vehicle_id+recommendation_id)"
     },
     {
       "step": 6,
       "name": "interception_and_live_trace",
-      "detail": "10 choke junctions ranked (top 3); trace 4 positions source=emulated_anpr",
-      "evidence": "GET /api/v1/events/4508d86d-566b-438f-8414-b3d67fd7e6e4/interception-plan + GET /api/v1/vehicles/1b94e9d2-7e11-4174-a735-7dd3be3189cf/trace (canvas vehicle-traces layer)"
+      "detail": "10 choke junctions ranked (top 15); trace 12 positions source=emulated_anpr",
+      "evidence": "GET /api/v1/events/38423ac5-bbd3-4e95-be53-180d734cad38/interception-plan + GET /api/v1/vehicles/1b94e9d2-7e11-4174-a735-7dd3be3189cf/trace (canvas vehicle-traces layer)"
     }
   ],
+  "stolen_vehicle_rule": {
+    "rule": "C-N: a reported-stolen vehicle's reads are evidence only \u2014 no e-challan for the registered owner; approving a penal recommendation on it is refused (409)",
+    "evidence_recs_this_run": 6,
+    "penal_recs_this_run": 0,
+    "withheld_rules": [
+      "R_SPD_SEGMENT",
+      "R_SPD_SEGMENT",
+      "R_SIGNAL_VIOLATION",
+      "R_SPD_SEGMENT",
+      "R_SPD_SEGMENT",
+      "R_SPD_SEGMENT",
+      "R_SPD_SEGMENT",
+      "R_SIGNAL_VIOLATION"
+    ],
+    "penal_approval_probe": {
+      "exercised": true,
+      "recommendation_id": "c20da1e8-40a4-4099-b54c-e7bcc3ee154c",
+      "rule_id": "R_SPD_SEGMENT",
+      "http": 409,
+      "detail": "e-challan withheld \u2014 vehicle reported stolen",
+      "reason": "stolen_vehicle_fir",
+      "precondition": {
+        "earmark_state": "flagged",
+        "lawful_basis": "stolen_vehicle_fir"
+      },
+      "still_pending": true
+    }
+  },
   "counts": {
-    "decisions_logged_audit_rows_this_run": 36,
-    "situation_log_rows_this_run": 30,
+    "decisions_logged_audit_rows_this_run": 31,
+    "situation_log_rows_this_run": 25,
     "param_override_rows_this_run": 6,
-    "band_transitions_total": 3,
-    "band_transitions_this_run": 3,
-    "bands": "AMBER:6,GREEN:2,RED:22",
+    "band_transitions_total": 1,
+    "band_transitions_this_run": 1,
+    "bands": "AMBER:7,RED:18",
     "green_corridor_windows": 4,
-    "ambulance_delay_escalations_this_run": 1,
+    "ambulance_delay_escalations_this_run": 2,
     "signal_plan_shifts_committed": 0,
     "signal_policy_refusals": 1
   },
   "signal_policy_guard": {
     "ruling": "guard-fired + fully-auditable decision = PASS for the band->plan element; signal_plan_shifts counts COMMITTED writes only",
     "twin_calibration_replay": {
-      "status": "ok",
-      "n_observations": 40,
-      "speed_mae_kmh": 7.2,
-      "mae_tolerance_kmh": 5.0,
+      "status": "no_data",
+      "reason": "no traffic.hourly_aggregates rows in window (no field observations)",
+      "window_start": "2026-10-20T23:58:47+05:30",
+      "window_end": "2026-10-23T23:58:47+05:30",
+      "n_observations": 0,
+      "speed_mae_kmh": null,
+      "mae_tolerance_kmh": null,
       "calibrated": false
     },
     "city_band_live": "AMBER",
@@ -126,8 +189,8 @@
       "shadow_eval": {
         "status": "unavailable",
         "detail": "twin_not_calibrated",
-        "baseline_disruption_vh": 26.8438,
-        "candidate_disruption_vh": 26.8438
+        "baseline_disruption_vh": 17.1375,
+        "candidate_disruption_vh": 17.1375
       }
     },
     "last_plan_auditable": {
@@ -148,12 +211,12 @@
       "shadow_eval": {
         "status": "unavailable",
         "detail": "twin_not_calibrated",
-        "baseline_disruption_vh": 26.8438,
-        "candidate_disruption_vh": 26.8438
+        "baseline_disruption_vh": 17.1375,
+        "candidate_disruption_vh": 17.1375
       },
-      "event_id": "3ef08290-66d8-511b-a25a-3d2967c79985"
+      "event_id": "c7073ae6-56ae-5048-8bdc-d826d8da5ddc"
     },
-    "refusal_reason": "shadow_eval_failed_closed: twin_not_calibrated (replay MAE 7.2 km/h vs 5.0 gate; seeded observations not calibratable)"
+    "refusal_reason": "shadow_eval_failed_closed: twin_not_calibrated (replay no_data: 0 field hourly aggregates in the last 72 h (no traffic.hourly_aggregates rows in window (no field observations)); the twin calibrates on REAL field observations only)"
   },
   "jan_rakshak": {
     "dispatched": true,
@@ -161,7 +224,7 @@
     "agency_label": "Jan Rakshak",
     "unit": "JR-EM-01",
     "waypoint_junction": 5,
-    "spillover": "market_spillover behind Tilak Road barricades (segment 1013)",
+    "spillover": "market_spillover behind Swami Vivekananda Road barricades (segment 1013)",
     "statuses": [
       "requested",
       "approved",
@@ -177,36 +240,41 @@
       [
         "requested",
         "approved",
-        "Duty Officer R. Mehta (God's Eye Morning)"
+        "Scripted demo officer (showcase script)"
       ],
       [
         "approved",
         "en_route",
-        "Duty Officer R. Mehta (God's Eye Morning)"
+        "Scripted demo officer (showcase script)"
       ],
       [
         "en_route",
         "on_scene",
-        "Duty Officer R. Mehta (God's Eye Morning)"
+        "Scripted demo officer (showcase script)"
       ]
     ],
     "projected_unit": {
       "unit_id": "JR-EM-01",
-      "dispatch_id": "cfb821b9-ee89-4f1b-90a8-3d6ca9a71f39",
+      "dispatch_id": "d8bd77fb-cc9e-4d20-b3d1-e3c820bb04de",
       "agency": "jan_rakshak",
+      "agency_label": "Jan Rakshak",
       "label": "Jan Rakshak \u00b7 JR-EM-01",
-      "assigned_event_id": "3ef08290-66d8-511b-a25a-3d2967c79985",
+      "assigned_event_id": "c7073ae6-56ae-5048-8bdc-d826d8da5ddc",
+      "waypoint_junction": 5,
+      "approved_at": "2026-10-23T18:28:47.353Z",
       "status": "on_scene",
       "emulated": true,
       "source": "emulated_dispatch_projection",
+      "double_booked": false,
+      "staged_at": "spine_start",
       "position": [
-        72.585,
-        23.02
+        72.590119,
+        23.028322
       ],
-      "progress": 1.0,
-      "eta_sec": 0.0,
-      "arrived": true,
-      "speed_kmh": 37.79
+      "progress": 6e-05,
+      "eta_sec": 227.8,
+      "arrived": false,
+      "speed_kmh": 35.34
     }
   },
   "ambulance_green_corridor": {
@@ -214,8 +282,8 @@
       {
         "label": "window_opening",
         "effective_class": "AMBER",
-        "transitioned": true,
-        "previous_class": "GREEN",
+        "transitioned": false,
+        "previous_class": "AMBER",
         "escalation": {
           "escalate": false,
           "level": "NONE",
@@ -248,7 +316,7 @@
         ]
       }
     ],
-    "audit_rows_this_run": 1,
+    "audit_rows_this_run": 2,
     "twin_windows": 4,
     "window_labels": [
       "108 cardiac green-corridor window \u2014 Relief Road stretch",
@@ -257,34 +325,21 @@
       "108 cardiac green-corridor window \u2014 Ashram South handover"
     ]
   },
-  "band_easing": {
-    "observes": [
+  "band_transitions": {
+    "transitions": [
       {
-        "n": 1,
+        "n": 8,
+        "previous_class": "AMBER",
         "effective_class": "RED",
-        "transitioned": false,
-        "previous_class": "RED"
-      },
-      {
-        "n": 2,
-        "effective_class": "RED",
-        "transitioned": false,
-        "previous_class": "RED"
-      },
-      {
-        "n": 3,
-        "effective_class": "RED",
-        "transitioned": false,
-        "previous_class": "RED"
-      },
-      {
-        "n": 4,
-        "effective_class": "GREEN",
+        "observed_class": "RED",
+        "situation_code": "none:CONGESTED:RAIN:HIGH",
         "transitioned": true,
-        "previous_class": "RED"
+        "observed_at": "2026-10-23T18:29:10.33943+00:00"
       }
     ],
-    "note": "the morning's decay reported through POST /api/v1/adaptive/observe (4 consecutive calmer observations cross the hysteresis down_confirm)"
+    "released_after_completion": true,
+    "city_band_after": "GREEN",
+    "note": "read from adaptive.situation_log (transitioned rows of the flagship event); the situation engine releases a completed event at its next tick, so it no longer holds the city band"
   },
   "injection": {
     "active_movements_feed_reflected_event": true,
@@ -308,5 +363,5 @@
   },
   "failed_assertions": [],
   "passed": true,
-  "generated_at_utc": "2026-10-18T15:01:09Z"
+  "generated_at_utc": "2026-10-23T18:31:51Z"
 }

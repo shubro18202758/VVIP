@@ -1,9 +1,12 @@
 {
  "replay": {
-  "status": "ok",
-  "n_observations": 40,
-  "speed_mae_kmh": 7.2,
-  "mae_tolerance_kmh": 5.0,
+  "status": "no_data",
+  "reason": "no traffic.hourly_aggregates rows in window (no field observations)",
+  "window_start": "2026-10-20T23:58:47+05:30",
+  "window_end": "2026-10-23T23:58:47+05:30",
+  "n_observations": 0,
+  "speed_mae_kmh": null,
+  "mae_tolerance_kmh": null,
   "calibrated": false
  },
  "city_band_live": "AMBER",
@@ -28,8 +31,8 @@
   "shadow_eval": {
    "status": "unavailable",
    "detail": "twin_not_calibrated",
-   "baseline_disruption_vh": 26.8438,
-   "candidate_disruption_vh": 26.8438
+   "baseline_disruption_vh": 17.1375,
+   "candidate_disruption_vh": 17.1375
   }
  },
  "last_plan_auditable": {
@@ -50,10 +53,10 @@
   "shadow_eval": {
    "status": "unavailable",
    "detail": "twin_not_calibrated",
-   "baseline_disruption_vh": 26.8438,
-   "candidate_disruption_vh": 26.8438
+   "baseline_disruption_vh": 17.1375,
+   "candidate_disruption_vh": 17.1375
   },
-  "event_id": "3ef08290-66d8-511b-a25a-3d2967c79985"
+  "event_id": "c7073ae6-56ae-5048-8bdc-d826d8da5ddc"
  },
  "committed_writes": 0,
  "policy_refusals": 1,

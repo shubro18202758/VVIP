@@ -4,7 +4,9 @@
 	 * lifecycle: the shells own chrome via the (deck)/(public) group
 	 * layouts, and the retired legacy feed tree (components/stores/
 	 * simulation/data-service) was removed with the (legacy) routes in
-	 * the 2026-10-14 template restoration.
+	 * the 2026-10-14 template restoration. The font request carries the
+	 * Devanagari and Gujarati faces the token stacks name, so हिंदी and
+	 * ગુજરાતી render in the deck's type, not a device fallback.
 	 */
 	import '$lib/design/tokens.css';
 
@@ -16,7 +18,7 @@
 	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous" />
 	<link
 		rel="stylesheet"
-		href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=JetBrains+Mono:wght@400;600&family=Outfit:wght@500;700;800&family=Noto+Sans:wght@400;600&display=swap"
+		href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=JetBrains+Mono:wght@400;600&family=Outfit:wght@500;700;800&family=Noto+Sans:wght@400;600&family=Noto+Sans+Devanagari:wght@400;600&family=Noto+Sans+Gujarati:wght@400;600&display=swap"
 	/>
 </svelte:head>
 

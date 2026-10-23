@@ -1,0 +1,25 @@
+# Veer tactical tier — llama-server (aditi-ps18-v7h Gemma 4 12B Q4_K_M) on
+# 127.0.0.1:8084. Pulled in by veer-models.target; installed (linked) by
+# scripts/veer_up.sh --install-units. Paths come from ~/.config/veer/veer.env
+# (scripts/veer_env.sh --write).
+[Unit]
+Description=Veer tactical tier: llama-server Gemma 4 12B on 127.0.0.1:8084
+PartOf=veer-models.target
+# keep retrying forever (Restart=always below, no start-rate limit)
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+# a linger boot has no login session: pin the PATH the hand-launched hosts
+# ran with (CUDA tools for torch/llama.cpp; libraries resolve via ld.so.conf)
+Environment=PATH=%h/.local/bin:/usr/local/cuda/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+EnvironmentFile=%h/.config/veer/veer.env
+ExecStart=/bin/bash ${VEER_ROOT}/infra/scripts/serve_models.sh --foreground llama
+Restart=always
+RestartSec=5
+# 78 = EX_CONFIG from serve_models.sh: binary or GGUF missing — report once, don't spin
+RestartPreventExitStatus=78
+TimeoutStopSec=30
+# Shared GB10 unified pool: a model host must be the kernel's preferred OOM
+# victim (host convention, nemotron memguard notes), never the desktop session.
+OOMScoreAdjust=500

@@ -10,11 +10,26 @@ Budget resolution order (first hit wins):
 
     1. explicit ``budget_mb`` constructor argument (tests / overrides)
     2. ``VEER_UNIFIED_BUDGET_MB`` environment variable
-    3. ``memory.unified_budget_mb`` (or ``_gib``) in the models-owned
-       ``veer_models.yaml`` (path: ``VEER_MODELS_CONFIG`` env or the
-       repo-default candidates below)
+    3. the models-owned ``veer_models.yaml``: ``memory.unified_budget_mb``
+       (or ``_gib``), else the planned pool ``memory_budget_gib.total_pool``
+       the models stream maintains there
     4. ``MemTotal`` from /proc/meminfo
     5. conservative default 121_440 MiB (GB10 hardware facts)
+
+Where ``veer_models.yaml`` is found (:func:`resolve_models_config` — ONE
+file is in force, the first that exists; :func:`models_config_candidates`
+lists them in order):
+
+    a. ``VEER_MODELS_CONFIG`` (the path serve_models.sh / veer_env.sh
+       export — an explicit pointer always comes first);
+    b. ``models-config/configs/veer_models.yaml`` — the TRACKED home
+       (WP-08) — under the VVIP root this module lives in, under the
+       working directory's ``VVIP/`` or the working directory itself, then
+       ``/opt/veer``;
+    c. the same roots' legacy ``models/configs/veer_models.yaml`` — inside
+       the retired-tree ``VVIP/models`` symlink — consulted only after
+       every tracked candidate, so the symlink can be deleted without
+       changing what is read.
 
 Traffic-oracle's own reservation stays 409 MiB for the DSTGAT ONNX
 forecaster plus a CUDA safety margin; heavy model residents (decider
@@ -29,6 +44,7 @@ from __future__ import annotations
 import asyncio
 import os
 import subprocess
+from collections.abc import Mapping, Sequence
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import AsyncIterator, Callable
@@ -40,12 +56,86 @@ logger = structlog.get_logger(__name__)
 # Conservative fallback (GB10 measured pool ≈ 121.4 GiB).
 DEFAULT_UNIFIED_BUDGET_MB = 121_440
 
-# Repo-default candidates for the models-owned config (C0 path map).
+#: Explicit pointer to the models-owned config (exported by
+#: infra/scripts/serve_models.sh and scripts/veer_env.sh).
+MODELS_CONFIG_ENV = "VEER_MODELS_CONFIG"
+
+#: Root-relative locations of veer_models.yaml, in priority order: the
+#: tracked models-config home first, the retired-tree symlink path last.
+MODELS_CONFIG_RELPATH = Path("models-config/configs/veer_models.yaml")
+LEGACY_MODELS_CONFIG_RELPATH = Path("models/configs/veer_models.yaml")
 VEER_MODELS_CONFIG_CANDIDATES: tuple[str, ...] = (
-    "VVIP/models/configs/veer_models.yaml",
-    "models/configs/veer_models.yaml",
-    "/opt/veer/models/configs/veer_models.yaml",
+    str(MODELS_CONFIG_RELPATH),
+    str(LEGACY_MODELS_CONFIG_RELPATH),
 )
+
+
+def _vvip_root() -> Path | None:
+    """The VVIP root this module lives under (repo layout and the gb10
+    image's mirrored /repo/VVIP tree); None in a flatter install, where
+    the working-directory and /opt roots still apply."""
+    parents = Path(__file__).resolve().parents
+    # runtime -> traffic_oracle -> src -> traffic-oracle -> services -> VVIP
+    return parents[5] if len(parents) > 5 else None
+
+
+def config_roots(cwd: Path | None = None) -> tuple[Path, ...]:
+    """Roots searched for the root-relative candidates, in order."""
+    here = Path.cwd() if cwd is None else cwd
+    roots: list[Path] = []
+    for root in (_vvip_root(), here / "VVIP", here, Path("/opt/veer")):
+        if root is not None and root not in roots:
+            roots.append(root)
+    return tuple(roots)
+
+
+def models_config_candidates(
+    env: Mapping[str, str] | None = None, roots: Sequence[Path] | None = None
+) -> list[Path]:
+    """Every place veer_models.yaml may live, in resolution order:
+    ``VEER_MODELS_CONFIG``, then the tracked home under each root, then
+    the legacy symlink path under each root."""
+    env = os.environ if env is None else env
+    search = config_roots() if roots is None else tuple(roots)
+    candidates: list[Path] = []
+    configured = (env.get(MODELS_CONFIG_ENV) or "").strip()
+    if configured:
+        candidates.append(Path(configured))
+    for rel in (MODELS_CONFIG_RELPATH, LEGACY_MODELS_CONFIG_RELPATH):
+        for root in search:
+            path = root / rel
+            if path not in candidates:
+                candidates.append(path)
+    return candidates
+
+
+def resolve_models_config(
+    env: Mapping[str, str] | None = None, roots: Sequence[Path] | None = None
+) -> Path | None:
+    """The ONE veer_models.yaml in force (first existing candidate), or None.
+
+    A ``VEER_MODELS_CONFIG`` that names no file is reported (logged) and
+    the tracked locations are searched next; a hit on the legacy symlink
+    path is logged too, so its remaining readers are visible before the
+    symlink is deleted.
+    """
+    env = os.environ if env is None else env
+    search = config_roots() if roots is None else tuple(roots)
+    configured = (env.get(MODELS_CONFIG_ENV) or "").strip()
+    if configured:
+        path = Path(configured)
+        if path.is_file():
+            return path
+        logger.warning("gpu_arbiter.models_config_missing", path=configured)
+    for rel in (MODELS_CONFIG_RELPATH, LEGACY_MODELS_CONFIG_RELPATH):
+        for root in search:
+            path = root / rel
+            if path.is_file():
+                if rel == LEGACY_MODELS_CONFIG_RELPATH:
+                    logger.info("gpu_arbiter.models_config_legacy_path", path=str(path))
+                return path
+    return None
+
 
 # Traffic-oracle's own slice of the unified pool.
 ONNX_INFERENCE_MB = 409          # DSTGAT forecaster session budget (unchanged)
@@ -91,8 +181,20 @@ def meminfo_memavailable_mb(meminfo: dict[str, int] | None = None) -> int | None
     return avail_kb // 1024
 
 
+def _positive(value: object) -> float | None:
+    """A positive finite number from YAML (bools are not numbers here)."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return float(value) if 0 < float(value) < float("inf") else None
+
+
 def _budget_from_yaml(path: Path) -> int | None:
-    """Extract memory.unified_budget_mb (or _gib) from veer_models.yaml."""
+    """The unified budget (MiB) veer_models.yaml declares, or None.
+
+    ``memory.unified_budget_mb`` (or ``_gib``, also accepted top-level),
+    else ``memory_budget_gib.total_pool`` — the planned GB10 pool the
+    models stream keeps in its budget table (MEMORY_BUDGET.md).
+    """
     try:
         import yaml  # lazy: dependency of traffic-oracle (pyproject)
     except ImportError:  # pragma: no cover - pyproject declares pyyaml
@@ -100,19 +202,30 @@ def _budget_from_yaml(path: Path) -> int | None:
     try:
         with open(path) as fh:
             doc = yaml.safe_load(fh)
-    except (OSError, ValueError):
+    except (OSError, ValueError, yaml.YAMLError) as exc:
+        # a broken config must never take the oracle down at startup: the
+        # budget chain moves on (and the breakage is visible in the log)
+        logger.warning(
+            "gpu_arbiter.models_config_unreadable",
+            path=str(path),
+            error=type(exc).__name__,
+        )
         return None
     if not isinstance(doc, dict):
         return None
     memory = doc.get("memory", doc)
-    if not isinstance(memory, dict):
-        return None
-    mb = memory.get("unified_budget_mb")
-    if isinstance(mb, (int, float)) and mb > 0:
-        return int(mb)
-    gib = memory.get("unified_budget_gib")
-    if isinstance(gib, (int, float)) and gib > 0:
-        return int(gib * 1024)
+    if isinstance(memory, dict):
+        mb = _positive(memory.get("unified_budget_mb"))
+        if mb is not None:
+            return int(mb)
+        gib = _positive(memory.get("unified_budget_gib"))
+        if gib is not None:
+            return int(gib * 1024)
+    table = doc.get("memory_budget_gib")
+    if isinstance(table, dict):
+        pool_gib = _positive(table.get("total_pool"))
+        if pool_gib is not None:
+            return int(pool_gib * 1024)
     return None
 
 
@@ -130,10 +243,17 @@ class GpuArbiter:
         yaml_path: str | Path | None = None,
         env: dict[str, str] | None = None,
         meminfo_reader: Callable[[], dict[str, int]] | None = None,
+        models_config_roots: Sequence[Path] | None = None,
     ) -> None:
         self._env = env if env is not None else os.environ
         self._meminfo_reader = meminfo_reader or _read_meminfo
         self._yaml_path = Path(yaml_path) if yaml_path is not None else None
+        # roots for the root-relative config candidates (tests); None ⇒
+        # config_roots(): this tree's VVIP root, the CWD, /opt/veer
+        self._config_roots = (
+            tuple(models_config_roots) if models_config_roots is not None else None
+        )
+        self._models_config: Path | None = None
         self._gpu_available = self._detect_gpu()
         self._unified_budget_mb = self._resolve_budget(budget_mb)
         self._exclusive_lock = asyncio.Lock()
@@ -144,6 +264,7 @@ class GpuArbiter:
             cuda_safety_margin_mb=CUDA_SAFETY_MARGIN_MB,
             gpu_detected=self._gpu_available,
             source=self._budget_source,
+            models_config=str(self._models_config) if self._models_config else None,
         )
 
     # -- budget resolution -----------------------------------------------------
@@ -163,10 +284,15 @@ class GpuArbiter:
                     return value
             except ValueError:
                 logger.warning("gpu_arbiter.bad_env_budget", value=env_budget)
-        for candidate in self._yaml_candidates():
-            budget = _budget_from_yaml(candidate)
+        # ONE config file is in force (VEER_MODELS_CONFIG, else the tracked
+        # models-config home, else the legacy symlink path); when it
+        # declares no budget the chain moves on to /proc/meminfo — a stale
+        # legacy copy is never consulted behind the tracked file's back.
+        self._models_config = self._resolve_models_config()
+        if self._models_config is not None:
+            budget = _budget_from_yaml(self._models_config)
             if budget is not None:
-                self._budget_source = f"yaml:{candidate}"
+                self._budget_source = f"yaml:{self._models_config}"
                 return budget
         total = meminfo_memtotal_mb(self._meminfo_reader())
         if total is not None:
@@ -175,13 +301,10 @@ class GpuArbiter:
         self._budget_source = "default"
         return DEFAULT_UNIFIED_BUDGET_MB
 
-    def _yaml_candidates(self) -> list[Path]:
+    def _resolve_models_config(self) -> Path | None:
         if self._yaml_path is not None:
-            return [self._yaml_path]
-        configured = self._env.get("VEER_MODELS_CONFIG")
-        candidates = [Path(configured)] if configured else []
-        candidates.extend(Path(p) for p in VEER_MODELS_CONFIG_CANDIDATES)
-        return candidates
+            return self._yaml_path if self._yaml_path.is_file() else None
+        return resolve_models_config(self._env, self._config_roots)
 
     @property
     def unified_budget_mb(self) -> int:
@@ -192,6 +315,11 @@ class GpuArbiter:
     def budget_source(self) -> str:
         """Which link of the resolution chain produced the budget."""
         return self._budget_source
+
+    @property
+    def models_config_path(self) -> Path | None:
+        """The veer_models.yaml in force (None when none was found)."""
+        return self._models_config
 
     # -- GPU presence ------------------------------------------------------------
 
@@ -264,10 +392,16 @@ __all__ = [
     "CUDA_SAFETY_MARGIN_MB",
     "DEFAULT_UNIFIED_BUDGET_MB",
     "GPU_DB_CACHE_MB",
+    "LEGACY_MODELS_CONFIG_RELPATH",
+    "MODELS_CONFIG_ENV",
+    "MODELS_CONFIG_RELPATH",
     "ONNX_INFERENCE_MB",
     "TRAIN_MIN_FREE_MB",
     "VEER_MODELS_CONFIG_CANDIDATES",
     "GpuArbiter",
+    "config_roots",
     "meminfo_memavailable_mb",
     "meminfo_memtotal_mb",
+    "models_config_candidates",
+    "resolve_models_config",
 ]

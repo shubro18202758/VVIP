@@ -51,16 +51,26 @@ class UseCaseProfile:
     ambulance_base_sec: float = 0.0
     ambulance_cleared_sec: float = 0.0
     # ── watchlist knobs (watchlist-anpr stream, contract C2) ────────────
-    # Drive the tape's anpr_read / agency_unit generators: how many ANPR
-    # cameras watch the route, how much background traffic they read, and
-    # whether the scenario plants a stolen-plate hit and/or an
-    # earmarked-plate hit among the reads.  Causes only — hits label
-    # generator-known plates, they never fabricate outcomes.
+    # Drive the tape's anpr_read / agency_unit generators: how many
+    # registered mid-block ANPR sweep cameras watch the route, how many
+    # stop-line approach cameras the fleeing vehicle runs a red at, how
+    # much background traffic they read, and whether the scenario drives
+    # the FIR-named stolen plate and/or the earmark-exercise plate through
+    # them.  Causes only — the oracle's ANPR seam computes every hit (from
+    # its own earmarks) and every rule outcome; the tape never asserts one.
     anpr_cameras: int = 0
+    anpr_stopline_cameras: int = 0
     anpr_background_vehicles: int = 0
     anpr_stolen_plate_hit: bool = False
     anpr_earmarked_plate_hit: bool = False
     agency_units: int = 0
+    # The FIR the scenario's premise names (C-N): a use case that drives
+    # its FIR-named stolen plate states, at t0, that the plate IS reported
+    # stolen — an EMULATED scenario precondition earmark (lawful basis
+    # stolen_vehicle_fir) through the oracle's own earmark API, so its reads
+    # are evidence-only sightings and never a fine to the theft victim.
+    # The use-case config's ``stolen_fir_ref`` wins when it carries one.
+    anpr_stolen_fir_ref: str | None = None
 
 
 _BASE_EV = {
@@ -195,8 +205,13 @@ PROFILES: dict[str, UseCaseProfile] = {
     # emulated ANPR camera sweep of the old-city belt.  The corridor event
     # this animates is the CRIME INCIDENT itself (public/civic operation,
     # protection_class 'none'); the camera reads and agency-unit patrols
-    # ride the tape's anpr_read / agency_unit frames (contract C2) with a
-    # stolen-plate hit and an earmarked-plate hit included.
+    # ride the tape's anpr_read / agency_unit frames (contracts C2 / C-E)
+    # with the FIR-named plate and the earmark-exercise plate among them —
+    # the oracle turns a read into a hit only through an ACTIVE earmark.
+    # The scenario's premise (the FIR) is made explicit at t0: the runner
+    # ensures the FIR-named plate's stolen_vehicle_fir earmark (a labelled
+    # EMULATED precondition), so the sweep files R_STOLEN_SIGHTING evidence
+    # — never a penal e-challan against its own stolen plate.
     "watchlist_anpr_sweep": UseCaseProfile(
         event_kind="crime_incident",
         crowd_class="LOW",
@@ -209,15 +224,19 @@ PROFILES: dict[str, UseCaseProfile] = {
                 "duration_sec": 1200,
                 "extra_demand_veh_h": 420,
                 "severity": 0.5,
-                "label": "bazaar spill onto Jamalpur approach during the sweep",
+                "label": "bazaar spill onto Gandhi Road during the sweep",
             },
         ),
-        # watchlist knobs (consumed by the tape's anpr_read generator)
+        # watchlist knobs (consumed by the tape's anpr_read generator):
+        # the four EM-CAM sweep sites + two stop-line approach sites
+        # (corridor.cameras) on the sweep route
         anpr_cameras=4,
+        anpr_stopline_cameras=2,
         anpr_background_vehicles=6,
         anpr_stolen_plate_hit=True,
         anpr_earmarked_plate_hit=True,
         agency_units=2,
+        anpr_stolen_fir_ref="FIR 4401/2026, Kalupur PS",
     ),
 }
 

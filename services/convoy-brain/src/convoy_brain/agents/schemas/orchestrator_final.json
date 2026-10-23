@@ -8,15 +8,13 @@
     "reasoning",
     "tool_calls_made",
     "confidence",
-    "data",
     "protocol_assessment"
   ],
   "properties": {
-    "action": { "type": "string" },
-    "reasoning": { "type": "string" },
-    "tool_calls_made": { "type": "array", "items": { "type": "string" } },
+    "action": { "type": "string", "maxLength": 64 },
+    "reasoning": { "type": "string", "maxLength": 1200 },
+    "tool_calls_made": { "type": "array", "maxItems": 8, "items": { "type": "string", "maxLength": 64 } },
     "confidence": { "type": "string", "enum": ["high", "medium", "low"] },
-    "data": { "type": "object" },
     "protocol_assessment": {
       "type": "object",
       "additionalProperties": false,
@@ -31,7 +29,11 @@
           "type": "string",
           "enum": ["complete", "incomplete", "not_assessed"]
         },
-        "protocol_violations": { "type": "array", "items": { "type": "string" } },
+        "protocol_violations": {
+          "type": "array",
+          "maxItems": 8,
+          "items": { "type": "string", "maxLength": 160 }
+        },
         "threat_level": {
           "type": "string",
           "enum": ["nominal", "guarded", "moderate", "elevated", "critical"]

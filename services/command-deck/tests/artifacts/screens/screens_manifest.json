@@ -1,0 +1,198 @@
+{
+  "origin": "http://127.0.0.1:5273",
+  "chrome": "/home/sandy050405/.cache/puppeteer/chrome/linux_arm-153.0.8010.36/chrome-linux-arm64/chrome",
+  "screens": {
+    "ops": {
+      "checks": {
+        "band-masthead mounts": {
+          "ok": true,
+          "detail": "data-prim=band-masthead band=AMBER panels=11"
+        },
+        "event board (Corridor Operations Board)": {
+          "ok": true,
+          "detail": "titles=[\"Decision Queue\",\"Corridor Operations Board\",\"Jan Rakshak Dispatch\",\"Pursuit & Watchlist\",\"City Signal Plans\",\"Active Movement Adaptation\",\"band history\",\"Event Emulator\",\"Twin Shadow-Eval Comparison\",\"Degradation Ledger\",\"Decision-Audit Stream\"]"
+        },
+        "pursuit console (Pursuit & Watchlist)": {
+          "ok": true,
+          "detail": ""
+        },
+        "enforcement queue (Decision Queue)": {
+          "ok": true,
+          "detail": ""
+        },
+        "Jan Rakshak dispatch (Jan Rakshak Dispatch)": {
+          "ok": true,
+          "detail": ""
+        },
+        "signal panel (City Signal Plans)": {
+          "ok": true,
+          "detail": ""
+        },
+        "AMA module card (Active Movement Adaptation)": {
+          "ok": true,
+          "detail": ""
+        },
+        "audit stream (Decision-Audit Stream)": {
+          "ok": true,
+          "detail": "audit rows rendered=8"
+        },
+        "event rows on the board": {
+          "ok": true,
+          "detail": "event cards=1"
+        },
+        "wall canvas mounts (.ge-canvas)": {
+          "ok": true,
+          "detail": "canvas elements=1"
+        },
+        "no-page-errors": {
+          "ok": true,
+          "detail": "none"
+        },
+        "png-nonblank": {
+          "ok": true,
+          "detail": "png colours=3792 opaque=100.0%"
+        }
+      },
+      "file": "screen_ops.png"
+    },
+    "gods-eye": {
+      "checks": {
+        "viewer ready (window.__GODS_EYE__.phase)": {
+          "ok": true,
+          "detail": "phase=ready"
+        },
+        "entities render on the globe": {
+          "ok": true,
+          "detail": "entities=146 layers=[events,flow,traces,enforcement,signals,units,dispatch,convoy,cameras,anomalies,photoreal-3d]"
+        },
+        "HUD chips mount": {
+          "ok": true,
+          "detail": "chips=18"
+        },
+        "no-page-errors": {
+          "ok": true,
+          "detail": "none"
+        },
+        "png-nonblank": {
+          "ok": true,
+          "detail": "png colours=5679 opaque=100.0%"
+        }
+      },
+      "file": "screen_gods-eye.png"
+    },
+    "citizen": {
+      "checks": {
+        "daylight theme on public surface": {
+          "ok": true,
+          "detail": "data-theme=daylight"
+        },
+        "plain-language band strip": {
+          "ok": true,
+          "detail": "strip=calm"
+        },
+        "event cards render": {
+          "ok": true,
+          "detail": "cards=1 hold rows=3"
+        },
+        "advisory kicker": {
+          "ok": true,
+          "detail": "Your road, next 2 hours"
+        },
+        "no-page-errors": {
+          "ok": true,
+          "detail": "none"
+        },
+        "png-nonblank": {
+          "ok": true,
+          "detail": "png colours=1954 opaque=100.0%"
+        }
+      },
+      "file": "screen_citizen.png"
+    },
+    "driver": {
+      "checks": {
+        "flow mounts at idle": {
+          "ok": true,
+          "detail": "phase=idle mode=scripted"
+        },
+        "golden-hour counter ticks": {
+          "ok": true,
+          "detail": "0 → 1"
+        },
+        "evaluating state mounts": {
+          "ok": true,
+          "detail": "phase=evaluating"
+        },
+        "proposal mounts (duty-officer approve present)": {
+          "ok": true,
+          "detail": "phase=proposal"
+        },
+        "approved open window (live countdown)": {
+          "ok": true,
+          "detail": "phase=open countdown=91s"
+        },
+        "no-page-errors": {
+          "ok": true,
+          "detail": "none"
+        },
+        "png-nonblank": {
+          "ok": true,
+          "detail": "png colours=1617 opaque=100.0%"
+        }
+      },
+      "mode": "scripted",
+      "file": "screen_driver.png"
+    },
+    "comms": {
+      "checks": {
+        "trilingual columns mount (EN/HI/GU)": {
+          "ok": true,
+          "detail": "langs=[en,hi,gu]"
+        },
+        "all three advisories non-empty": {
+          "ok": true,
+          "detail": "filled=3/3"
+        },
+        "same facts in all three (road name verbatim)": {
+          "ok": true,
+          "detail": "facts=[EMULATED | Station Road (Kalupur)]"
+        },
+        "no-page-errors": {
+          "ok": true,
+          "detail": "none"
+        },
+        "png-nonblank": {
+          "ok": true,
+          "detail": "png colours=2874 opaque=100.0%"
+        }
+      },
+      "file": "screen_comms.png"
+    },
+    "chat": {
+      "checks": {
+        "context header mounts": {
+          "ok": true,
+          "detail": "count=1"
+        },
+        "stream region mounts": {
+          "ok": true,
+          "detail": "count=1"
+        },
+        "input mounts": {
+          "ok": true,
+          "detail": "count=1"
+        },
+        "no-page-errors": {
+          "ok": true,
+          "detail": "none"
+        },
+        "png-nonblank": {
+          "ok": true,
+          "detail": "png colours=911 opaque=100.0%"
+        }
+      },
+      "file": "screen_chat.png"
+    }
+  },
+  "operatorGate": "on (deck surfaces signed in)"
+}

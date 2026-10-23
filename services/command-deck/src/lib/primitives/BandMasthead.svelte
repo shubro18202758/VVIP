@@ -179,7 +179,7 @@
 
 	.source {
 		font-size: var(--v-text-2xs);
-		color: var(--v-ink-4);
+		color: var(--v-ink-3);
 	}
 
 	.mono {

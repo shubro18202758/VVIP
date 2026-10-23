@@ -1,7 +1,7 @@
 """Factored DQN agent for per-signal corridor control.
 
 Uses independent Q-networks per signal to avoid the 3^K action-space
-explosion.  Each signal has a tiny Linear(6→32→3) network (~291 params).
+explosion.  Each signal has a tiny Linear(6→32→3) network (323 params).
 At K=20 the total footprint is ~5,820 parameters (~23 KB).
 
 Exploration: ε-greedy with linear decay 1.0 → 0.05 over 500 episodes.

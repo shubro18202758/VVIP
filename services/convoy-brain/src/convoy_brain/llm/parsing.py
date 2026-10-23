@@ -61,6 +61,51 @@ def extract_json(text: str) -> Any | None:
     return None
 
 
+def rescue_string_field(text: str | None, key: str) -> str | None:
+    """The first COMPLETE string value of ``key`` in a (possibly cut) JSON reply.
+
+    A reply truncated at the token cap fails :func:`extract_json` although
+    the field the operator reads (``"reasoning"``, written second by the
+    schema) is often already closed. This scans for ``"key": "`` and reads
+    the string escape-aware up to its closing quote; the escapes are then
+    decoded by the JSON parser itself. None when the key is absent or its
+    string never closed (a half sentence is never passed off as an answer).
+    """
+    if not text:
+        return None
+    needle = f'"{key}"'
+    start = 0
+    while True:
+        at = text.find(needle, start)
+        if at < 0:
+            return None
+        i = at + len(needle)
+        while i < len(text) and text[i] in " \t\r\n":
+            i += 1
+        if i < len(text) and text[i] == ":":
+            break
+        start = at + 1  # the key's name appeared inside another string
+    i += 1
+    while i < len(text) and text[i] in " \t\r\n":
+        i += 1
+    if i >= len(text) or text[i] != '"':
+        return None
+    j = i + 1
+    while j < len(text):
+        ch = text[j]
+        if ch == "\\":
+            j += 2
+            continue
+        if ch == '"':
+            try:
+                value = json.loads(text[i : j + 1])
+            except json.JSONDecodeError:
+                return None
+            return value if isinstance(value, str) else None
+        j += 1
+    return None
+
+
 def truncate_for_context(text: str, max_bytes: int = 4096) -> str:
     """UTF-8-safe truncation for tool results fed back into model context."""
     encoded = text.encode("utf-8")

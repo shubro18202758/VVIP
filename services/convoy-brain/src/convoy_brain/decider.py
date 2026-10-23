@@ -51,7 +51,15 @@ novelty, below-routine similarity, or an absent/expired entry forces a
 miss and today's flow runs unchanged. The similarity consult is fail-OPEN
 — memory outages never bench the tier — and the write side mirrors the
 read side: low-confidence, latched, and novel answers never enter the
-cache.
+cache. For a TIER0_OWN_DOC_TRIGGERS trigger (pre_movement) a stored
+answer is ALSO filed for the movement's own decision docs: it is served
+when the best memory is any decision doc this movement's checkpoints of
+that trigger recorded (the search reports the doc's ref_id, which names
+movement and trigger) and the question set is identical. Its best-doc key
+alone carries the doc seen BEFORE the feeder upserted the situation's own
+doc, which no repeat matches again — so a pre-movement question set, which
+names the plan's candidates and varies with the tactical tier's trimming,
+could need three occurrences to hit, and alternating sets never did.
 
 Decision-memory feeder (the corpus half the gate reads): after a SERVED
 27B checkpoint (tier "decider" — low-confidence answers included, they
@@ -67,6 +75,19 @@ can still be novel (Wave-1 latch semantics preserved); repeats become
 served from the tier-0 cache stays gated exactly as above. Fail-open and
 fire-and-log like the rest of the memory machinery: a feeder outage
 counts a metric and never breaks a checkpoint.
+
+The feeder has an off switch: VVIP_MEMORY_RECORD=0 (config
+decision_memory_record_enabled; default on) leaves the corpus untouched —
+checkpoints still SEARCH it, nothing is upserted, and every skipped record
+counts as outcome ``skipped_disabled``. Sandbox brains run with it off.
+
+A WITHHELD (novelty_latched) checkpoint records its situation too, with
+``metadata.withheld=true``: the tactical tier and the operator handled the
+first occurrence, so the situation is now on record. Before this, only
+served answers were recorded — a confidently-answered novel situation was
+withheld, never recorded, and therefore latched forever (the self-lock).
+The latch's memo for that exact (movement, state) is dropped once the
+record lands, so an immediate repeat re-searches and reads "covered".
 """
 
 from __future__ import annotations
@@ -95,7 +116,9 @@ from convoy_brain.config import (
     TIER0_CACHE_MAX_ENTRIES,
     TIER0_CACHE_TTL_SEC,
     TIER0_ELIGIBLE_TRIGGERS,
+    TIER0_OWN_DOC_TRIGGERS,
     TIER0_ROUTINE_SIMILARITY_FLOOR,
+    decision_memory_record_enabled,
 )
 from convoy_brain.llm.decider_client import DeciderAnswer, DeciderClient, DeciderUnavailable
 from convoy_brain.memory.memory_client import MemoryClient, MemorySearchResult
@@ -130,6 +153,32 @@ def _questions_signature(questions: dict[str, dict]) -> str:
     return hashlib.sha256(
         json.dumps(questions, sort_keys=True, default=str).encode("utf-8")
     ).hexdigest()
+
+
+#: Hex digits of the questions signature at the end of a decision doc's ref_id.
+DECISION_REF_SIGNATURE_HEX = 16
+
+
+def _decision_ref_prefix(movement_id: str, trigger: str) -> str:
+    """``decision:{movement_id}:{trigger}:`` — the feeder's ref_id up to the
+    questions signature (:meth:`DeciderBrain._record_decision_memory`)."""
+    return f"decision:{movement_id}:{trigger}:"
+
+
+def _is_own_decision_ref(ref_id: Any, movement_id: str, trigger: str) -> bool:
+    """True when ``ref_id`` names a decision doc THIS movement's checkpoints of
+    this trigger recorded: the exact prefix, then only the signature's hex
+    digits (so a movement id that itself contains ':' can never pass for
+    another movement's)."""
+    if not isinstance(ref_id, str):
+        return False
+    prefix = _decision_ref_prefix(movement_id, trigger)
+    tail = ref_id[len(prefix):]
+    return (
+        ref_id.startswith(prefix)
+        and len(tail) == DECISION_REF_SIGNATURE_HEX
+        and all(c in "0123456789abcdef" for c in tail)
+    )
 
 
 def _round_conf(confidence: float | None) -> float | None:
@@ -172,8 +221,15 @@ class DeciderBrain:
         tier0_floor: float = TIER0_ROUTINE_SIMILARITY_FLOOR,
         tier0_max_entries: int = TIER0_CACHE_MAX_ENTRIES,
         tier0_triggers: frozenset[str] = TIER0_ELIGIBLE_TRIGGERS,
+        memory_record_enabled: bool | None = None,
+        tier0_own_doc_triggers: frozenset[str] = TIER0_OWN_DOC_TRIGGERS,
     ) -> None:
         self._client = client
+        # The feeder's write side (VVIP_MEMORY_RECORD, default on).
+        self._memory_record_enabled = (
+            decision_memory_record_enabled() if memory_record_enabled is None
+            else bool(memory_record_enabled)
+        )
         self._min_interval = min_interval_sec
         self._confidence_floor = confidence_floor
         self._memory_client = memory_client
@@ -187,6 +243,7 @@ class DeciderBrain:
         self._tier0_floor = tier0_floor
         self._tier0_max_entries = tier0_max_entries
         self._tier0_triggers = frozenset(tier0_triggers)
+        self._tier0_own_doc_triggers = frozenset(tier0_own_doc_triggers)
         # Keyed (movement_id, trigger, questions_signature, best_doc_id):
         # MOVEMENT-SCOPED so one movement can never be served another
         # movement's cached decision — the embedding service treats
@@ -269,6 +326,11 @@ class DeciderBrain:
     def tier0_enabled(self) -> bool:
         """True when the tier-0 routine-checkpoint cache gate is on."""
         return self._tier0_enabled
+
+    @property
+    def memory_record_enabled(self) -> bool:
+        """True when served checkpoints are upserted into the memory corpus."""
+        return self._memory_record_enabled
 
     async def refresh_health(self) -> dict:
         """Poll /decider/health; flip degradation state on p95 threshold.
@@ -581,7 +643,7 @@ class DeciderBrain:
                 _questions_signature(questions),
                 novelty["best_doc_id"],
             )
-            self._tier0_cache[key] = {
+            entry = {
                 "answers": {
                     name: {
                         "type": ans.type,
@@ -599,9 +661,13 @@ class DeciderBrain:
                 ).hexdigest(),
                 "best_doc_id": novelty["best_doc_id"],
             }
-            while len(self._tier0_cache) > self._tier0_max_entries:
-                oldest_key = next(iter(self._tier0_cache))  # FIFO: dicts keep insert order
-                del self._tier0_cache[oldest_key]
+            self._tier0_put(key, entry)
+            # An own-doc trigger also files it for the movement's own
+            # decision docs (read only when one of them is the best match —
+            # see _tier0_consult); one answer, so "stored" counts it once.
+            own_key = self._tier0_own_key(movement_id, trigger, key[2])
+            if own_key is not None:
+                self._tier0_put(own_key, entry)
             TIER0_CACHE_EVENTS.labels(outcome="stored").inc()
             logger.info(
                 "decider_brain.tier0_stored",
@@ -611,19 +677,35 @@ class DeciderBrain:
                 origin_latency_ms=duration_ms,
             )
 
-        # Decision-memory feeder — upsert the SERVED situation into the
-        # corpus (kind=decision) so the gate/latch read side has something
-        # to recall on repeat traffic. tier "decider" means the 27B's answer
+        # Decision-memory feeder — upsert the situation into the corpus
+        # (kind=decision) so the gate/latch read side has something to
+        # recall on repeat traffic. tier "decider" means the 27B's answer
         # was actually served (low-confidence ones too — they ship with a
-        # Gemma draft); withheld (novelty_latched) and fallback results are
-        # not decisions and never record. Runs AFTER this checkpoint's own
-        # /search — the first occurrence of a situation must still be able
-        # to read as novel. Fail-open: never raises, never benches.
+        # Gemma draft). A withheld (novelty_latched) checkpoint records its
+        # SITUATION as well (metadata.withheld=true) — otherwise a novel
+        # situation can never become "on record" and latches forever.
+        # Fallback results (no decide happened) never record. Runs AFTER
+        # this checkpoint's own /search — the first occurrence of a
+        # situation must still be able to read as novel. Fail-open: never
+        # raises, never benches.
         if tier == "decider":
             await self._record_decision_memory(
                 movement_id, trigger, state_doc, questions, answers,
                 needs_gemma_draft=needs_gemma_draft,
             )
+        elif tier == "novelty_latched":
+            recorded = await self._record_decision_memory(
+                movement_id, trigger, state_doc, questions, answers,
+                needs_gemma_draft=needs_gemma_draft,
+                withheld=True,
+            )
+            if recorded:
+                # The memo still holds the pre-record "novel" search for this
+                # exact (movement, state); drop it so a repeat re-searches.
+                self._novelty_memo.pop(
+                    (movement_id, hashlib.sha256(state_doc.encode("utf-8")).hexdigest()),
+                    None,
+                )
 
         audit = {
             "phase": "decider_checkpoint",
@@ -715,6 +797,9 @@ class DeciderBrain:
             "strategy": result.best_strategy if result is not None else None,
             "best_doc_id": result.best_doc_id if result is not None else None,
             "best_kind": result.best_kind if result is not None else None,
+            # Which situation matched (a decision doc's ref names its
+            # movement/trigger/question set); read by the tier-0 own-doc filing.
+            "best_ref_id": getattr(result, "best_ref_id", None) if result is not None else None,
             "memo": memo,
             "error": error,
         }
@@ -777,32 +862,42 @@ class DeciderBrain:
         answers: dict[str, DeciderAnswer],
         *,
         needs_gemma_draft: bool,
-    ) -> None:
-        """Upsert one served checkpoint's situation into the memory corpus.
+        withheld: bool = False,
+    ) -> bool:
+        """Upsert one checkpoint's situation into the memory corpus.
 
         The ref_id mirrors the tier-0 cache-key contract (movement, trigger,
         canonical questions signature — deliberately NOT the raw state doc,
         which embeds per-tick values): the embedding service upserts on
         ``(kind, ref_id)``, so a re-decided situation refreshes one stable
         doc (and its doc_id) instead of duplicating rows, keeping the
-        best_doc_id component of tier-0 keys stable across repeats. Never
-        raises; every outcome lands in the MEMORY_RECORD_EVENTS metric so a
-        dead feeder is visible without reading logs.
+        best_doc_id component of tier-0 keys stable across repeats.
+        ``withheld`` marks a novelty-latched checkpoint: its situation is
+        recorded (metadata.withheld=true, tier novelty_latched) so repeats
+        stop latching, while its answers stay out of every serving path.
+        Never raises; every outcome lands in the MEMORY_RECORD_EVENTS metric
+        so a dead feeder is visible without reading logs. Returns True when
+        the record landed.
         """
+        if not self._memory_record_enabled:
+            # VVIP_MEMORY_RECORD=0: the corpus is read, never written.
+            MEMORY_RECORD_EVENTS.labels(outcome="skipped_disabled").inc()
+            return False
         if self._memory_client is None:
             MEMORY_RECORD_EVENTS.labels(outcome="skipped_no_client").inc()
-            return
+            return False
         record = getattr(self._memory_client, "record_decision", None)
         if record is None:  # duck-typed fakes without a write side keep working
             MEMORY_RECORD_EVENTS.labels(outcome="skipped_unconfigured").inc()
-            return
+            return False
         ref_id = (
-            f"decision:{movement_id}:{trigger}:"
-            f"{_questions_signature(questions)[:16]}"
+            _decision_ref_prefix(movement_id, trigger)
+            + _questions_signature(questions)[:DECISION_REF_SIGNATURE_HEX]
         )
         metadata = {
             "trigger": trigger,
-            "tier": "decider",
+            "tier": "novelty_latched" if withheld else "decider",
+            "withheld": withheld,
             "needs_gemma_draft": needs_gemma_draft,
             "min_confidence": _round_conf(min(
                 (a.confidence for a in answers.values()
@@ -828,7 +923,10 @@ class DeciderBrain:
                     state_doc,
                     movement_id=movement_id,
                     ref_id=ref_id,
-                    title=f"decider {trigger} checkpoint",
+                    title=(
+                        f"decider {trigger} checkpoint"
+                        + (" (withheld: novel situation)" if withheld else "")
+                    ),
                     metadata=metadata,
                 ),
                 timeout=DECISION_MEMORY_RECORD_TIMEOUT_SEC,
@@ -838,11 +936,12 @@ class DeciderBrain:
             logger.warning(
                 "decider_brain.memory_record_error", error=str(exc)[:200]
             )
-            return
+            return False
         if recorded:
             MEMORY_RECORD_EVENTS.labels(outcome="recorded").inc()
-        else:
-            MEMORY_RECORD_EVENTS.labels(outcome="error").inc()
+            return True
+        MEMORY_RECORD_EVENTS.labels(outcome="error").inc()
+        return False
 
     # -- tier-0 gate ----------------------------------------------------------------
 
@@ -886,6 +985,34 @@ class DeciderBrain:
                 novelty.get("error") if novelty is not None else None
             ),
         }
+
+    def _tier0_put(self, key: tuple[str, str, str, str], entry: dict) -> None:
+        """Insert one cache entry, then enforce the FIFO bound."""
+        self._tier0_cache[key] = entry
+        while len(self._tier0_cache) > self._tier0_max_entries:
+            oldest_key = next(iter(self._tier0_cache))  # FIFO: dicts keep insert order
+            del self._tier0_cache[oldest_key]
+
+    def _tier0_own_key(
+        self, movement_id: str, trigger: str, signature: str,
+    ) -> tuple[str, str, str, str] | None:
+        """The movement-level filing of a TIER0_OWN_DOC_TRIGGERS trigger.
+
+        Its last slot is the movement's decision-doc ref prefix instead of
+        one doc id: the answer stored for this question set is served when
+        the best memory is ANY decision doc this movement's checkpoints of
+        this trigger recorded. Without it the first answer per question set
+        sat under the best doc seen before the feeder upserted the
+        situation's own doc, which no repeat matches again; and which own
+        doc a repeat matches is a near tie when one candidate set's state
+        doc is nearly a subset of another's (MaxSim scores a query the same
+        against any doc holding all its tokens). Still one movement, one
+        trigger, one exact question set, and the routine floor on the match.
+        None for every other trigger (their filing is unchanged).
+        """
+        if trigger not in self._tier0_own_doc_triggers:
+            return None
+        return (movement_id, trigger, signature, _decision_ref_prefix(movement_id, trigger))
 
     async def _tier0_consult(
         self,
@@ -948,12 +1075,19 @@ class DeciderBrain:
                 None,
             )
 
-        key = (
-            movement_id,
-            trigger,
-            _questions_signature(questions),
-            novelty["best_doc_id"],
-        )
+        signature = _questions_signature(questions)
+        key = (movement_id, trigger, signature, novelty["best_doc_id"])
+        own_key = self._tier0_own_key(movement_id, trigger, signature)
+        if (
+            own_key is not None
+            and own_key in self._tier0_cache
+            and novelty["best_kind"] == "decision"
+            and _is_own_decision_ref(novelty.get("best_ref_id"), movement_id, trigger)
+        ):
+            # The best memory is one of this movement's own decided
+            # situations: the latest answer stored for this exact question
+            # set serves it, whichever of those situations matched.
+            key = own_key
         entry = self._tier0_cache.get(key)
         if entry is None:
             TIER0_CACHE_EVENTS.labels(outcome="miss_no_entry").inc()
@@ -983,6 +1117,7 @@ class DeciderBrain:
             movement_id=movement_id,
             trigger=trigger,
             best_doc_id=novelty["best_doc_id"],
+            filed_under="own_decision_docs" if key == own_key else "best_doc",
             age_sec=row["age_sec"],
             latency_saved_ms=row["latency_saved_ms"],
         )

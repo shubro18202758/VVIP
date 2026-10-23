@@ -1,22 +1,25 @@
 <script lang="ts">
 	/**
-	 * StatusStrip — the restored template's top status bar row, rebuilt on
+	 * StatusStrip — the VVIP corridor module's top status bar row, rebuilt on
 	 * tokens and wired to the REAL stack: model-tier health dots read the
 	 * live convoy-brain health (decider pplx-27b + gemma tactical, with the
-	 * degradation tier), the oracle dot probes the corridor summary, the
-	 * emulator dot reads the ops store's emulator probe; the counters are
-	 * live board counts; the clock is IST, mono, ticking.
+	 * degradation tier) — a decider still LOADING its weights is amber
+	 * 'loading', never red 'down' — the oracle dot probes the corridor
+	 * summary, the emulator dot reads the ops store's emulator probe; the
+	 * counters are live board counts; the clock is IST, mono, ticking.
 	 */
 	import { onMount, onDestroy } from 'svelte';
 	import { ops } from '$lib/ops/store.svelte';
 	import { corridor } from './corridor.svelte';
 	import BandChip from '$lib/primitives/BandChip.svelte';
 	import { t } from '$lib/i18n/strings';
+	import { parseBrainHealth } from '$lib/gods-eye/city-api';
 
 	let clock = $state('--:--:--');
 	let clockTimer: ReturnType<typeof setInterval> | null = null;
 
-	let decider = $state<'ok' | 'degraded' | 'down'>('down');
+	let decider = $state<'ok' | 'degraded' | 'loading' | 'down'>('down');
+	let deciderNote = $state<string | null>(null);
 	let gemma = $state<'ok' | 'down'>('down');
 	let healthTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -28,22 +31,27 @@
 	);
 
 	async function pollBrainHealth() {
+		if (document.hidden) return;
 		try {
 			const res = await fetch('/api/convoy/health', { signal: AbortSignal.timeout(6000) });
 			if (!res.ok) throw new Error(String(res.status));
-			const body = (await res.json()) as {
-				strategic_tier?: { model_host?: string; degraded?: boolean };
-				tactical_tier?: { llama_server?: string };
-			};
+			const h = parseBrainHealth(await res.json());
 			decider =
-				body.strategic_tier?.model_host === 'connected'
-					? body.strategic_tier?.degraded
-						? 'degraded'
-						: 'ok'
-					: 'down';
-			gemma = body.tactical_tier?.llama_server === 'connected' ? 'ok' : 'down';
+				h.decider === 'loading'
+					? 'loading'
+					: h.decider === 'connected'
+						? h.deciderDegraded
+							? 'degraded'
+							: 'ok'
+						: 'down';
+			deciderNote =
+				decider === 'loading'
+					? 'decider weights loading — the heuristic floor answers meanwhile'
+					: h.deciderDegradedReason ?? (h.p95Ms != null ? `p95 ${Math.round(h.p95Ms)} ms` : null);
+			gemma = h.gemma === 'connected' ? 'ok' : 'down';
 		} catch {
 			decider = 'down';
+			deciderNote = 'brain unreachable';
 			gemma = 'down';
 		}
 	}
@@ -93,8 +101,15 @@
 	</div>
 
 	<div class="dots" role="status" aria-label="stack health">
-		<span class="dot-row" class:ok={decider === 'ok'} class:degraded={decider === 'degraded'} class:down={decider === 'down'}>
-			<i class="dot"></i><span class="mono">DECIDER</span>
+		<span
+			class="dot-row"
+			class:ok={decider === 'ok'}
+			class:degraded={decider === 'degraded' || decider === 'loading'}
+			class:down={decider === 'down'}
+			data-decider={decider}
+			title={deciderNote ?? undefined}
+		>
+			<i class="dot"></i><span class="mono">DECIDER{decider === 'loading' ? ' · LOADING' : decider === 'degraded' ? ' · DEGRADED' : ''}</span>
 		</span>
 		<span class="dot-row" class:ok={gemma === 'ok'} class:down={gemma === 'down'}>
 			<i class="dot"></i><span class="mono">GEMMA</span>
@@ -249,7 +264,7 @@
 	.count-label {
 		font-size: var(--v-text-2xs);
 		letter-spacing: var(--v-tracking-status);
-		color: var(--v-ink-4);
+		color: var(--v-ink-3);
 	}
 
 	.count-value {
@@ -270,7 +285,7 @@
 
 	.ist {
 		font-size: var(--v-text-2xs);
-		color: var(--v-ink-4);
+		color: var(--v-ink-3);
 		letter-spacing: var(--v-tracking-status);
 	}
 

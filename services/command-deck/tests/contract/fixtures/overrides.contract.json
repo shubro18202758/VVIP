@@ -1,0 +1,24 @@
+{
+	"overrides": [
+		{
+			"published_at": "2026-10-22T13:27:51.586357+00:00",
+			"event_id": null,
+			"movement_id": "default",
+			"situation_class": "GREEN",
+			"params": { "scoring_weights": { "time": 0.3, "security": 0.2, "complexity": 0.1, "disruption": 0.4 }, "advance_closure_sec": 120, "gps_poll_interval_sec": 1.0, "congestion_spike_threshold": 0.8 },
+			"source": "baseline",
+			"shadow_eval": "unavailable",
+			"shadow_eval_detail": "shadow_eval_not_required"
+		},
+		{
+			"published_at": "2026-10-22T13:11:02.34165+00:00",
+			"event_id": null,
+			"movement_id": "default",
+			"situation_class": "GREEN",
+			"params": { "scoring_weights": { "time": 0.3, "security": 0.2, "complexity": 0.1, "disruption": 0.4 }, "advance_closure_sec": 120, "gps_poll_interval_sec": 1.0, "congestion_spike_threshold": 0.8 },
+			"source": "baseline",
+			"shadow_eval": "unavailable",
+			"shadow_eval_detail": "shadow_eval_not_required"
+		}
+	]
+}

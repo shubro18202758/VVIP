@@ -24,19 +24,20 @@
     },
     "risk_segments": {
       "type": "array",
+      "maxItems": 6,
       "items": {
         "type": "object",
         "additionalProperties": false,
         "required": ["segment_id", "issue", "severity"],
         "properties": {
           "segment_id": { "type": "integer" },
-          "issue": { "type": "string" },
+          "issue": { "type": "string", "maxLength": 160 },
           "severity": { "type": "string", "enum": ["low", "medium", "high", "critical"] }
         }
       }
     },
     "trend": { "type": "string", "enum": ["improving", "stable", "deteriorating"] },
-    "recommendation": { "type": "string" },
+    "recommendation": { "type": "string", "maxLength": 400 },
     "confidence": { "type": "string", "enum": ["high", "medium", "low"] }
   }
 }

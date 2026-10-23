@@ -42,42 +42,82 @@
  *                                        artifacts they cite
  *   screens-verify-40of40                the screens manifest records
  *                                        40/40 ok incl. the driver countdown
+ *                                        (scripted fallback) — or, from a
+ *                                        live-mode /driver, the idle request
+ *                                        card with nothing filed
  *   showcase-artifacts-single-run        the docs cannot present two
  *                                        showcase runs as one — the split
- *                                        must be cited with both stamps
+ *                                        must be cited with both stamps; hero
+ *                                        shots re-taken apart from the run
+ *                                        are disclosed with their own trace
+ *                                        figure, never blended into it
  *   pytest-counts-match-deck             live gate-venv collection equals
  *                                        the deck's AND the adjacent docs'
  *                                        quoted counts
- *   e2e-11-checks-gate                   the citizen e2e keeps its 11 boolean
- *                                        checks and stays wired into
- *                                        verify_all.sh
- *   migrations-007-011-exist             migrations 001..011 on disk match
- *                                        the deck's "007–011" claim
+ *   verify-all-deck-gates-wired          verify_all.sh wires the deck UI
+ *                                        tier (hermetic ops wall, contract,
+ *                                        units, edge-basemap, ops-write, the
+ *                                        C6 'no officer' groups on a gate-off
+ *                                        keyless preview), signs its --live
+ *                                        tier in through the shared helper and
+ *                                        never skips a whole pytest suite; no
+ *                                        doc paragraph about verify_all still
+ *                                        claims the retired React tiers
+ *   migrations-on-disk-match-docs        the migration list is derived from
+ *                                        disk (contiguous 001..N); DECK,
+ *                                        README and TECHNICAL_DOCS quote
+ *                                        "001–N" and no other full range or
+ *                                        "applied n/n" count
  *   smoke-models-ports-env-overridable   the model-tier endpoints keep the
  *                                        ${VAR:-loopback} pattern
  *   showcase-endpoints-env-overridable   showcase_run.sh keeps bash -n, the
- *                                        ${VAR:-loopback} constants and the
- *                                        cockpit health contract
+ *                                        ${VAR:-loopback} constants with the
+ *                                        live (argus) defaults, the cockpit
+ *                                        health contract, the shared sign-in
+ *                                        helper, and phase 6's stolen-vehicle
+ *                                        rule: the pursuit is authorised from
+ *                                        an evidence-only R_STOLEN_SIGHTING and
+ *                                        a penal approval on the plate must be
+ *                                        refused (409) — never a fine (C-N)
  *   pptx-claims-fresh                    the rendered PPTX carries the
  *                                        corrected figures, not the stale
  *                                        ones
+ *   verify-all-tier-inventory            tier functions AND call sites
+ *                                        intact in the pinned order (the
+ *                                        offline ladder and the --live tiers)
  *   pdf-claims-fresh                     the rendered PDF (pdftotext) carries
  *                                        the same corrected figures and is
  *                                        not older than the PPTX
- *   verify-all-tier-inventory            tier functions AND call sites
- *                                        intact in order; warns (does not
- *                                        fail) that design-smoke is not a
- *                                        verify_all tier — verify_all.sh is
- *                                        out of this stream's edit scope
+ *   post-push-origin-main                (--post-push only; SKIPPED before the
+ *                                        push) HEAD == `git ls-remote origin
+ *                                        refs/heads/main` and that tree
+ *                                        carries a non-empty LICENSE
+ *
+ * The pursuit figures follow whichever chain the showcase artifact records:
+ * the per-rule fired counts (`R_STOLEN_SIGHTING` ×n, or the pre-C-N
+ * `R_SPD_SEGMENT` ×n) and the chosen recommendation's own figure (the
+ * evidence-only "e-challan withheld" sighting, or a speed read). A chain
+ * that APPROVED a penal rule on a reported-stolen vehicle is flagged (WARN)
+ * until the showcase is re-run: C-N forbids fining the theft victim.
  *
  * Zero dependencies: node stdlib only (fs, path, child_process, zlib).
  * Every path resolves from this file's own location — any cwd works.
+ * VEER_WORKSPACE_ROOT=<dir> names another workspace holding VVIP/ +
+ * submission/ (e.g. one whose VVIP is a git worktree).
  *
  * Usage:
  *   node VVIP/scripts/submission_consistency_check.mjs            # the gate
  *   node VVIP/scripts/submission_consistency_check.mjs --selftest # prove
  *        the failure path: copies the read set into a temp fixture, injects
- *        known-bad mutations, and requires the oracle to FAIL on each.
+ *        known-bad mutations, and requires the oracle to FAIL on each (and
+ *        to stay green on the benign ones).
+ *   --post-push   also run the post-push checks (after `git push`)
+ *   --vvip-only   a checkout of the VVIP repository alone (CI): the
+ *        workspace documents (../submission, ../PROBLEM_STATEMENT_GUJARAT.md)
+ *        and the gitignored local run artifacts (shot logs, screens
+ *        manifest) are not in it, so the checks — and selftest mutations —
+ *        that judge them are reported as not run; everything in VVIP/ is
+ *        judged as usual.
  *
  * Exit 0 = all green (selftest: failure path proven); exit 1 = failures,
  * each printed as file:line [check-id] what.
@@ -89,7 +129,10 @@ import {
 	mkdtempSync,
 	readFileSync,
 	readdirSync,
+	realpathSync,
 	rmSync,
+	rmdirSync,
+	unlinkSync,
 	writeFileSync,
 	copyFileSync,
 	statSync,
@@ -102,7 +145,47 @@ import { fileURLToPath } from 'node:url';
 import zlib from 'node:zlib';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const ROOT = path.resolve(HERE, '..', '..'); // the workspace holding VVIP/ + submission/
+/** the VVIP checkout this script lives in */
+const CHECKOUT = path.resolve(HERE, '..');
+/**
+ * The workspace holding VVIP/ + submission/ — every check addresses its
+ * files as VVIP/… or submission/…. VEER_WORKSPACE_ROOT names one; else the
+ * checkout's parent when the checkout is a directory named VVIP (the
+ * workspace layout). A checkout under any other name (a git worktree, a
+ * clone into another directory) is judged through a private view: a temp
+ * dir whose VVIP links to the checkout, beside the workspace documents found
+ * next to it (none beside a bare clone: run it --vvip-only). The view holds
+ * only symlinks, unlinked one by one at exit — never a recursive delete.
+ */
+function workspaceRoot() {
+	if (process.env.VEER_WORKSPACE_ROOT) return path.resolve(process.env.VEER_WORKSPACE_ROOT);
+	const parent = path.dirname(CHECKOUT);
+	if (path.basename(CHECKOUT) === 'VVIP') return parent;
+	const view = mkdtempSync(path.join(tmpdir(), 'veer-consistency-ws-'));
+	const links = [];
+	const link = (target, name) => {
+		symlinkSync(target, path.join(view, name));
+		links.push(path.join(view, name));
+	};
+	link(CHECKOUT, 'VVIP');
+	for (const rel of ['submission', 'PROBLEM_STATEMENT_GUJARAT.md']) {
+		if (existsSync(path.join(parent, rel))) link(path.join(parent, rel), rel);
+	}
+	process.on('exit', () => {
+		for (const l of links) {
+			try { unlinkSync(l); } catch { /* already gone */ }
+		}
+		try { rmdirSync(view); } catch { /* not empty or gone: leave it */ }
+	});
+	return view;
+}
+const ROOT = workspaceRoot();
+const ARGS = process.argv.slice(2);
+const VVIP_ONLY = ARGS.includes('--vvip-only');
+const POST_PUSH = ARGS.includes('--post-push');
+
+/** a path of the workspace around VVIP/ (absent from a VVIP-only checkout) */
+const isWorkspacePath = (rel) => !rel.startsWith('VVIP/') && rel !== '(oracle)';
 
 /* ─────────────────────────── small helpers ─────────────────────────── */
 
@@ -117,6 +200,8 @@ class Ctx {
 		this.failures = [];
 		this.warnings = [];
 		this.details = [];
+		this.skips = []; // {check, why} — checks not run in this mode
+		this.unjudged = {}; // check -> findings on workspace files (VVIP-only checkout)
 	}
 	read(rel) {
 		try {
@@ -137,10 +222,19 @@ class Ctx {
 		}
 	}
 	fail(rel, line, check, msg) {
+		// a VVIP-only checkout carries no workspace documents: what they would
+		// have been judged on is reported as not judged, never as a failure
+		if (this.opts.vvipOnly && isWorkspacePath(rel)) {
+			this.unjudged[check] = (this.unjudged[check] ?? 0) + 1;
+			return;
+		}
 		this.failures.push({ check, file: rel, line, msg });
 	}
 	warn(msg) {
 		this.warnings.push(msg);
+	}
+	skip(check, why) {
+		this.skips.push({ check, why });
 	}
 	ok(check, detail) {
 		this.details.push({ check, detail });
@@ -305,8 +399,17 @@ const README = 'VVIP/README.md';
 const ROUTE_ROOT = 'VVIP/services/command-deck/src/routes/(deck)/+page.svelte';
 const DESIGN_SMOKE = 'VVIP/services/command-deck/tests/design-smoke.mjs';
 const SCREENS_MANIFEST = 'VVIP/services/command-deck/tests/artifacts/screens/screens_manifest.json';
-const E2E = 'VVIP/frontend/tests/e2e/citizen-green-corridor.e2e.mjs';
 const VERIFY_ALL = 'VVIP/scripts/verify_all.sh';
+const MIGRATIONS = 'VVIP/services/corridor-store/migrations';
+const DECK_SRC = 'VVIP/services/command-deck/src';
+// local run artifacts the docs cite, gitignored (absent from a clean checkout)
+const LOCAL_ARTIFACTS = ['VVIP/showcase/shots_city.log', 'VVIP/showcase/shots_rest.log'];
+const LOCAL_ARTIFACT_DIRS = ['VVIP/services/command-deck/tests/artifacts/'];
+const isLocalArtifact = (rel) => LOCAL_ARTIFACTS.includes(rel) || LOCAL_ARTIFACT_DIRS.some((d) => rel.startsWith(d));
+// enforcement/rules.py RULE_IDS: the penal rules, and the evidence-only stolen
+// sighting (C-N: a reported-stolen vehicle's owner is never fined)
+const PENAL_RULES = ['R_SPD_SEGMENT', 'R_SIGNAL_VIOLATION', 'R_CLOSED_CORRIDOR_ENTRY'];
+const RULE_IDS = [...PENAL_RULES, 'R_STOLEN_SIGHTING'];
 const SHOWCASE_RUN = 'VVIP/scripts/showcase_run.sh';
 const FLEET_SMOKE = 'VVIP/scripts/fleet_smoke.sh';
 const SMOKE_MODELS = 'VVIP/scripts/smoke_models.sh';
@@ -377,6 +480,90 @@ function collectPytest(c) {
 	return { total, perSuite };
 }
 
+/** per line of a TS/JS/Svelte source: true when the WHOLE line is a comment
+ *  (`//`, a `/* … *\/` block and its continuation lines, an HTML `<!-- … -->`) */
+function commentLines(text) {
+	const out = [];
+	let block = null; // the closing token of the comment block we are in
+	for (const raw of text.split('\n')) {
+		const line = raw.trim();
+		if (block) {
+			out.push(true);
+			if (line.includes(block)) block = null;
+			continue;
+		}
+		if (line.startsWith('//')) { out.push(true); continue; }
+		if (line.startsWith('/*')) {
+			out.push(true);
+			if (!line.includes('*/', 2)) block = '*/';
+			continue;
+		}
+		if (line.startsWith('<!--')) {
+			out.push(true);
+			if (!line.includes('-->', 4)) block = '-->';
+			continue;
+		}
+		out.push(false);
+	}
+	return out;
+}
+
+/** fired-rule counts of a showcase pursuit chain, e.g. {R_STOLEN_SIGHTING: 4} */
+function ruleCounts(chain) {
+	const counts = {};
+	for (const r of chain?.recommendation?.fired_rules ?? []) counts[r] = (counts[r] ?? 0) + 1;
+	return counts;
+}
+
+/** penal rules the run's reads WOULD have fired, withheld under the FIR
+ *  earmark (C-N) — recommendation.withheld_rules, one entry per read and rule */
+function withheldCounts(chain) {
+	const counts = {};
+	for (const r of chain?.recommendation?.withheld_rules ?? []) counts[r] = (counts[r] ?? 0) + 1;
+	return counts;
+}
+
+const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
+
+/** the figure the docs quote for the chosen recommendation — whichever chain
+ *  the artifact records: the evidence-only stolen-vehicle sighting
+ *  ("e-challan withheld", C-N) or a pre-C-N speed read */
+function chosenFigure(chain) {
+	const chosen = chain?.recommendation?.chosen ?? {};
+	const text = chosen.text ?? '';
+	const speed = text.match(/read at (\d+) km\/h in a (\d+) km\/h segment/);
+	if (speed) {
+		return { kind: 'speed', needle: `read at ${speed[1]} km/h in a ${speed[2]} km/h segment`,
+			short: `${speed[1]} km/h in a ${speed[2]} km/h segment`, speed };
+	}
+	if (chosen.rule_id === 'R_STOLEN_SIGHTING' || /e-challan withheld/i.test(text)) {
+		return { kind: 'withheld', needle: 'e-challan withheld', short: 'e-challan withheld', speed: null };
+	}
+	return { kind: 'unknown', needle: null, short: null, speed: null, text };
+}
+
+/** the chain approved a PENAL rule on a vehicle the run earmarked as stolen
+ *  (FIR) — the very thing C-N forbids: the registered owner is the victim */
+function penalApprovalOnStolen(chain) {
+	const chosen = chain?.recommendation?.chosen ?? {};
+	const fir = chain?.pursuit_event?.metadata?.fir ?? chain?.fir;
+	return PENAL_RULES.includes(chosen.rule_id) && chain?.approval?.status === 'approved' && !!fir;
+}
+
+/** the figures the rendered deck (pptx, and the pdf converted from it) must
+ *  carry — derived from the same artifacts the markdown deck uses */
+function renderedDeckNeedles(chain, bench) {
+	const top = chain.interception?.top ?? null;
+	return [
+		...Object.entries(ruleCounts(chain)).map(([rule, n]) => `${rule} \u00d7${n}`),
+		chosenFigure(chain).needle ?? 'the chosen recommendation (no known figure in the artifact)',
+		...(top ? [`junction ${top.junction_id}, ${top.signal_control === false ? 'unsignalised' : 'signal-controlled'}, score ${top.score}`] : []),
+		`${chain.trace?.points}-position trace`,
+		String(bench.score_summary?.keyword_coverage),
+		'Convoy Command cockpit', '40/40'
+	];
+}
+
 const CHECKS = [
 	{
 		id: 'root-serves-cockpit-200',
@@ -392,15 +579,18 @@ const CHECKS = [
 				'design-smoke must name the cockpit contract');
 			good &= c.expectIn(DESIGN_SMOKE, smoke, "const EIGHT = ['/', '/ops'", c.id,
 				'design-smoke must probe / AND /ops as live 200 URLs');
-			// no route rewrite anywhere in the deck src — the only tolerated
-			// mention is fetch()'s redirect:'manual' in hooks.server.ts
-			const srcFiles = walkFiles('VVIP/services/command-deck/src', c);
+			// no route rewrite anywhere in the deck src: code only — a comment
+			// may talk about redirects, and fetch()'s redirect:'manual' (never
+			// FOLLOW one) is tolerated in any file
+			const srcFiles = walkFiles(DECK_SRC, c);
 			let clean = true;
 			for (const f of srcFiles) {
 				const t = c.read(f) ?? '';
+				const comment = commentLines(t);
 				t.split('\n').forEach((line, i) => {
-					if (/\bredirect(s|ed|ing)?\b/i.test(line) || /\b301\b/.test(line)) {
-						if (f === 'VVIP/services/command-deck/src/hooks.server.ts' && /redirect:\s*'manual'/.test(line)) return;
+					if (comment[i]) return;
+					const code = line.replace(/redirect:\s*['"]manual['"]/g, '');
+					if (/\bredirect(s|ed|ing)?\b/i.test(code) || /\b301\b/.test(code)) {
 						c.fail(f, i + 1, c.id, `route-rewrite language in deck src: ${line.trim().slice(0, 90)}`);
 						clean = false;
 					}
@@ -457,18 +647,19 @@ const CHECKS = [
 			if (!imp) return;
 			const deck = c.read(DECK) ?? '';
 			const maker = c.read(MAKER) ?? '';
-			// the audit's pins — the artifact this revision's deck was built from
+			// the audit's pins — the artifact this revision's deck is built from (the
+			// real-road network's impact run, WP-20; regenerate the run and the deck together)
 			const pins = [
-				['scenarios.central.commuter_minutes_baseline', imp.scenarios?.central?.commuter_minutes_baseline, 570937.5],
-				['scenarios.central.commuter_minutes_platform', imp.scenarios?.central?.commuter_minutes_platform, 5709.4],
-				['scenarios.central.vehicles_delayed_baseline', imp.scenarios?.central?.vehicles_delayed_baseline, 30450],
-				['scenarios.central.vehicles_delayed_platform', imp.scenarios?.central?.vehicles_delayed_platform, 3045],
+				['scenarios.central.commuter_minutes_baseline', imp.scenarios?.central?.commuter_minutes_baseline, 1131887.8],
+				['scenarios.central.commuter_minutes_platform', imp.scenarios?.central?.commuter_minutes_platform, 11318.9],
+				['scenarios.central.vehicles_delayed_baseline', imp.scenarios?.central?.vehicles_delayed_baseline, 60367],
+				['scenarios.central.vehicles_delayed_platform', imp.scenarios?.central?.vehicles_delayed_platform, 6037],
 				['scenarios.conservative.reduction_factor', imp.scenarios?.conservative?.reduction_factor, 25.0],
 				['scenarios.central.reduction_factor', imp.scenarios?.central?.reduction_factor, 100.0],
 				['scenarios.optimistic.reduction_factor', imp.scenarios?.optimistic?.reduction_factor, 506.2],
 				['ambulance.trips_crossing_per_movement_day', imp.ambulance?.trips_crossing_per_movement_day, 12.0],
 				['ambulance.minutes_returned_per_movement_day', imp.ambulance?.minutes_returned_per_movement_day, 132],
-				['annualization.commuter_hours_returned_per_year_central', imp.annualization?.commuter_hours_returned_per_year_central, 2355117]
+				['annualization.commuter_hours_returned_per_year_central', imp.annualization?.commuter_hours_returned_per_year_central, 4669037]
 			];
 			for (const [key, got, want] of pins) {
 				if (got !== want) c.fail('VVIP/scripts/impact_results.json', 1, c.id,
@@ -546,62 +737,92 @@ const CHECKS = [
 			const demo = c.read(DEMO) ?? '';
 			const maker = c.read(MAKER) ?? '';
 
-			const fired = chain.recommendation?.fired_rules ?? [];
-			const count = (r) => fired.filter((x) => x === r).length;
-			const chosen = chain.recommendation?.chosen?.text ?? '';
-			const cm = chosen.match(/read at (\d+) km\/h in a (\d+) km\/h segment/);
-			const top = chain.interception?.top ?? {};
+			const fired = ruleCounts(chain);
+			const figure = chosenFigure(chain);
+			const top = chain.interception?.top ?? null;
 			const tracePts = chain.trace?.points;
 			const speeds = chain.sightings?.speeds_kmh ?? [];
 			const counts = res.counts ?? {};
+			if (figure.kind === 'unknown') {
+				c.fail('VVIP/showcase/pursuit_chain.json', 1, c.id,
+					`the chosen recommendation's text has no known figure (speed read or "e-challan withheld"): "${String(figure.text).slice(0, 90)}" — teach chosenFigure() the new shape`);
+			}
+			// C-N on the artifact itself: the showcase's probe approving an
+			// e-challan on the reported-stolen plate must have been refused
+			const probe = chain.penal_approval_probe;
+			if (probe?.exercised && probe.http !== 409) {
+				c.fail('VVIP/showcase/pursuit_chain.json', 1, c.id,
+					`C-N: the e-challan approval probe on the reported-stolen plate answered ${probe.http}, not 409 — a fine on the theft victim's car was NOT refused`);
+			}
+			if (penalApprovalOnStolen(chain)) {
+				c.warn(`ethics (C-N): VVIP/showcase/pursuit_chain.json records an APPROVED penal ${chain.recommendation.chosen.rule_id} `
+					+ `(${String(chain.recommendation.chosen.id).slice(0, 8)}) on a vehicle reported stolen — a pre-C-N run; re-run `
+					+ 'scripts/showcase_run.sh (phase 6 authorises the pursuit from an evidence-only R_STOLEN_SIGHTING) and regenerate the deck from it');
+			}
 
+			const junctionNeedle = top
+				? `junction ${top.junction_id}, ${top.signal_control === false ? 'unsignalised' : 'signal-controlled'}, score ${top.score}`
+				: null;
+			const speedRange = speeds.length ? `${Math.min(...speeds)}${EN}${Math.max(...speeds)} km/h` : null;
+			const ruleNeedles = Object.entries(fired).map(([rule, n]) => [rule, n]);
 			const deckNeedles = [
-				[`\`R_SPD_SEGMENT\` \u00d7${count('R_SPD_SEGMENT')}`, 'R_SPD_SEGMENT fired count'],
-				[`\`R_SIGNAL_VIOLATION\` \u00d7${count('R_SIGNAL_VIOLATION')}`, 'R_SIGNAL_VIOLATION fired count'],
-				[cm ? `read at ${cm[1]} km/h in a ${cm[2]} km/h segment` : 'read at ? km/h in a ? km/h segment', 'chosen e-challan text'],
-				[`${chain.interception?.n_junctions} choke junctions`, 'interception junction count'],
-				[`junction ${top.junction_id}, signal-controlled, score ${top.score}`, 'top choke junction'],
+				...ruleNeedles.map(([rule, n]) => [`\`${rule}\` ×${n}`, `${rule} fired count`]),
+				[figure.needle, 'chosen recommendation figure'],
+				[top ? `${chain.interception?.n_junctions} choke junctions` : null, 'interception junction count'],
+				[junctionNeedle, 'top choke junction'],
 				[`${tracePts}-position trace`, 'live trace positions'],
-				[`${Math.min(...speeds)}${EN}${Math.max(...speeds)} km/h`, 'ANPR speed range this run'],
+				[speedRange, 'ANPR speed range this run'],
 				[`${counts.decisions_logged_audit_rows_this_run} audited decisions`, 'decisions this run'],
 				[`(${counts.situation_log_rows_this_run} situation + ${counts.param_override_rows_this_run} parameter)`, 'decision split'],
-				[`${counts.band_transitions_this_run} band transitions`, 'band transitions'],
+				[`${counts.band_transitions_this_run} band transition${counts.band_transitions_this_run === 1 ? '' : 's'}`, 'band transitions'],
 				[`${counts.green_corridor_windows} green-corridor windows`, 'green-corridor windows'],
 				[`${twin.replications}-replication twin`, 'twin replications'],
-				[`${twin.ambulance_delay_sec_mean.toFixed(2)} s`, 'twin ambulance delay'],
-				[`${sig.replay.speed_mae_kmh} km/h`, 'twin replay MAE'],
-				[`vs the ${sig.replay.mae_tolerance_kmh.toFixed(1)} gate`, 'MAE gate']
+				[isNum(twin.ambulance_delay_sec_mean) ? `${twin.ambulance_delay_sec_mean.toFixed(2)} s` : null, 'twin ambulance delay'],
+				[isNum(sig.replay?.speed_mae_kmh) ? `${sig.replay.speed_mae_kmh} km/h` : null, 'twin replay MAE'],
+				[isNum(sig.replay?.mae_tolerance_kmh) ? `vs the ${sig.replay.mae_tolerance_kmh.toFixed(1)} gate` : null, 'MAE gate']
 			];
+			// a replay with no MAE (status no_data: hourly_aggregates holds real
+			// observations only) leaves nothing a doc may quote as measured
+			if (!isNum(sig.replay?.speed_mae_kmh)) {
+				for (const [rel, text] of [[DECK, deck], [DEMO, demo], [MAKER, maker]]) {
+					const m = text.replace(/\s+/g, ' ').match(/\d+(?:\.\d+)? km\/h vs the \d+(?:\.\d+)? (?:km\/h )?gate/);
+					if (m) c.fail(rel, 1, c.id, `quotes a twin replay MAE ("${m[0]}") but signal_policy.json's replay is '${sig.replay?.status ?? 'unknown'}' with no MAE`);
+				}
+			}
 			for (const [needle, what] of deckNeedles) {
+				if (needle == null) continue;
 				c.expectIn(DECK, deck, needle, c.id, `deck pursuit/showcase figure "${what}" does not match the current artifact`, 'flagship showcase');
 			}
 			const demoNeedles = [
-				[cm ? `${cm[1]} km/h in a ${cm[2]} km/h segment` : '? km/h in a ? km/h segment', 'chosen e-challan text'],
+				[figure.short, 'chosen recommendation figure'],
 				[`${tracePts} timed positions`, 'trace positions'],
-				[`junction ${top.junction_id}`, 'top choke junction']
+				[top ? `junction ${top.junction_id}` : null, 'top choke junction']
 			];
 			for (const [needle, what] of demoNeedles) {
+				if (needle == null) continue;
 				c.expectIn(DEMO, demo, needle, c.id, `video-script figure "${what}" does not match the current artifact`, 'BEAT 4');
 			}
 			const makerNeedles = [
-				[`R_SPD_SEGMENT \u00d7${count('R_SPD_SEGMENT')}`, 'fired count'],
-				[`R_SIGNAL_VIOLATION \u00d7${count('R_SIGNAL_VIOLATION')}`, 'fired count'],
-				[cm ? `read at ${cm[1]} km/h in a ${cm[2]} km/h segment` : '?', 'chosen text'],
-				[`junction ${top.junction_id}, signal-controlled, score ${top.score}`, 'top junction'],
+				...ruleNeedles.map(([rule, n]) => [`${rule} ×${n}`, `${rule} fired count`]),
+				[figure.needle, 'chosen recommendation figure'],
+				[junctionNeedle, 'top junction'],
 				[`${tracePts}-position trace`, 'trace positions'],
-				[`${Math.min(...speeds)}${EN}${Math.max(...speeds)} km/h`, 'speed range']
+				[speedRange, 'speed range']
 			];
 			for (const [needle, what] of makerNeedles) {
+				if (needle == null) continue;
 				c.expectIn(MAKER, maker, needle, c.id, `make_deck.py figure "${what}" does not match the current artifact`);
 			}
 			// band easing: the transition row the video script cites
 			const eased = (c.json('VVIP/showcase/band_easing.json') ?? []).find((o) => o.transitioned);
 			if (eased) c.expectIn(DEMO, demo, `n=${eased.n}`, c.id, 'band-easing transition count', 'band_easing.json');
-			c.ok(c.id, `pursuit figures derivable (fired ${fired.length}, chosen "${chosen.slice(0, 40)}…", trace ${tracePts})`);
+			const firedText = Object.entries(fired).map(([r, n]) => `${r} ×${n}`).join(' + ') || 'none';
+			c.ok(c.id, `pursuit figures derivable (fired ${firedText}; chosen: ${figure.short ?? '?'}; trace ${tracePts})`);
 		}
 	},
 	{
 		id: 'pixel-proofs-match-shot-logs',
+		local: true, // reads gitignored local run artifacts
 		run(c) {
 			const cityLog = c.read('VVIP/showcase/shots_city.log') ?? '';
 			const deck = c.read(DECK) ?? '';
@@ -623,8 +844,13 @@ const CHECKS = [
 			const detail = man.shots?.pursuitTrace?.checks?.['png-nonblank']?.detail || '';
 			const pCol = probe('VVIP/showcase/shots_manifest.json', detail, /png colours=(\d+)/, 'pursuit PNG colour count');
 			const cit = man.shots?.citizen?.checks || {};
-			const citCards = probe('VVIP/showcase/shots_manifest.json', cit['live-restriction-shown']?.detail || '', /(\d+) live-source event card/, 'citizen live-source card count');
+			// the public /citizen shot counts the event cards it saw (by source)
+			// on its pursuit-not-public line (showcase_canvas_shots.mjs cardNote)
+			const citCards = probe('VVIP/showcase/shots_manifest.json', cit['pursuit-not-public']?.detail || '', /(\d+) card\(s\) by source/, 'citizen event-card count');
 			const citCol = probe('VVIP/showcase/shots_manifest.json', cit['png-nonblank']?.detail || '', /png colours=(\d+)/, 'citizen PNG colour count');
+			// the /ops wall shot (--ops-only, merged into the manifest) backs the
+			// colour figure the deck quotes for it, when the manifest carries one
+			const opsCol = (man.shots?.opsWall?.checks?.['png-nonblank']?.detail || '').match(/png colours=(\d+)/);
 			const provenColours = new Set();
 			const provenEntities = new Set();
 			const provenCards = new Set();
@@ -632,8 +858,9 @@ const CHECKS = [
 			if (ents) { needles.push([`${ents[1]} entities`, 'city entities (shots_city.log)']); provenEntities.add(ents[1]); }
 			if (cityCol) { needles.push([`${fmt(Number(cityCol[1]))}-colour`, 'city PNG colour proof (shots_city.log)']); provenColours.add(fmt(Number(cityCol[1]))); }
 			if (pCol) { needles.push([`${fmt(Number(pCol[1]))}-colour`, 'pursuit PNG colour proof (shots_manifest.json)']); provenColours.add(fmt(Number(pCol[1]))); }
-			if (citCards) { needles.push([`${citCards[1]} live-source event cards`, 'citizen card count (shots_manifest.json)']); provenCards.add(citCards[1]); }
+			if (citCards) { needles.push([`${citCards[1]} event cards`, 'citizen event-card count (shots_manifest.json)']); provenCards.add(citCards[1]); }
 			if (citCol) { needles.push([`${fmt(Number(citCol[1]))}-colour`, 'citizen PNG colour proof (shots_manifest.json)']); provenColours.add(fmt(Number(citCol[1]))); }
+			if (opsCol) { needles.push([`${fmt(Number(opsCol[1]))}-colour`, '/ops wall PNG colour proof (shots_manifest.json)']); provenColours.add(fmt(Number(opsCol[1]))); }
 			for (const [needle, what] of needles) {
 				c.expectIn(DECK, deck, needle, c.id, `screenshot figure "${what}" does not match the artifact`, 'Screenshots');
 			}
@@ -675,19 +902,21 @@ const CHECKS = [
 			const sig = c.json('VVIP/showcase/signal_policy.json');
 			const bench = c.json('VVIP/scripts/bench_adversarial_report.json');
 			if (!chain || !sig || !bench) return;
-			const fired = chain.recommendation?.fired_rules ?? [];
-			const cnt = (r) => fired.filter((x) => x === r).length;
-			const cm = (chain.recommendation?.chosen?.text || '').match(/read at (\d+) km\/h in a (\d+) km\/h segment/);
+			const fired = ruleCounts(chain);
+			const withheld = withheldCounts(chain);
+			const cm = chosenFigure(chain).speed;
 			const top = chain.interception?.top ?? {};
 			const pts = chain.trace?.points;
 			const speeds = chain.sightings?.speeds_kmh ?? [];
 			const planned = sig.apply?.planned_junctions ?? [];
 			const kc = bench.score_summary?.keyword_coverage;
-			/** contradiction rules: pattern → (groups) must equal the artifact value */
+			/** contradiction rules: pattern → (groups) must equal the artifact value
+			 *  (a rule the run never fired counts 0 — a doc quoting fines the
+			 *  current chain did not fire contradicts it) */
 			const rules = [
-				[/R_SPD_SEGMENT[`*]*\s*(?:\u00d7|x)\s*(\d+)/g, () => String(cnt('R_SPD_SEGMENT')), 'R_SPD_SEGMENT fired count'],
-				[/R_SIGNAL_VIOLATION[`*]*\s*(?:\u00d7|x)\s*(\d+)/g, () => String(cnt('R_SIGNAL_VIOLATION')), 'R_SIGNAL_VIOLATION fired count'],
-				[/read at (\d+) km\/h in a (\d+) km\/h segment/g, () => (cm ? `${cm[1]}|${cm[2]}` : '?|?'), 'chosen e-challan segment'],
+				...RULE_IDS.map((rule) => [new RegExp(`${rule}[\`*]*\\s*(?:\u00d7|x)\\s*(\\d+)`, 'g'),
+					() => [String(fired[rule] ?? 0), ...(withheld[rule] ? [String(withheld[rule])] : [])], `${rule} fired (or withheld) count`]),
+				[/read at (\d+) km\/h in a (\d+) km\/h segment/g, () => (cm ? `${cm[1]}|${cm[2]}` : 'none in the current chain'), 'chosen e-challan segment'],
 				[/(\d+)-position(?: live)? trace/g, () => String(pts), 'trace positions'],
 				[/\((\d+) (?:timed )?positions/g, () => String(pts), 'trace positions'],
 				[/top:?\s*junction (\d+)/g, () => String(top.junction_id), 'top choke junction'],
@@ -701,8 +930,8 @@ const CHECKS = [
 					for (const [re, want, what] of rules) {
 						for (const m of line.matchAll(re)) {
 							const got = m.slice(1).join('|');
-							const exp = want();
-							if (got !== exp) c.fail(rel, i + 1, c.id, `"${what}" quoted as ${got} but the artifact says ${exp} (${m[0]})`);
+							const exp = [want()].flat();
+							if (!exp.includes(got)) c.fail(rel, i + 1, c.id, `"${what}" quoted as ${got} but the artifact says ${exp.join(' or ')} (${m[0]})`);
 						}
 					}
 					// 'score X' only judged on junction lines (the choke-score slot)
@@ -742,6 +971,7 @@ const CHECKS = [
 	},
 	{
 		id: 'screens-verify-40of40',
+		local: true, // reads gitignored local run artifacts
 		run(c) {
 			const man = c.json(SCREENS_MANIFEST);
 			if (!man) return;
@@ -759,13 +989,38 @@ const CHECKS = [
 			if (total !== 40) c.fail(SCREENS_MANIFEST, 1, c.id, `screens manifest records ${total} checks, expected 40`);
 			const drv = screens.driver?.checks ?? {};
 			if (Object.keys(drv).length !== 7) c.fail(SCREENS_MANIFEST, 1, c.id, `driver screen records ${Object.keys(drv).length} checks, expected 7`);
-			const cd = drv['approved open window (live countdown)'];
-			if (!cd || !/countdown=90s/.test(cd.detail || '')) {
-				c.fail(SCREENS_MANIFEST, 1, c.id, 'driver "approved open window (live countdown)" check missing or its detail lacks countdown=90s');
+			// The camera drives /driver end-to-end only in its scripted fallback
+			// (the window opens on the scripted approval: countdown=90s). In live
+			// mode a request would be a real dispatch row that only a named
+			// officer may open, so the run records the idle request card instead
+			// (screens-verify.mjs) — judged by those checks, never by a countdown.
+			const driverMode = screens.driver?.mode ?? 'scripted'; // manifests before the mode was recorded drove it
+			let driverNote;
+			if (driverMode === 'live') {
+				for (const k of ['live mode: live corridor stretches on offer',
+					'live mode: the request must name a 108 unit (button held until one is typed)',
+					'live mode: nothing filed by the camera (still idle)']) {
+					if (!drv[k]) c.fail(SCREENS_MANIFEST, 1, c.id, `driver (live mode) check "${k}" missing`);
+				}
+				if (drv['approved open window (live countdown)']) {
+					c.fail(SCREENS_MANIFEST, 1, c.id, 'driver in live mode records an opened window — the camera must never file a live request');
+				}
+				driverNote = 'driver in live mode: idle request card, nothing filed';
+			} else {
+				// the scripted cardiac window is 90 s; the camera reads it just
+				// after it opens, and the countdown can show 91 for its first
+				// tick (the page clock lags the opening) — so 85..91 s, never a
+				// different window length
+				const cd = drv['approved open window (live countdown)'];
+				const secs = Number((/countdown=(\d+)s/.exec(cd?.detail || '') || [])[1]);
+				if (!cd || !(secs >= 85 && secs <= 91)) {
+					c.fail(SCREENS_MANIFEST, 1, c.id, `driver "approved open window (live countdown)" check missing or its countdown (${Number.isFinite(secs) ? `${secs}s` : 'none'}) is not the 90-s scripted window read at its opening (85–91 s)`);
+				}
+				driverNote = `driver countdown=${secs}s of the 90-s scripted window`;
 			}
 			const deck = c.read(DECK) ?? '';
 			c.expectIn(DECK, deck, '40/40', c.id, 'deck must quote the screens-verify result as 40/40');
-			if (total === 40 && okCount === 40) c.ok(c.id, '40/40 checks ok incl. driver countdown=90s');
+			if (total === 40 && okCount === 40) c.ok(c.id, `40/40 checks ok incl. ${driverNote}`);
 		}
 	},
 	{
@@ -804,13 +1059,26 @@ const CHECKS = [
 				c.fail('VVIP/showcase/shots_manifest.json', 1, c.id,
 					`pursuitFeed vehicle ${man.pursuitFeed.vehicleId} differs from pursuit_chain vehicle ${chain.vehicle_id} — cross-run blend`);
 			}
-			if (man?.pursuitFeed?.points && man.pursuitFeed.points !== chain.trace?.points) {
-				c.fail('VVIP/showcase/shots_manifest.json', 1, c.id,
-					`pursuitFeed points ${man.pursuitFeed.points} differ from pursuit_chain trace points ${chain.trace?.points} — cross-run blend`);
+			// the hero shots may be re-taken apart from the run (showcase_canvas_shots.mjs
+			// on the staged live state): then the trace they frame is the vehicle's
+			// trace at capture time, and the deck must say so with the shot's own
+			// figure — never present the shot's trace as the run's
+			const recapture = man?.pursuitFeed?.points && man.pursuitFeed.points !== chain.trace?.points;
+			if (recapture) {
+				for (const [rel, t] of [[DECK, deck], [README, c.read(README) ?? '']]) {
+					for (const needle of ['hero shots recaptured', `${man.pursuitFeed.points}-point trace`]) {
+						c.expectIn(rel, t, needle, c.id,
+							`shots_manifest.json pursuitFeed points ${man.pursuitFeed.points} differ from pursuit_chain trace points ${chain.trace?.points} — `
+							+ 'a recapture of the hero shots apart from the run must be disclosed, never blended into the run (cross-run blend)');
+					}
+				}
 			}
-			c.ok(c.id, split
-				? `two runs disclosed (${s1} / ${s2}); shared-vehicle and trace-point agreement verified`
-				: `single run ${s1}; shared-vehicle and trace-point agreement verified`);
+			c.ok(c.id, (split
+				? `two runs disclosed (${s1} / ${s2})`
+				: `single run ${s1}`)
+				+ (recapture
+					? `; shared vehicle verified; the hero shots' ${man.pursuitFeed.points}-point trace (recaptured apart from the run's ${chain.trace?.points}) disclosed`
+					: '; shared-vehicle and trace-point agreement verified'));
 		}
 	},
 	{
@@ -849,44 +1117,106 @@ const CHECKS = [
 		}
 	},
 	{
-		id: 'e2e-11-checks-gate',
+		id: 'verify-all-deck-gates-wired',
 		run(c) {
-			const e2e = c.read(E2E) ?? '';
-			const keys = new Set([...e2e.matchAll(/\bR\.(\w+)\s*=/g)].map((m) => m[1]));
-			keys.delete('pageErrors'); // the error array, not a boolean check
-			const expected = new Set(['dashboard', 'advisoryIdle', 'gujarati', 'activeStatus', 'freezeSchedule',
-				'subscribed', 'quickRequest', 'driverView', 'proposal', 'windowOpen', 'backToAdvisory']);
-			const missing = [...expected].filter((k) => !keys.has(k));
-			const extra = [...keys].filter((k) => !expected.has(k));
-			if (missing.length) c.fail(E2E, 1, c.id, `e2e journey lost boolean check(s): ${missing.join(', ')}`);
-			if (extra.length) c.fail(E2E, 1, c.id, `e2e journey gained unexpected boolean check(s): ${extra.join(', ')}`);
 			const va = c.read(VERIFY_ALL) ?? '';
-			c.expectIn(VERIFY_ALL, va, 'node tests/e2e/citizen-green-corridor.e2e.mjs', c.id,
-				'verify_all.sh must keep running the citizen e2e journey (tier_frontend_e2e)');
-			const deck = c.read(DECK) ?? '';
-			c.expectIn(DECK, deck, '11-check e2e', c.id, 'deck must keep describing the 11-check e2e journey');
-			if (!missing.length && !extra.length) c.ok(c.id, 'the 11 boolean e2e checks intact and gated by verify_all.sh');
+			// the deck UI tier (WP-15 T2) on the private preview, and the --live
+			// tier signing in through the ONE shared helper
+			for (const [needle, what] of [
+				['node tests/ops-wall-smoke.mjs "$PREVIEW"', 'the hermetic ops-wall smoke (its C6 no-officer masking group) on the preview'],
+				['node tests/contract/run.mjs', 'the deck contract replay'],
+				['"$DECK"/tests/*.unit.mjs', 'every deck unit test'],
+				['tests/edge-basemap.entry.ts', 'the edge-basemap entry'],
+				['node tests/ops-write-smoke.mjs "$ORACLE_URL"', 'the ops-write smoke (GET-only probes)'],
+				['CC_SMOKE_ONLY=plates', "city-command's C6 'plates' group (no officer named)"],
+				['-u VEER_OPERATOR_PIN', 'previews gate-off: no session names an officer (C6)'],
+				['-u VEER_CESIUM_ION_TOKEN', 'previews keyless'],
+				['. "$VVIP_DIR/scripts/deck_session.sh"', 'the --live tier sourcing the shared sign-in helper'],
+				['deck_signin "$deck"', 'the --live tier signing in through deck_signin']
+			]) {
+				c.expectIn(VERIFY_ALL, va, needle, c.id, `verify_all.sh must wire ${what}`);
+			}
+			// every pytest suite executes whole — skips are per test, never per suite
+			const lines = va.split('\n');
+			lines.forEach((line, i) => {
+				if (/NOT_PURE_MODULES|\[SKIP\] pytest-|not pure-python/.test(line)) {
+					c.fail(VERIFY_ALL, i + 1, c.id, `a whole pytest suite can be skipped again: ${line.trim().slice(0, 90)}`);
+				}
+			});
+			// the legacy React tiers are retired from the gate …
+			const RETIRED_TIERS = ['tier_frontend_bundle', 'tier_frontend_e2e', 'citizen-green-corridor.e2e.mjs'];
+			for (const r of RETIRED_TIERS) {
+				if (va.includes(r)) c.fail(VERIFY_ALL, c.lineOf(VERIFY_ALL, va, r), c.id, `verify_all.sh still runs the retired React frontend tier (${r})`);
+			}
+			// … so no paragraph about verify_all may still claim them as gate
+			// tiers (history that says they were retired is fine)
+			const RETIRED_CLAIMS = [/\bfrontend[- ](?:bundle|e2e)\b/i, /\b11-check e2e\b/i, /\bheadless e2e journey\b/i];
+			let claims = 0;
+			for (const rel of [DECK, MAKER, README, TECH_DOCS]) {
+				const t = c.read(rel);
+				if (t == null) { c.fail(rel, 1, c.id, 'doc missing — cannot scan the verify_all claims'); continue; }
+				let at = 0;
+				for (const para of t.split(/\n[ \t]*\n/)) {
+					const start = t.indexOf(para, at);
+					at = start + para.length;
+					if (!/verify_all/.test(para) || /\bretired\b/i.test(para)) continue;
+					for (const re of RETIRED_CLAIMS) {
+						const m = para.match(re);
+						if (!m) continue;
+						const line = t.slice(0, start + m.index).split('\n').length;
+						c.fail(rel, line, c.id, `describes verify_all with the retired React tier "${m[0]}" — the gate no longer runs it (say what it runs now, or say it was retired)`);
+						claims++;
+					}
+				}
+			}
+			c.ok(c.id, `verify_all.sh wires the deck UI tier + the helper sign-in, skips no whole pytest suite, runs no React tier; ${claims ? claims + ' stale doc claim(s)' : 'no doc claims a retired tier'}`);
 		}
 	},
 	{
-		id: 'migrations-007-011-exist',
+		id: 'migrations-on-disk-match-docs',
 		run(c) {
-			const dirRel = 'VVIP/services/corridor-store/migrations';
 			let files = [];
-			try { files = readdirSync(path.join(c.root, dirRel)).filter((f) => f.endsWith('.sql')).sort(); } catch {
-				c.fail(dirRel, 1, c.id, 'migrations directory missing/unreadable');
+			try { files = readdirSync(path.join(c.root, MIGRATIONS)).filter((f) => f.endsWith('.sql')).sort(); } catch {
+				c.fail(MIGRATIONS, 1, c.id, 'migrations directory missing/unreadable');
 				return;
 			}
-			const expected = ['001_spatial_init.sql', '002_graph_extensions.sql', '003_anomaly_tracking.sql',
-				'004_memory_embeddings.sql', '005_adaptive.sql', '006_simulation_runs.sql', '007_corridor_events.sql',
-				'008_event_profiles.sql', '009_emulation_runs.sql', '010_vehicles_watchlist.sql', '011_city_coordination.sql'];
-			const miss = expected.filter((f) => !files.includes(f));
-			const extra = files.filter((f) => !expected.includes(f));
-			if (miss.length) c.fail(dirRel, 1, c.id, `missing migration file(s): ${miss.join(', ')}`);
-			if (extra.length) c.fail(dirRel, 1, c.id, `unexpected migration file(s): ${extra.join(', ')}`);
-			const deck = c.read(DECK) ?? '';
-			c.expectIn(DECK, deck, 'migrations 007\u2013011', c.id, 'deck must quote the migration range as on disk');
-			if (!miss.length && !extra.length) c.ok(c.id, 'migrations 001..011 exactly as the deck quotes (live "applied 11/11" is the fleet tier\'s half)');
+			// the list is DERIVED from disk: NNN_name.sql, contiguous from 001, no repeats
+			const nums = [];
+			for (const f of files) {
+				const m = f.match(/^(\d{3})_[a-z0-9_]+\.sql$/);
+				if (!m) { c.fail(MIGRATIONS, 1, c.id, `migration file not named NNN_name.sql: ${f}`); continue; }
+				nums.push(Number(m[1]));
+			}
+			if (!nums.length) { c.fail(MIGRATIONS, 1, c.id, 'no migrations on disk'); return; }
+			const max = Math.max(...nums);
+			const pad = (n) => String(n).padStart(3, '0');
+			for (let n = 1; n <= max; n++) {
+				const k = nums.filter((x) => x === n).length;
+				if (k === 0) c.fail(MIGRATIONS, 1, c.id, `gap in the ledger: no migration ${pad(n)} (001..${pad(max)} must be contiguous)`);
+				if (k > 1) c.fail(MIGRATIONS, 1, c.id, `migration number ${pad(n)} used ${k} times`);
+			}
+			const top = pad(max);
+			const range = `001${EN}${top}`;
+			// the docs quote the range as on disk, and no other full range or
+			// "applied n/n" count (a subset like "migrations 016–020" is fine, and
+			// so is 001–006: the original schema the docs call byte-immutable)
+			const SUBSETS_FROM_001 = ['006'];
+			for (const rel of [DECK, README, TECH_DOCS]) {
+				const t = c.read(rel);
+				if (t == null) { c.fail(rel, 1, c.id, 'doc missing — cannot check the migration range'); continue; }
+				if (!new RegExp(`\\b001[${EN}-]${top}\\b`).test(t)) {
+					c.fail(rel, 1, c.id, `must quote the migration range as on disk: "${range}" (${max} files)`);
+				}
+				t.split('\n').forEach((line, i) => {
+					for (const m of line.matchAll(new RegExp(`\\b001[${EN}-](\\d{3})\\b`, 'g'))) {
+						if (m[1] !== top && !SUBSETS_FROM_001.includes(m[1])) c.fail(rel, i + 1, c.id, `quotes migrations 001${EN}${m[1]} but ${range} are on disk`);
+					}
+					for (const m of line.matchAll(/\bapplied(?: live)? (\d+)\/(\d+)\b/g)) {
+						if (Number(m[1]) !== max || Number(m[2]) !== max) c.fail(rel, i + 1, c.id, `quotes "applied ${m[1]}/${m[2]}" but ${max} migrations are on disk`);
+					}
+				});
+			}
+			c.ok(c.id, `migrations ${range} on disk (${max} files, contiguous) — the range DECK/README/TECHNICAL_DOCS quote`);
 		}
 	},
 	{
@@ -913,25 +1243,26 @@ const CHECKS = [
 			// bash -n must pass
 			const bashn = spawnSync('bash', ['-n', path.join(c.root, rel)], { encoding: 'utf8' });
 			if (bashn.status !== 0) c.fail(rel, 1, c.id, `bash -n failed: ${(bashn.stderr || '').trim()}`);
-			// the URL constants: full-URL override + port override, loopback defaults
+			// the URL constants: full-URL override + port override, the live
+			// argus stack's ports as defaults (scripts/veer_env.sh)
 			for (const [line, url, port] of [
-				['ORACLE_URL="${ORACLE_URL:-http://127.0.0.1:${ORACLE_PORT:-8081}}"', 'ORACLE_URL', 8081],
-				['BRAIN_URL="${BRAIN_URL:-http://127.0.0.1:${BRAIN_PORT:-8080}}"', 'BRAIN_URL', 8080],
+				['ORACLE_URL="${ORACLE_URL:-http://127.0.0.1:${ORACLE_PORT:-8091}}"', 'ORACLE_URL', 8091],
+				['BRAIN_URL="${BRAIN_URL:-http://127.0.0.1:${BRAIN_PORT:-8092}}"', 'BRAIN_URL', 8092],
 				['EMULATOR_URL="${EMULATOR_URL:-http://127.0.0.1:${EMULATOR_PORT:-8090}}"', 'EMULATOR_URL', 8090],
 				['DECIDER_URL="${DECIDER_URL:-http://127.0.0.1:${DECIDER_PORT:-8083}}"', 'DECIDER_URL', 8083],
 				['LLAMA_URL="${LLAMA_URL:-http://127.0.0.1:${LLAMA_PORT:-8084}}"', 'LLAMA_URL', 8084],
 				['EMBED_URL="${EMBED_URL:-http://127.0.0.1:${EMBED_PORT:-8085}}"', 'EMBED_URL', 8085],
-				['DECK_CONTAINER_URL="${DECK_URL:-http://127.0.0.1:${DECK_PORT:-5173}}"', 'DECK_CONTAINER_URL', 5173]
+				['DECK_CONTAINER_URL="${DECK_URL:-http://127.0.0.1:${DECK_PORT:-5273}}"', 'DECK_CONTAINER_URL', 5273]
 			]) {
-				c.expectIn(rel, t, line, c.id, `endpoint constant ${url} must be env-overridable (port ${port} preserved as default)`);
+				c.expectIn(rel, t, line, c.id, `endpoint constant ${url} must be env-overridable (the live port ${port} as default)`);
 			}
 			c.expectIn(rel, t, 'DECK_ORIGIN="$DECK_CONTAINER_URL"', c.id, 'the canvas origin must be the ONE deck constant, not a second hardcoded copy');
 			for (const needle of [
-				'COMPOSE_PROJECT="${COMPOSE_PROJECT:-vvip}"',
+				'COMPOSE_PROJECT="${COMPOSE_PROJECT:-vvip-argus}"',
 				'${POSTGIS_CONTAINER:-${COMPOSE_PROJECT}-postgis}',
 				'PSQL="docker exec $PG_CONTAINER psql -U $PG_USER -d $PG_DB -At"'
 			]) {
-				c.expectIn(rel, t, needle, c.id, 'fleet addressing must be parametrized (project/containers/DB) with defaults preserved');
+				c.expectIn(rel, t, needle, c.id, 'fleet addressing must be parametrized (project/containers/DB) with the live (argus) defaults');
 			}
 			// generic: no bare loopback URL outside a ${...:- default}
 			t.split('\n').forEach((line, i) => {
@@ -949,7 +1280,31 @@ const CHECKS = [
 			// the deck health contract must be the cockpit (200 + template), not 301
 			c.expectIn(rel, t, 'grep -q \'data-template="convoy-command"\'', c.id, 'deck health must assert the cockpit template marker (design-smoke contract)');
 			if (/=\s*"301"\s*\]/.test(t)) c.fail(rel, 1, c.id, 'deck health still asserts the retired 301 status');
-			c.ok(c.id, 'showcase_run.sh: bash -n ok, endpoints/containers env-overridable, cockpit health contract');
+			// the operator gate: ONE shared sign-in helper, never a PIN of its own
+			c.expectIn(rel, t, '. "$VVIP_DIR/scripts/deck_session.sh"', c.id, 'the showcase must sign in through the shared helper (scripts/deck_session.sh)');
+			c.expectIn(rel, t, 'deck_signin "$DECK_ORIGIN"', c.id, 'the showcase must sign in to its deck origin with deck_signin');
+			t.split('\n').forEach((line, i) => {
+				if (/VEER_OPERATOR_PIN=\S|"pin"\s*:/.test(line) && !/^\s*#/.test(line)) {
+					c.fail(rel, i + 1, c.id, `the showcase handles the operator PIN itself — only scripts/deck_session.sh may: ${line.trim().slice(0, 80)}`);
+				}
+			});
+			// phase 6 (C-N, the user's decision): the pursuit is authorised from
+			// an evidence-only R_STOLEN_SIGHTING under the honest scripted-officer
+			// label, and an e-challan approval on the stolen plate must be refused
+			for (const [needle, what] of [
+				['R_STOLEN_SIGHTING', 'the evidence-only stolen-vehicle sighting rule'],
+				['pursuit authorised on a reported-stolen vehicle (evidence, no fine)', "phase 6's approval note (the user's wording)"],
+				['Scripted demo officer (showcase script)', 'the honest officer label of every unattended approval']
+			]) {
+				c.expectIn(rel, t, needle, c.id, `showcase phase 6 must carry ${what}`);
+			}
+			if (!t.split('\n').some((line) => /\b409\b/.test(line) && /e-challan|penal/i.test(line))) {
+				c.fail(rel, 1, c.id, 'showcase phase 6 must assert that an e-challan (penal) approval on the stolen plate is refused 409 (C-N)');
+			}
+			if (/e-challan approved per/.test(t)) {
+				c.fail(rel, c.lineOf(rel, t, 'e-challan approved per'), c.id, 'showcase still approves an e-challan on the reported-stolen vehicle (C-N: evidence only, never a fine)');
+			}
+			c.ok(c.id, 'showcase_run.sh: bash -n ok, endpoints/containers env-overridable (argus defaults), cockpit health contract, shared sign-in, phase 6 evidence-only + 409');
 		}
 	},
 	{
@@ -972,19 +1327,7 @@ const CHECKS = [
 			const chain = c.json('VVIP/showcase/pursuit_chain.json');
 			const bench = c.json('VVIP/scripts/bench_adversarial_report.json');
 			if (chain && bench) {
-				const fired = chain.recommendation.fired_rules ?? [];
-				const cnt = (r) => fired.filter((x) => x === r).length;
-				const cm = (chain.recommendation.chosen?.text || '').match(/read at (\d+) km\/h in a (\d+) km\/h segment/);
-				const top = chain.interception.top ?? {};
-				for (const needle of [
-					`R_SPD_SEGMENT \u00d7${cnt('R_SPD_SEGMENT')}`,
-					`R_SIGNAL_VIOLATION \u00d7${cnt('R_SIGNAL_VIOLATION')}`,
-					cm ? `read at ${cm[1]} km/h in a ${cm[2]} km/h segment` : 'chosen text',
-					`junction ${top.junction_id}, signal-controlled, score ${top.score}`,
-					`${chain.trace.points}-position trace`,
-					String(bench.score_summary.keyword_coverage),
-					'Convoy Command cockpit', '40/40'
-				]) {
+				for (const needle of renderedDeckNeedles(chain, bench)) {
 					if (!xml.includes(needle)) c.fail(PPTX, 1, c.id, `rendered pptx lacks the current figure "${needle}" — re-run submission/make_deck.py`);
 				}
 			}
@@ -995,31 +1338,63 @@ const CHECKS = [
 		id: 'verify-all-tier-inventory',
 		run(c) {
 			const va = c.read(VERIFY_ALL) ?? '';
-			const order = ['tier_frontend_bundle', 'tier_frontend_e2e', 'tier_gods_eye_check',
-				'tier_gods_eye_canvas', 'tier_pytest_suites', 'tier_models'];
-			let last = -1;
-			for (const tier of order) {
-				// BOTH the function definition AND the main() call site must
-				// exist — a deleted definition with the call left in would die
-				// at runtime with command-not-found, so it is a failure here,
-				// not a passing grep.
-				const def = new RegExp(`^${tier}\\(\\)\\s*\\{`, 'm').exec(va);
-				const call = new RegExp(`^\\s+${tier}$`, 'm').exec(va);
-				if (!def) { c.fail(VERIFY_ALL, defLine(va, tier), c.id, `verify_all.sh lost the ${tier}() function definition (main() would die: command not found)`); continue; }
-				if (!call) { c.fail(VERIFY_ALL, 1, c.id, `verify_all.sh lost the main() call to ${tier}`); continue; }
-				if (call.index < last) c.fail(VERIFY_ALL, va.slice(0, call.index).split('\n').length, c.id, `verify_all.sh tier ${tier} out of the documented main() order`);
-				last = call.index;
+			// the offline ladder, then the --live tiers: BOTH the function
+			// definition AND the main() call site must exist, in this order —
+			// a deleted definition with the call left in would die at runtime
+			// with command-not-found, so it is a failure here, not a passing grep
+			const ladders = [
+				['tier_scripts_syntax', 'tier_gods_eye_check', 'tier_gods_eye_canvas', 'tier_design_smoke', 'tier_deck_ui',
+					'tier_pytest_suites', 'tier_cargo', 'tier_display_geometry', 'tier_ingress_segments',
+					'tier_submission_consistency', 'tier_wave1_hatches', 'tier_wave2_forecaster',
+					'tier_wave2_routing', 'tier_wave2_tier0', 'tier_wave3_repetition', 'tier_wave3_ledger'],
+				['tier_live', 'tier_demo_reset', 'tier_live_smokes', 'tier_models', 'tier_model_drift']
+			];
+			for (const order of ladders) {
+				let last = -1;
+				for (const tier of order) {
+					const def = new RegExp(`^${tier}\\(\\)\\s*\\{`, 'm').exec(va);
+					const call = new RegExp(`^\\s+${tier}$`, 'm').exec(va);
+					if (!def) { c.fail(VERIFY_ALL, defLine(va, tier), c.id, `verify_all.sh lost the ${tier}() function definition (main() would die: command not found)`); continue; }
+					if (!call) { c.fail(VERIFY_ALL, 1, c.id, `verify_all.sh lost the main() call to ${tier}`); continue; }
+					if (call.index < last) c.fail(VERIFY_ALL, va.slice(0, call.index).split('\n').length, c.id, `verify_all.sh tier ${tier} out of the pinned main() order`);
+					last = call.index;
+				}
 			}
 			c.expectIn(VERIFY_ALL, va, 'ALL TIERS PASSED', c.id, 'verify_all.sh must keep its terminal pass line');
-			if (!/design-smoke/.test(va)) {
-				c.warn('drift panel: tests/design-smoke.mjs (the cockpit-topology tripwire) is NOT a tier in verify_all.sh — flagged, not failed (verify_all.sh is out of this stream\'s edit scope)');
+			c.expectIn(VERIFY_ALL, va, 'node tests/design-smoke.mjs', c.id, 'verify_all.sh must run the cockpit-topology tripwire (tests/design-smoke.mjs)');
+			c.expectIn(VERIFY_ALL, va, 'scripts/gen_display_geometry.py --verify', c.id, 'verify_all.sh must re-measure the OSM network (gen_display_geometry.py --verify)');
+			c.expectIn(VERIFY_ALL, va, 'scripts/gen_ingress_segments.py --check', c.id, "verify_all.sh must check signal-ingress's compiled-in network against the store (gen_ingress_segments.py --check)");
+			c.expectIn(VERIFY_ALL, va, 'cargo test --locked', c.id, 'verify_all.sh must run the signal-ingress cargo tests');
+			// the stack-bound tools that cannot run hermetically are at least
+			// parsed offline, and the pre-judging dry-run is a --live tier
+			for (const needle of ['node --check scripts/journeys.mjs', 'bash -n scripts/demo_reset.sh',
+				'scripts/data/journeys/reboot_evidence.json', 'scripts/demo_reset.sh" 2>&1', 'dry-run: nothing was written']) {
+				c.expectIn(VERIFY_ALL, va, needle, c.id, `verify_all.sh must keep the stack-bound tools gated (${needle})`);
 			}
-			const fleet = c.read(FLEET_SMOKE) ?? '';
-			const show = c.read(SHOWCASE_RUN) ?? '';
-			if (!/design-smoke/.test(fleet) && !/design-smoke/.test(show)) {
-				c.fail(FLEET_SMOKE, 1, c.id, 'no gate script references design-smoke.mjs — the cockpit tripwire would run nowhere');
+			c.ok(c.id, `tier definitions + call sites intact in the pinned order (${ladders[0].length} offline, ${ladders[1].length} --live)`);
+		}
+	},
+	{
+		id: 'post-push-origin-main',
+		postPush: true,
+		run(c) {
+			const repo = path.join(c.root, 'VVIP');
+			const git = (...a) => spawnSync('git', ['-C', repo, ...a], { encoding: 'utf8', timeout: 60000 });
+			const head = git('rev-parse', 'HEAD');
+			if (head.status !== 0) { c.fail('VVIP/.git', 1, c.id, `git rev-parse HEAD failed: ${(head.stderr || '').trim().slice(0, 120)}`); return; }
+			const local = head.stdout.trim();
+			const ls = git('ls-remote', 'origin', 'refs/heads/main');
+			if (ls.status !== 0) { c.fail('VVIP/.git', 1, c.id, `git ls-remote origin refs/heads/main failed: ${(ls.stderr || '').trim().slice(0, 120)}`); return; }
+			const remote = (ls.stdout.trim().split(/\s+/)[0] || '');
+			if (!remote) { c.fail('VVIP/.git', 1, c.id, 'origin has no main branch'); return; }
+			if (remote !== local) {
+				c.fail('VVIP/.git', 1, c.id, `HEAD ${local.slice(0, 12)} is not origin/main ${remote.slice(0, 12)} — the push did not land (or HEAD moved after it)`);
+				return;
 			}
-			c.ok(c.id, 'tier definitions + call sites intact in order; design-smoke referenced by fleet_smoke.sh/showcase_run.sh');
+			// the pushed tree (== HEAD, so its objects are local) carries the licence
+			const lic = git('cat-file', '-p', `${remote}:LICENSE`);
+			if (lic.status !== 0 || !lic.stdout.trim()) c.fail('VVIP/LICENSE', 1, c.id, `origin/main ${remote.slice(0, 12)} carries no (or an empty) LICENSE`);
+			else c.ok(c.id, `HEAD == origin/main ${remote.slice(0, 12)}; LICENSE on origin (${lic.stdout.trim().split('\n')[0].slice(0, 40)})`);
 		}
 	},
 	{
@@ -1040,7 +1415,7 @@ const CHECKS = [
 			}
 			const ex = spawnSync('pdftotext', [pdfAbs, '-'], { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
 			if (ex.status !== 0) {
-				c.fail(PDF, 1, c.id, `pdftotext failed on the rendered PDF: ${(ex.stderr || '').slice(0, 120)}`);
+				c.fail(PDF, 1, c.id, `pdftotext failed on the rendered PDF: ${(ex.stderr || '').replace(/\s+/g, ' ').trim().slice(0, 120)}`);
 				return;
 			}
 			const text = (ex.stdout || '').replace(/\s+/g, ' ');
@@ -1050,18 +1425,7 @@ const CHECKS = [
 			const chain = c.json('VVIP/showcase/pursuit_chain.json');
 			const bench = c.json('VVIP/scripts/bench_adversarial_report.json');
 			if (chain && bench) {
-				const fired = chain.recommendation.fired_rules ?? [];
-				const cnt = (r) => fired.filter((x) => x === r).length;
-				const cm = (chain.recommendation.chosen?.text || '').match(/read at (\d+) km\/h in a (\d+) km\/h segment/);
-				const top = chain.interception.top ?? {};
-				for (const needle of [
-					`R_SPD_SEGMENT \u00d7${cnt('R_SPD_SEGMENT')}`,
-					`read at ${cm ? cm[1] : '?'} km/h in a ${cm ? cm[2] : '?'} km/h segment`,
-					`junction ${top.junction_id}, signal-controlled, score ${top.score}`,
-					`${chain.trace.points}-position trace`,
-					String(bench.score_summary.keyword_coverage),
-					'Convoy Command cockpit', '40/40'
-				]) {
+				for (const needle of renderedDeckNeedles(chain, bench)) {
 					if (!text.includes(needle.replace(/\s+/g, ' '))) {
 						c.fail(PDF, 1, c.id, `rendered PDF lacks the current figure "${needle}" — re-convert from the corrected pptx`);
 					}
@@ -1082,6 +1446,14 @@ function runAllChecks(root, opts = {}) {
 	const c = new Ctx(root, opts);
 	for (const check of CHECKS) {
 		c.id = check.id;
+		if (check.postPush && !opts.postPush) {
+			c.skip(check.id, 'before the push — run with --post-push once origin/main is pushed');
+			continue;
+		}
+		if (check.local && opts.vvipOnly) {
+			c.skip(check.id, 'judges gitignored local run artifacts (shot logs, screens manifest) a clean checkout does not carry');
+			continue;
+		}
 		try {
 			check.run(c);
 		} catch (e) {
@@ -1113,31 +1485,52 @@ const FIXTURE_FILES = [
 	'VVIP/showcase/showcase_gods_eye_city.png', 'VVIP/showcase/showcase_pursuit_trace.png',
 	'VVIP/showcase/showcase_citizen_advisory.png', 'VVIP/showcase/showcase_ops_wall.png',
 	DESIGN_SMOKE, 'VVIP/services/command-deck/tests/screens-verify.mjs', SCREENS_MANIFEST,
-	...['ops', 'gods-eye', 'citizen', 'driver', 'comms', 'chat'].map((s) => `VVIP/services/command-deck/tests/artifacts/screens/screen_${s}.png`),
-	ROUTE_ROOT, 'VVIP/services/command-deck/src/hooks.server.ts',
-	E2E,
-	...['001_spatial_init.sql', '002_graph_extensions.sql', '003_anomaly_tracking.sql', '004_memory_embeddings.sql',
-		'005_adaptive.sql', '006_simulation_runs.sql', '007_corridor_events.sql', '008_event_profiles.sql',
-		'009_emulation_runs.sql', '010_vehicles_watchlist.sql', '011_city_coordination.sql']
-		.map((f) => `VVIP/services/corridor-store/migrations/${f}`)
+	...['ops', 'gods-eye', 'citizen', 'driver', 'comms', 'chat'].map((s) => `VVIP/services/command-deck/tests/artifacts/screens/screen_${s}.png`)
 ];
-const FIXTURE_DIRS = ['VVIP/services/command-deck/src', 'VVIP/frontend'];
+// the deck src (route scan) and the migration ledger (derived from disk) whole
+const FIXTURE_DIRS = [DECK_SRC, MIGRATIONS];
 
 // the pytest check runs against a stub under selftest (the fixture carries
-// no service suites); the stub mirrors the live gate-venv collection the
-// real run performs: 2+262+22+12+113+94+633 = 1138.
+// no service suites). Its numbers are the fresh gate-venv collection of the
+// deployed tree (2026-10-24, after the live tier-0 fix: convoy-brain 635 =
+// 634 passed + 1 skipped; 4+635+22+107+113+328+1500 = 2709); the three suites and the
+// total the docs quote are re-read from the pristine docs at fixture-build
+// time, so the baseline never pins a collection the docs were since moved to
+// (default mode compares the docs with a LIVE collection).
 const PYTEST_STUB = {
-	total: 1138,
+	total: 2709,
 	perSuite: {
-		'VVIP/services/command-deck/tests': 2,
-		'VVIP/services/convoy-brain/tests': 262,
+		'VVIP/services/command-deck/tests': 4,
+		'VVIP/services/convoy-brain/tests': 635,
 		'VVIP/services/corridor-store/importer/tests': 22,
-		'VVIP/services/corridor-store/tests': 12,
+		'VVIP/services/corridor-store/tests': 107,
 		'VVIP/services/embedding-service/tests': 113,
-		'VVIP/services/event-emulator/tests': 94,
-		'VVIP/services/traffic-oracle/tests': 633
+		'VVIP/services/event-emulator/tests': 328,
+		'VVIP/services/traffic-oracle/tests': 1500
 	}
 };
+
+/** PYTEST_STUB with the counts the (pristine) docs quote, where they quote one */
+function pytestStubFromDocs(root) {
+	const read = (rel) => { try { return readFileSync(path.join(root, rel), 'utf8').replace(/\s+/g, ' '); } catch { return ''; } };
+	const deck = read(DECK);
+	const tech = read(TECH_DOCS);
+	const readme = read(README);
+	const first = (...pairs) => {
+		for (const [re, text] of pairs) {
+			const m = text.match(re);
+			if (m) return Number(m[1]);
+		}
+		return null;
+	};
+	const per = { ...PYTEST_STUB.perSuite };
+	const set = (suite, n) => { if (n != null) per[suite] = n; };
+	set('VVIP/services/convoy-brain/tests', first([/convoy-brain \*\*(\d+)\*\*/, tech], [/convoy-brain (\d+)/, readme]));
+	set('VVIP/services/event-emulator/tests', first([/event-emulator \*\*(\d+)\*\*/, tech], [/event-emulator (\d+)/, readme], [/emulator's (\d+)/, deck]));
+	set('VVIP/services/traffic-oracle/tests', first([/traffic-oracle \*\*(\d+)\*\*/, tech], [/traffic-oracle (\d+)/, readme], [/traffic-oracle's (\d+)/, deck]));
+	const total = first([/(\d+) pytest/, deck]) ?? Object.values(per).reduce((a, b) => a + b, 0);
+	return { total, perSuite: per };
+}
 
 /** build a stored (method-0) zip with one entry — a fake stale pptx */
 function makeFakeZip(entries) {
@@ -1176,106 +1569,154 @@ function makeFakeZip(entries) {
 	return Buffer.concat([...chunks, cd, eocd]);
 }
 
+/* Each mutation makes ONE known-bad change through the fixture handle m
+ * (m.edit / m.add / m.remove / m.json — every touched path is restored before
+ * the next one) and names the check that must FAIL on it. Values come from
+ * the fixture's own artifacts, so a regenerated artifact never turns a
+ * mutation into a no-op. scope: 'vvip' runs everywhere, 'workspace' needs
+ * ../submission, 'local' the gitignored run artifacts (both skipped under
+ * --vvip-only). */
 const MUTATIONS = [
 	{
-		id: 'no-stale-root-redirect-claims',
+		id: 'no-stale-root-redirect-claims', scope: 'workspace',
 		desc: 'DECK.md re-describes the retired 301-to-/ops behaviour',
-		apply(c, fx) {
-			const p = path.join(fx, DECK);
-			writeFileSync(p, readFileSync(p, 'utf8').replace('## Slide 1',
-				'## Slide 1\n\nSTALE: `/` redirects to /ops via a 301 — the old front door.\n'));
+		apply(m) { m.edit(DECK, (t) => `${t}\n\nSTALE: \`/\` redirects to /ops via a 301 — the old front door.\n`); }
+	},
+	{
+		id: 'no-stale-root-redirect-claims', scope: 'vvip',
+		desc: 'README.md re-describes the retired 301-to-/ops behaviour',
+		apply(m) { m.edit(README, (t) => `${t}\n\nThe deck root redirects to /ops (301).\n`); }
+	},
+	{
+		id: 'bench-figures-match-artifacts', scope: 'workspace',
+		desc: 'DECK.md quotes a keyword coverage the bench artifact does not say',
+		apply(m) {
+			const kc = m.json('VVIP/scripts/bench_adversarial_report.json').score_summary.keyword_coverage;
+			m.edit(DECK, (t) => t.replaceAll(`coverage **${kc}**`, 'coverage **0.548**'));
 		}
 	},
 	{
-		id: 'bench-figures-match-artifacts',
-		desc: 'DECK.md quotes keyword coverage 0.548 (artifact says 0.561)',
-		apply(c, fx) {
-			const p = path.join(fx, DECK);
-			writeFileSync(p, readFileSync(p, 'utf8').replaceAll('coverage **0.561**', 'coverage **0.548**'));
+		id: 'showcase-pursuit-figures-derivable', scope: 'workspace',
+		desc: "DECK.md quotes an earlier run's trace length everywhere",
+		apply(m) {
+			const pts = m.json('VVIP/showcase/pursuit_chain.json').trace.points;
+			m.edit(DECK, (t) => t.replaceAll(`${pts}-position trace`, `${pts + 68}-position trace`));
 		}
 	},
 	{
-		id: 'showcase-pursuit-figures-derivable',
-		desc: 'DECK.md quotes the earlier run\'s 72-position trace everywhere',
-		apply(c, fx) {
-			const p = path.join(fx, DECK);
-			writeFileSync(p, readFileSync(p, 'utf8').replaceAll('4-position trace', '72-position trace'));
-		}
+		id: 'pixel-proofs-match-shot-logs', scope: 'local',
+		desc: 'DECK.md adds a colour proof no shot log backs',
+		apply(m) { m.edit(DECK, (t) => `${t}\n\nScreenshots: a 1,234,567-colour decode proof of the city.\n`); }
 	},
 	{
-		id: 'pixel-proofs-match-shot-logs',
-		desc: 'DECK.md quotes an unbacked 2,776-colour city proof (log says 2,781)',
-		apply(c, fx) {
-			const p = path.join(fx, DECK);
-			writeFileSync(p, readFileSync(p, 'utf8').replace('2,781-colour', '2,776-colour'));
-		}
+		id: 'pixel-proofs-match-shot-logs', scope: 'local',
+		desc: 'shots_city.log wording drifts so the entity probe cannot parse (reviewer probe)',
+		apply(m) { m.edit('VVIP/showcase/shots_city.log', (t) => t.replace(/entities=\d+/, 'entities=thirty-eight')); }
 	},
 	{
-		id: 'doc-paths-exist',
+		id: 'doc-paths-exist', scope: 'workspace',
 		desc: 'DECK.md cites a nonexistent artifact',
-		apply(c, fx) {
-			const p = path.join(fx, DECK);
-			writeFileSync(p, readFileSync(p, 'utf8').replace('`VVIP/scripts/impact_results.json`', '`VVIP/scripts/impact_results_missing.json`'));
-		}
+		apply(m) { m.edit(DECK, (t) => `${t}\n\nEvidence: \`VVIP/scripts/impact_results_missing.json\`.\n`); }
 	},
 	{
-		id: 'root-serves-cockpit-200',
+		id: 'root-serves-cockpit-200', scope: 'vvip',
 		desc: 'the root route loses the cockpit template marker',
-		apply(c, fx) {
-			const p = path.join(fx, ROUTE_ROOT);
-			writeFileSync(p, readFileSync(p, 'utf8').replace('data-template="convoy-command"', 'data-template="stale-root"'));
-		}
+		apply(m) { m.edit(ROUTE_ROOT, (t) => t.replaceAll('data-template="convoy-command"', 'data-template="stale-root"')); }
 	},
 	{
-		id: 'impact-json-single-source',
+		id: 'root-serves-cockpit-200', scope: 'vvip',
+		desc: 'a deck route answers with a 301 rewrite again (code, not a comment)',
+		apply(m) { m.edit('VVIP/services/command-deck/src/hooks.server.ts', (t) => `${t}\nexport const stale = () => redirect(301, '/ops');\n`); }
+	},
+	{
+		id: 'impact-json-single-source', scope: 'vvip',
 		desc: 'impact_results.json central baseline drifts from the pinned value',
-		apply(c, fx) {
-			const p = path.join(fx, 'VVIP/scripts/impact_results.json');
-			writeFileSync(p, readFileSync(p, 'utf8').replace('"commuter_minutes_baseline": 570937.5', '"commuter_minutes_baseline": 570000.0'));
+		apply(m) {
+			m.edit('VVIP/scripts/impact_results.json', (t) => {
+				const d = JSON.parse(t);
+				d.scenarios.central.commuter_minutes_baseline += 1000;
+				return JSON.stringify(d, null, 2);
+			});
 		}
 	},
 	{
-		id: 'screens-verify-40of40',
+		id: 'screens-verify-40of40', scope: 'local',
 		desc: 'one screens-manifest check flips to not-ok',
-		apply(c, fx) {
-			const p = path.join(fx, SCREENS_MANIFEST);
-			writeFileSync(p, readFileSync(p, 'utf8').replace('"ok": true', '"ok": false'));
+		apply(m) { m.edit(SCREENS_MANIFEST, (t) => t.replace('"ok": true', '"ok": false')); }
+	},
+	{
+		id: 'screens-verify-40of40', scope: 'local',
+		desc: 'the scripted /driver window is no longer the 90-s cardiac window (countdown 60 s)',
+		apply(m) { m.edit(SCREENS_MANIFEST, (t) => t.replace(/countdown=\d+s/, 'countdown=60s')); }
+	},
+	{
+		id: 'screens-verify-40of40', scope: 'local',
+		desc: 'a live-mode /driver run records an opened window (the camera filed a live request)',
+		apply(m) {
+			m.edit(SCREENS_MANIFEST, (t) => {
+				const d = JSON.parse(t);
+				d.screens.driver.mode = 'live';
+				return JSON.stringify(d, null, 2);
+			});
 		}
 	},
 	{
-		id: 'e2e-11-checks-gate',
-		desc: 'the citizen e2e loses the gujarati check',
-		apply(c, fx) {
-			const p = path.join(fx, E2E);
-			writeFileSync(p, readFileSync(p, 'utf8').replace('R.gujarati =', 'R.gujaratIX ='));
+		id: 'verify-all-deck-gates-wired', scope: 'vvip',
+		desc: 'verify_all.sh drops the hermetic ops-wall smoke from the deck UI tier',
+		apply(m) { m.edit(VERIFY_ALL, (t) => t.replace(/^.*node tests\/ops-wall-smoke\.mjs "\$PREVIEW".*$/m, '    :')); }
+	},
+	{
+		id: 'verify-all-deck-gates-wired', scope: 'vvip',
+		desc: 'verify_all.sh skips a whole pytest suite on a missing module again',
+		apply(m) { m.edit(VERIFY_ALL, (t) => t.replace('tier_pytest_suites() {', 'NOT_PURE_MODULES="torch|onnx"\ntier_pytest_suites() {')); }
+	},
+	{
+		id: 'verify-all-deck-gates-wired', scope: 'vvip',
+		desc: 'README.md describes verify_all with the retired React e2e tier',
+		apply(m) { m.edit(README, (t) => `${t}\n\n\`scripts/verify_all.sh\` runs the frontend e2e journey first, then the deck tiers.\n`); }
+	},
+	{
+		id: 'migrations-on-disk-match-docs', scope: 'vvip',
+		desc: 'migration 011 disappears (a gap in the ledger)',
+		apply(m) { m.remove(`${MIGRATIONS}/011_city_coordination.sql`); }
+	},
+	{
+		id: 'migrations-on-disk-match-docs', scope: 'vvip',
+		desc: 'a new migration lands while the docs still quote the old range',
+		apply(m) {
+			const n = m.list(MIGRATIONS).filter((f) => /^\d{3}_/.test(f)).length;
+			m.add(`${MIGRATIONS}/${String(n + 1).padStart(3, '0')}_selftest_probe.sql`, '-- selftest\n');
 		}
 	},
 	{
-		id: 'migrations-007-011-exist',
-		desc: 'migration 011 disappears',
-		apply(c, fx) { rmSync(path.join(fx, 'VVIP/services/corridor-store/migrations/011_city_coordination.sql')); }
+		id: 'migrations-on-disk-match-docs', scope: 'vvip',
+		desc: 'TECHNICAL_DOCS.md quotes a stale full migration range',
+		apply(m) { m.edit(TECH_DOCS, (t) => `${t}\n\nThe store ledger holds migrations 001${EN}011.\n`); }
 	},
 	{
-		id: 'smoke-models-ports-env-overridable',
+		id: 'smoke-models-ports-env-overridable', scope: 'vvip',
 		desc: 'smoke_models.sh hardcodes the decider endpoint again',
-		apply(c, fx) {
-			const p = path.join(fx, SMOKE_MODELS);
-			writeFileSync(p, readFileSync(p, 'utf8').replace('${MODEL_HOST_URL:-http://127.0.0.1:8083}', 'http://127.0.0.1:8083'));
-		}
+		apply(m) { m.edit(SMOKE_MODELS, (t) => t.replace('${MODEL_HOST_URL:-http://127.0.0.1:8083}', 'http://127.0.0.1:8083')); }
 	},
 	{
-		id: 'showcase-endpoints-env-overridable',
+		id: 'showcase-endpoints-env-overridable', scope: 'vvip',
 		desc: 'showcase_run.sh hardcodes ORACLE_URL again',
-		apply(c, fx) {
-			const p = path.join(fx, SHOWCASE_RUN);
-			writeFileSync(p, readFileSync(p, 'utf8').replace('ORACLE_URL="${ORACLE_URL:-http://127.0.0.1:${ORACLE_PORT:-8081}}"', 'ORACLE_URL="http://127.0.0.1:8081"'));
+		apply(m) {
+			m.edit(SHOWCASE_RUN, (t) => t.replace('ORACLE_URL="${ORACLE_URL:-http://127.0.0.1:${ORACLE_PORT:-8091}}"', 'ORACLE_URL="http://127.0.0.1:8091"'));
 		}
 	},
 	{
-		id: 'pptx-claims-fresh',
+		id: 'showcase-endpoints-env-overridable', scope: 'vvip',
+		desc: 'showcase phase 6 approves an e-challan on the stolen plate again (C-N)',
+		apply(m) {
+			m.edit(SHOWCASE_RUN, (t) => t.replaceAll('pursuit authorised on a reported-stolen vehicle (evidence, no fine)', 'e-challan approved per FIR'));
+		}
+	},
+	{
+		id: 'pptx-claims-fresh', scope: 'workspace',
 		desc: 'the pptx regresses to stale slide text',
-		apply(c, fx) {
-			writeFileSync(path.join(fx, PPTX), makeFakeZip([
+		apply(m) {
+			m.add(PPTX, makeFakeZip([
 				['ppt/slides/slide4.xml',
 					'<a:t>/ redirects to /ops, the situation wall (top: junction 1, signal-controlled, score 0.7) '
 					+ `+ live 72-position trace at 95${EN}114 km/h; keyword coverage 0.548</a:t>`]
@@ -1283,85 +1724,281 @@ const MUTATIONS = [
 		}
 	},
 	{
-		id: 'pytest-counts-match-deck',
-		desc: 'DECK.md quotes the old 875-pytest total',
-	apply(c, fx) {
-		const p = path.join(fx, DECK);
-		writeFileSync(p, readFileSync(p, 'utf8').replace('1138 pytest', '875 pytest'));
-	}
+		id: 'pytest-counts-match-deck', scope: 'workspace',
+		desc: 'DECK.md quotes an old pytest total',
+		apply(m) { m.edit(DECK, (t) => t.replace(`${m.stub.total} pytest`, '875 pytest')); }
 	},
 	{
-		id: 'showcase-artifacts-single-run',
-		desc: 'DECK.md cites a stale showcase run stamp (the 14:29Z degraded run)',
-		apply(c, fx) {
-			const p = path.join(fx, DECK);
-			writeFileSync(p, readFileSync(p, 'utf8').replace('2026-10-18T15:01Z', '2026-10-18T14:29Z'));
+		id: 'pytest-counts-match-deck', scope: 'vvip',
+		desc: 'README.md quotes an old traffic-oracle count',
+		apply(m) {
+			const n = m.stub.perSuite['VVIP/services/traffic-oracle/tests'];
+			m.edit(README, (t) => t.replaceAll(`traffic-oracle ${n}`, `traffic-oracle ${n + 7}`));
 		}
 	},
 	{
-		id: 'verify-all-tier-inventory',
+		id: 'showcase-artifacts-single-run', scope: 'workspace',
+		desc: 'DECK.md cites a stale showcase run stamp',
+		apply(m) {
+			const s1 = new Date(m.json('VVIP/showcase/showcase_results.json').generated_at_utc).toISOString().slice(0, 16) + 'Z';
+			m.edit(DECK, (t) => t.replaceAll(s1, '2026-10-18T14:29Z'));
+		}
+	},
+	{
+		id: 'showcase-artifacts-single-run', scope: 'vvip',
+		desc: 'the hero pursuit shot frames a trace no doc discloses (recaptured apart from the run, its figure never quoted)',
+		apply(m) {
+			const pts = m.json('VVIP/showcase/pursuit_chain.json').trace.points;
+			m.edit('VVIP/showcase/shots_manifest.json', (t) => {
+				const d = JSON.parse(t);
+				d.pursuitFeed = { ...(d.pursuitFeed ?? {}), points: pts + 50 };
+				return JSON.stringify(d, null, 2);
+			});
+		}
+	},
+	{
+		id: 'verify-all-tier-inventory', scope: 'vvip',
 		desc: 'verify_all.sh loses the tier_models() definition (call kept → runtime crash)',
-		apply(c, fx) {
-			const p = path.join(fx, VERIFY_ALL);
-			writeFileSync(p, readFileSync(p, 'utf8').replace('tier_models() {', 'tier_models_GONE() {'));
+		apply(m) { m.edit(VERIFY_ALL, (t) => t.replace('tier_models() {', 'tier_models_GONE() {')); }
+	},
+	{
+		id: 'verify-all-tier-inventory', scope: 'vvip',
+		desc: 'verify_all.sh runs the cargo tier before the pytest suites (out of the pinned order)',
+		apply(m) {
+			m.edit(VERIFY_ALL, (t) => t.replace(/^(\s+)tier_pytest_suites\n(\s+)tier_cargo$/m, '$1tier_cargo\n$2tier_pytest_suites'));
 		}
 	},
 	{
-		id: 'pdf-claims-fresh',
+		id: 'pdf-claims-fresh', scope: 'workspace',
 		desc: 'the rendered PDF is replaced with a non-PDF carrying stale figures',
-		apply(c, fx) {
-			writeFileSync(path.join(fx, PDF), 'stale: / redirects to /ops, 72-position trace, keyword coverage 0.548\n');
+		apply(m) { m.add(PDF, 'stale: / redirects to /ops, 72-position trace, keyword coverage 0.548\n'); }
+	},
+	{
+		id: 'showcase-pursuit-figures-derivable', scope: 'vvip',
+		desc: 'the pursuit artifact records an e-challan approval on the stolen plate that was NOT refused (C-N)',
+		apply(m) {
+			m.edit('VVIP/showcase/pursuit_chain.json', (t) => {
+				const d = JSON.parse(t);
+				d.penal_approval_probe = { exercised: true, http: 200, rule_id: 'R_SPD_SEGMENT' };
+				return JSON.stringify(d, null, 2);
+			});
 		}
 	},
 	{
-		id: 'adjacent-docs-match-artifacts',
-		desc: 'TECHNICAL_DOCS.md regresses to the earlier run\'s R_SPD_SEGMENT ×5',
-		apply(c, fx) {
-			const p = path.join(fx, TECH_DOCS);
-			writeFileSync(p, readFileSync(p, 'utf8').replace('`R_SPD_SEGMENT` \u00d74', '`R_SPD_SEGMENT` \u00d75'));
+		id: 'showcase-pursuit-figures-derivable', scope: 'workspace',
+		desc: 'the twin replay has no MAE (no_data) while the deck still quotes one',
+		apply(m) {
+			// the replay forced to no_data (written whole: the live artifact may
+			// already be no_data), and a measured-sounding MAE quote put back in
+			const d = m.json('VVIP/showcase/signal_policy.json');
+			d.replay = { ...d.replay, status: 'no_data', speed_mae_kmh: null, mae_tolerance_kmh: null };
+			m.add('VVIP/showcase/signal_policy.json', JSON.stringify(d, null, 2));
+			m.edit(DECK, (t) => `${t}\n\nThe guard refused: twin replay MAE 7.2 km/h vs the 5.0 gate.\n`);
 		}
 	},
 	{
-		id: 'pixel-proofs-match-shot-logs',
-		desc: 'shots_city.log wording drifts so the entity probe cannot parse (reviewer probe)',
-		apply(c, fx) {
-			const p = path.join(fx, 'VVIP/showcase/shots_city.log');
-			writeFileSync(p, readFileSync(p, 'utf8').replace('entities=38', 'entities=thirty-eight'));
+		id: 'adjacent-docs-match-artifacts', scope: 'vvip',
+		desc: 'TECHNICAL_DOCS.md quotes a fired count the pursuit artifact contradicts',
+		apply(m) { m.edit(TECH_DOCS, (t) => `${t}\n\nThe pursuit fired \`R_SPD_SEGMENT\` ×999 this run.\n`); }
+	}
+];
+
+/* Benign changes the named check must NOT fail on (the false-positive guards). */
+const BENIGN = [
+	{
+		id: 'root-serves-cockpit-200', scope: 'vvip',
+		desc: 'deck src comments that talk about redirects, and fetch() with redirect:\'manual\'',
+		apply(m) {
+			m.edit('VVIP/services/command-deck/src/hooks.server.ts', (t) => `${t}\n// a Response.redirect from an endpoint is copied, never followed\n`
+				+ '/* a 301 here would be a redirect —\n * this block only talks about one */\n'
+				+ "export const probeHealth = (u) => fetch(u, { redirect: 'manual' });\n");
+		}
+	},
+	{
+		id: 'verify-all-deck-gates-wired', scope: 'vvip',
+		desc: 'README.md history that says the React e2e tier was retired from verify_all',
+		apply(m) { m.edit(README, (t) => `${t}\n\nThe legacy React frontend e2e journey was retired from \`scripts/verify_all.sh\` in wave 4.\n`); }
+	},
+	{
+		id: 'screens-verify-40of40', scope: 'local',
+		desc: 'the camera read the 90-s scripted window on its first tick (countdown 91 s), or 5 s in (85 s)',
+		// another in-window reading than the manifest's own: 91 s, or 85 s when it already says 91
+		apply(m) { m.edit(SCREENS_MANIFEST, (t) => t.replace(/countdown=(\d+)s/, (_, s) => `countdown=${s === '91' ? 85 : 91}s`)); }
+	},
+	{
+		id: 'screens-verify-40of40', scope: 'local',
+		desc: 'a live-mode /driver run: the idle request card checked, nothing filed (still 7 driver checks, 40/40)',
+		apply(m) {
+			m.edit(SCREENS_MANIFEST, (t) => {
+				const d = JSON.parse(t);
+				const drv = d.screens.driver;
+				const keep = ['flow mounts at idle', 'golden-hour counter ticks', 'no-page-errors', 'png-nonblank'];
+				const checks = Object.fromEntries(keep.map((k) => [k, drv.checks[k] ?? { ok: true, detail: '' }]));
+				checks['live mode: live corridor stretches on offer'] = { ok: true, detail: 'mode=live stretches=4' };
+				checks['live mode: the request must name a 108 unit (button held until one is typed)'] = { ok: true, detail: 'held=true' };
+				checks['live mode: nothing filed by the camera (still idle)'] = { ok: true, detail: 'phase=idle' };
+				d.screens.driver = { ...drv, mode: 'live', checks };
+				return JSON.stringify(d, null, 2);
+			});
 		}
 	}
 ];
 
-async function selftest() {
-	const fx = mkdtempSync(path.join(tmpdir(), 'veer-subcons-'));
+/** a fixture handle: mutations go through it so every touched path is restored */
+function fixtureHandle(fx, stub) {
+	const pristine = new Map(); // rel -> Buffer | null (absent before the mutation)
+	const remember = (rel) => {
+		if (pristine.has(rel)) return;
+		const p = path.join(fx, rel);
+		pristine.set(rel, existsSync(p) ? readFileSync(p) : null);
+	};
+	return {
+		stub,
+		read: (rel) => readFileSync(path.join(fx, rel), 'utf8'),
+		json: (rel) => JSON.parse(readFileSync(path.join(fx, rel), 'utf8')),
+		list: (rel) => readdirSync(path.join(fx, rel)),
+		edit(rel, fn) {
+			remember(rel);
+			const p = path.join(fx, rel);
+			const before = readFileSync(p, 'utf8');
+			const after = fn(before);
+			if (after === before) throw new Error(`mutation left ${rel} unchanged (its anchor is gone)`);
+			writeFileSync(p, after);
+		},
+		add(rel, data) {
+			remember(rel);
+			mkdirSync(path.dirname(path.join(fx, rel)), { recursive: true });
+			writeFileSync(path.join(fx, rel), data);
+		},
+		remove(rel) {
+			remember(rel);
+			rmSync(path.join(fx, rel));
+		},
+		restore() {
+			for (const [rel, buf] of pristine) {
+				const p = path.join(fx, rel);
+				if (buf == null) rmSync(p, { force: true });
+				else writeFileSync(p, buf);
+			}
+			pristine.clear();
+		}
+	};
+}
+
+/** copy a tree, skipping dependency/build dirs */
+function copyTree(from, to) {
+	mkdirSync(to, { recursive: true });
+	for (const e of readdirSync(from, { withFileTypes: true })) {
+		const f = path.join(from, e.name);
+		const t = path.join(to, e.name);
+		if (e.isDirectory()) {
+			if (!['node_modules', '.svelte-kit', 'build'].includes(e.name)) copyTree(f, t);
+		} else if (e.isFile()) copyFileSync(f, t);
+	}
+}
+
+/** the post-push check against a throwaway origin: green when HEAD == origin/main
+ *  with a LICENSE, red when HEAD is ahead, red when the pushed tree lost LICENSE */
+function selftestPostPush() {
+	const tmp = mkdtempSync(path.join(tmpdir(), 'veer-postpush-'));
+	const check = CHECKS.find((x) => x.id === 'post-push-origin-main');
+	const git = (cwd, ...a) => spawnSync('git', ['-c', 'user.name=selftest', '-c', 'user.email=selftest@invalid',
+		'-c', 'commit.gpgsign=false', '-c', 'init.defaultBranch=main', '-c', 'core.hooksPath=/dev/null', ...a],
+	{ cwd, encoding: 'utf8' });
+	const run = () => {
+		const c = new Ctx(tmp, { postPush: true });
+		c.id = check.id;
+		check.run(c);
+		return c.failures.filter((f) => f.check === check.id);
+	};
 	let exit = 0;
 	try {
-		// build the fixture: every file the oracle reads
+		const origin = path.join(tmp, 'origin.git');
+		const repo = path.join(tmp, 'VVIP');
+		mkdirSync(repo);
+		git(tmp, 'init', '-q', '--bare', origin);
+		git(repo, 'init', '-q');
+		writeFileSync(path.join(repo, 'LICENSE'), 'MIT License\n');
+		git(repo, 'add', 'LICENSE');
+		git(repo, 'commit', '-q', '-m', 'licence');
+		git(repo, 'remote', 'add', 'origin', origin);
+		const pushed = git(repo, 'push', '-q', 'origin', 'HEAD:refs/heads/main');
+		if (pushed.status !== 0) throw new Error(`git push to the throwaway origin failed: ${pushed.stderr}`);
+		const green = run();
+		writeFileSync(path.join(repo, 'later.txt'), 'not pushed\n');
+		git(repo, 'add', 'later.txt');
+		git(repo, 'commit', '-q', '-m', 'not pushed');
+		const ahead = run();
+		git(repo, 'rm', '-q', 'LICENSE');
+		git(repo, 'commit', '-q', '-m', 'licence dropped');
+		git(repo, 'push', '-q', 'origin', 'HEAD:refs/heads/main');
+		const unlicensed = run();
+		if (green.length === 0 && ahead.length > 0 && unlicensed.length > 0) {
+			console.log('selftest: post-push-origin-main — green on HEAD == origin/main + LICENSE; FAILS when HEAD is ahead and when the pushed tree has no LICENSE');
+		} else {
+			exit = 1;
+			console.error(`selftest: post-push-origin-main misjudged a throwaway origin (green=${green.length} ahead=${ahead.length} unlicensed=${unlicensed.length} findings): ${JSON.stringify([...green, ...ahead, ...unlicensed].slice(0, 2))}`);
+		}
+	} catch (e) {
+		exit = 1;
+		console.error(`selftest: post-push probe could not run: ${e.message}`);
+	} finally {
+		rmSync(tmp, { recursive: true, force: true });
+	}
+	return exit;
+}
+
+async function selftest() {
+	const fx = mkdtempSync(path.join(tmpdir(), 'veer-subcons-'));
+	const opts = { vvipOnly: VVIP_ONLY };
+	const inScope = (scope) => !VVIP_ONLY || scope === 'vvip';
+	let exit = 0;
+	try {
+		// build the fixture: every file the oracle reads (a VVIP-only checkout
+		// carries neither the workspace documents nor the local run artifacts)
+		const notHere = [];
 		for (const rel of FIXTURE_FILES) {
 			const src = path.join(ROOT, rel);
-			if (!existsSync(src)) { console.error(`selftest: fixture source missing: ${rel}`); exit = 1; continue; }
+			if (!existsSync(src)) {
+				if (VVIP_ONLY && (isWorkspacePath(rel) || isLocalArtifact(rel))) { notHere.push(rel); continue; }
+				console.error(`selftest: fixture source missing: ${rel}`);
+				exit = 1;
+				continue;
+			}
 			const dst = path.join(fx, rel);
 			mkdirSync(path.dirname(dst), { recursive: true });
 			copyFileSync(src, dst);
 		}
+		if (notHere.length) console.log(`selftest: VVIP-only checkout — ${notHere.length} workspace/local file(s) not in it, their checks and mutations not run`);
 		for (const rel of FIXTURE_DIRS) {
 			const src = path.join(ROOT, rel);
-			const dst = path.join(fx, rel);
-			if (existsSync(src)) {
-				mkdirSync(path.dirname(dst), { recursive: true });
-				try { mkdirSync(dst, { recursive: true }); } catch {}
-				(function cp(from, to) {
-					for (const e of readdirSync(from, { withFileTypes: true })) {
-						const f = path.join(from, e.name), t2 = path.join(to, e.name);
-						if (e.isDirectory()) { if (!['node_modules', '.svelte-kit', 'build'].includes(e.name)) { mkdirSync(t2, { recursive: true }); cp(f, t2); } }
-						else copyFileSync(f, t2);
-					}
-				})(src, dst);
-			} else { mkdirSync(dst, { recursive: true }); }
+			if (existsSync(src)) copyTree(src, path.join(fx, rel));
+			else mkdirSync(path.join(fx, rel), { recursive: true });
 		}
+		// every path the submission docs cite must exist in the fixture too
+		// (doc-paths-exist judges existence; the docs may cite new files)
+		for (const [rel, fn] of [[DECK, mdPathRefs], [DEMO, mdPathRefs], [MAKER, pyPathRefs]]) {
+			const t = existsSync(path.join(ROOT, rel)) ? readFileSync(path.join(ROOT, rel), 'utf8') : null;
+			if (t == null) continue;
+			for (const ref of fn(t, rel)) {
+				const bases = ref.bare ? BARE_BASES : PATH_BASES;
+				for (const b of bases) {
+					const hit = expandBraces(cleanToken(ref.token)).map((tok) => path.join(b, tok)).find((r) => existsSync(path.join(ROOT, r)));
+					if (!hit) continue;
+					const dst = path.join(fx, hit);
+					if (!existsSync(dst)) {
+						if (statSync(path.join(ROOT, hit)).isDirectory()) mkdirSync(dst, { recursive: true });
+						else { mkdirSync(path.dirname(dst), { recursive: true }); copyFileSync(path.join(ROOT, hit), dst); }
+					}
+					break;
+				}
+			}
+		}
+		const stub = pytestStubFromDocs(fx);
 		// baseline: the faithful copies must be all green (pytest stubbed)
-		const base = runAllChecks(fx, { pytestStub: PYTEST_STUB });
+		const base = runAllChecks(fx, { ...opts, pytestStub: stub });
 		if (base.failures.length === 0) {
-			console.log(`selftest: baseline GREEN on the temp fixture (${CHECKS.length} checks, pytest stubbed)`);
+			console.log(`selftest: baseline GREEN on the temp fixture (${CHECKS.length} checks, pytest stubbed${VVIP_ONLY ? ', VVIP-only' : ''})`);
 		} else {
 			exit = 1;
 			console.error('selftest: baseline NOT green — the oracle disagrees with the real tree copies:');
@@ -1403,28 +2040,37 @@ async function selftest() {
 			rmSync(path.join(fx, 'VVIP/services/tiny'), { recursive: true, force: true });
 			rmSync(path.join(fx, 'VVIP/.venvs/gate'), { force: true });
 		}
-		// snapshot pristine contents so each mutation starts from the baseline
-		const pristine = new Map();
-		for (const rel of [DECK, ROUTE_ROOT, 'VVIP/scripts/impact_results.json', SCREENS_MANIFEST,
-			E2E, SMOKE_MODELS, SHOWCASE_RUN, PPTX, PDF, TECH_DOCS, VERIFY_ALL,
-			'VVIP/showcase/shots_city.log',
-			'VVIP/services/corridor-store/migrations/011_city_coordination.sql']) {
-			const p = path.join(fx, rel);
-			pristine.set(rel, existsSync(p) ? readFileSync(p) : null);
-		}
-		const restore = () => {
-			for (const [rel, buf] of pristine) {
-				const p = path.join(fx, rel);
-				if (buf == null) { try { rmSync(p); } catch {} }
-				else writeFileSync(p, buf);
-			}
+		const m = fixtureHandle(fx, stub);
+		// a mutation is judged by the findings it ADDS over the baseline, so a
+		// baseline that is not green (docs behind the tree) cannot mask a
+		// mutation, nor turn a benign change into a false positive
+		const keyOf = (f) => `${f.check}\u0000${f.file}\u0000${f.msg}`;
+		const baseKeys = new Map();
+		for (const f of base.failures) baseKeys.set(keyOf(f), (baseKeys.get(keyOf(f)) ?? 0) + 1);
+		const fresh = (failures, check) => {
+			const left = new Map(baseKeys);
+			return failures.filter((f) => {
+				if (f.check !== check) return false;
+				const n = left.get(keyOf(f)) ?? 0;
+				if (n > 0) { left.set(keyOf(f), n - 1); return false; }
+				return true;
+			});
 		};
-		// each mutation must make the named check FAIL
+		// each mutation must make the named check FAIL …
+		let skipped = 0;
 		for (const mut of MUTATIONS) {
-			restore();
-			mut.apply(null, fx);
-			const r = runAllChecks(fx, { pytestStub: PYTEST_STUB });
-			const hit = r.failures.filter((f) => f.check === mut.id);
+			if (!inScope(mut.scope)) { skipped++; continue; }
+			try {
+				mut.apply(m);
+			} catch (e) {
+				exit = 1;
+				console.error(`selftest: MUTATION NOT APPLIED — ${mut.id} · ${mut.desc}: ${e.message}`);
+				m.restore();
+				continue;
+			}
+			const r = runAllChecks(fx, { ...opts, pytestStub: stub });
+			m.restore();
+			const hit = fresh(r.failures, mut.id);
 			if (hit.length > 0) {
 				console.log(`selftest: ${mut.id} — FAILS as designed (${hit.length} finding(s)) · ${mut.desc}`);
 				console.log(`           e.g. ${hit[0].file}:${hit[0].line} ${hit[0].msg.slice(0, 110)}`);
@@ -1433,29 +2079,48 @@ async function selftest() {
 				console.error(`selftest: MUTATION NOT CAUGHT — ${mut.id} · ${mut.desc} (oracle stayed green on a known-bad tree)`);
 			}
 		}
-		restore();
+		// … and each benign change must leave it green
+		for (const ben of BENIGN) {
+			if (!inScope(ben.scope)) { skipped++; continue; }
+			ben.apply(m);
+			const r = runAllChecks(fx, { ...opts, pytestStub: stub });
+			m.restore();
+			const hit = fresh(r.failures, ben.id);
+			if (hit.length === 0) {
+				console.log(`selftest: ${ben.id} — stays GREEN on a benign change · ${ben.desc}`);
+			} else {
+				exit = 1;
+				console.error(`selftest: FALSE POSITIVE — ${ben.id} · ${ben.desc}: ${hit[0].file}:${hit[0].line} ${hit[0].msg.slice(0, 110)}`);
+			}
+		}
+		if (skipped) console.log(`selftest: ${skipped} workspace/local mutation(s) not run (VVIP-only checkout)`);
+		exit = selftestPostPush() || exit;
 	} finally {
 		rmSync(fx, { recursive: true, force: true });
 	}
-	if (exit === 0) console.log('selftest: all mutation paths proven — oracle fails loudly on known-bad input');
+	if (exit === 0) console.log('selftest: all mutation paths proven — oracle fails loudly on known-bad input and stays green on benign input');
 	return exit;
 }
 
 /* ──────────────────────────────── main ─────────────────────────────────── */
 
-const args = process.argv.slice(2);
-if (args.includes('--selftest')) {
+if (ARGS.includes('--selftest')) {
 	process.exit(await selftest());
 }
 
-const c = runAllChecks(ROOT);
-console.log(`submission-consistency oracle — root ${ROOT}`);
+const c = runAllChecks(ROOT, { vvipOnly: VVIP_ONLY, postPush: POST_PUSH });
+const judgedVvip = (() => { try { return realpathSync(path.join(ROOT, 'VVIP')); } catch { return null; } })();
+console.log(`submission-consistency oracle — root ${ROOT}${judgedVvip && judgedVvip !== path.join(ROOT, 'VVIP') ? ` (VVIP → ${judgedVvip})` : ''}${VVIP_ONLY ? ' (VVIP-only checkout)' : ''}`);
 for (const d of c.details) console.log(`  ok    ${d.check} — ${d.detail}`);
+for (const [check, n] of Object.entries(c.unjudged)) {
+	console.log(`  part  ${check} — its workspace half not judged (${n} finding(s) on ../submission or ../PROBLEM_STATEMENT_GUJARAT.md, not in this checkout)`);
+}
+for (const s of c.skips) console.log(`  SKIP  ${s.check} — ${s.why}`);
 for (const w of c.warnings) console.log(`  WARN  ${w}`);
 if (c.failures.length) {
 	console.error(`\nFAILURES (${c.failures.length}):`);
 	for (const f of c.failures) console.error(`  ${f.file}:${f.line} [${f.check}] ${f.msg}`);
 	process.exit(1);
 }
-console.log('\nSUBMISSION CONSISTENCY: ALL GREEN');
+console.log(`\nSUBMISSION CONSISTENCY: ALL GREEN${VVIP_ONLY ? ' (VVIP-only: the workspace documents were not judged)' : ''}`);
 process.exit(0);

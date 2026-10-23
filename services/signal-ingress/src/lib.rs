@@ -28,6 +28,12 @@ pub enum IngressError {
 }
 
 /// Data quality classification for traffic observations.
+///
+/// `Synthetic` marks rows produced by the edge-synthetic feeds (no live
+/// connector behind them); the Tier-1 detector re-tags any flagged row
+/// `Anomalous` and keeps the quality it arrived with as the anomaly
+/// event's `feed_quality` (normalize/schema_align.rs AnomalyEvent).
+/// Wire ordinals: 0 real, 1 anomalous, 2 synthetic.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum DataQuality {
     Real,
@@ -81,7 +87,7 @@ fn default_confidence() -> f32 {
     1.0
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum FeedSource {
     GovernmentTraffic,
     MappingApi,

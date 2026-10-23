@@ -9,7 +9,7 @@
    },
    "convoy_speed_kmh": 60,
    "departure_time": "2026-11-02T10:10:00+05:30",
-   "description": "BASE CASE. Z+ protected movement from Gandhinagar into the city core on a Monday mid-morning: the GN Highway spine (1026-1025-1024) down through Kalupur (1014) onto Naroda Road (1030). Maximum-protocol closure (180 s advance, full closure), default event rates, no weather — the reference movement every other use case is a generalization of.",
+   "description": "BASE CASE. Z+ protected movement from Gandhinagar into the city core on a Monday mid-morning: down the Gandhinagar-Ahmedabad Highway (1026-1025-1024) through Koba and Bhat Circles, over the Indira Bridge (1048), along Airport Road (1028-1027) to Shahibaug and in on Dr. Ambedkar Road (1043) to Lal Darwaja. Maximum-protocol closure (180 s advance, full closure), default event rates, no weather — the reference movement every other use case is a generalization of.",
    "event_overrides": {},
    "expected_features": [
     "zplus_protocol",
@@ -24,8 +24,10 @@
     1026,
     1025,
     1024,
-    1014,
-    1030
+    1048,
+    1028,
+    1027,
+    1043
    ],
    "scenario_id": "vvip_convoy_base",
    "seed": 20261102,
@@ -43,7 +45,7 @@
    },
    "convoy_speed_kmh": 8,
    "departure_time": "2025-06-27T07:00:00+05:30",
-   "description": "148th Ahmedabad Rath Yatra (27 Jun 2025): three chariots step off at 07:00 from the ~400-year-old Jamalpur temple and crawl the old-city bazaar belt — Gandhi Road, Nehru Bridge, Relief Road, Tilak Road — the ~14 km route of India's second-largest Rath Yatra. Modeled as an X-class managed movement (the procession itself, not a protected person) at chariot pace (8 km/h, the engine floor) with full street closure rolling ahead of it and lakhs-strong crowd load on every segment.",
+   "description": "148th Ahmedabad Rath Yatra (27 Jun 2025): three chariots step off at 07:00 from the ~400-year-old Jamalpur temple and crawl the old-city bazaar belt of India's second-largest Rath Yatra (~14 km in all). Modeled on the walled city's real streets: east along one-way Gandhi Road to Kalupur (1012), south past Sarangpur Darwaja (1049) and west along one-way Swami Vivekananda Road toward Jamalpur (1013), with Relief Road (1005) shut alongside. Modeled as an X-class managed movement (the procession itself, not a protected person) at chariot pace (8 km/h, the engine floor) with full street closure rolling ahead of it and lakhs-strong crowd load on every segment.",
    "event_overrides": {
     "market": 2.5
    },
@@ -74,7 +76,7 @@
     },
     {
      "duration_sec": 10800,
-     "label": "Tilak Road bazaar crowd pinned behind barricades",
+     "label": "Swami Vivekananda Road bazaar crowd pinned behind barricades",
      "segment_id": 1013,
      "severity": 0.75,
      "start_sec": 0,
@@ -86,8 +88,7 @@
    "n_replications": 12,
    "route_segment_ids": [
     1012,
-    1015,
-    1005,
+    1049,
     1013
    ],
    "scenario_id": "rath_yatra_ahmedabad",
@@ -101,13 +102,13 @@
   "scenarioConfig": {
    "scenario_id": "rath_yatra_monsoon_ambulance",
    "name": "Rath Yatra Morning, Monsoon Burst, One Siren",
-   "description": "FLAGSHIP multi-event showcase. 09:20 on the real 148th Rath Yatra morning of 27 Jun 2025 (procession stepped off 07:00 from Jamalpur): three chariots crawl Gandhi Road and Relief Road with lakhs on the street, a monsoon burst at 18 mm/h waterlogs the Nehru Bridge approach, bazaar crowds stand behind Tilak Road barricades — and a 108 ambulance carrying a cardiac patient requests a green corridor across the river: Relief Road -> Nehru Bridge -> Riverfront West -> Ashram South (1005->1015->1006->1001). The engine's answer: closure_policy = signal_hold at 45 s advance — 'regulated, not stopped' — threading a medical convoy between a public festival and the weather.",
+   "description": "FLAGSHIP multi-event showcase. 09:20 on the real 148th Rath Yatra morning of 27 Jun 2025 (procession stepped off 07:00 from Jamalpur): three chariots crawl Gandhi Road and Relief Road with lakhs on the street, a monsoon burst at 18 mm/h waterlogs the Nehru Bridge approach, bazaar crowds stand behind Swami Vivekananda Road barricades — and a 108 ambulance carrying a cardiac patient requests a green corridor across the river: Relief Road -> Nehru Bridge -> Ashram Road south -> Riverfront West (1005->1015->1001->1006). The engine's answer: closure_policy = signal_hold at 45 s advance — 'regulated, not stopped' — threading a medical convoy between a public festival and the weather.",
    "category": "multi_event",
    "route_segment_ids": [
     1005,
     1015,
-    1006,
-    1001
+    1001,
+    1006
    ],
    "departure_time": "2025-06-27T09:20:00+05:30",
    "vvip_class": "X",
@@ -160,7 +161,7 @@
      "start_sec": 0.0,
      "duration_sec": 3600.0,
      "severity": 0.75,
-     "label": "Tilak Road bazaar crowd behind barricades"
+     "label": "Swami Vivekananda Road bazaar crowd behind barricades"
     },
     {
      "type": "emergency_vehicle",
@@ -204,7 +205,96 @@
    ],
    "event_kind": "procession",
    "crowd_class": "EXTREME",
-   "duration_class": "hours"
+   "duration_class": "hours",
+   "unit_tracks": {
+    "note": "Recorded agency-unit positions the City Command REPLAY animates (agency_unit frames, a frame every 20 s of tape time). EMULATED units only (EM ids): two Jan Rakshak beats on the yatra roads (Gandhi Road + Relief Road) and the 108 ambulance's green-corridor run, Relief Road -> Nehru Bridge across the river to Income Tax Circle (J2), timed to the emergency_vehicle windows (1005 from 600 s, 1015 from 700 s); the 1006 / 1001 windows hold the cross traffic at J2 as it clears. Its last frame, at J2, is stationary and reports 'arrived' (the C-A spelling of on_scene): the green corridor ends there, and the hospital leg beyond J2 is not recorded. Geometry: the run's segment paths from the store (COALESCE(display_geom, geom)) when it has them, else route_geometry — the same segments as seeded (sample_corridor.sql).",
+    "units": [
+     {
+      "unit_id": "JR-EM-21",
+      "agency": "jan_rakshak",
+      "label": "Jan Rakshak JR-EM-21 · yatra beat (EMULATED)",
+      "status": "patrol",
+      "mode": "patrol",
+      "segment_ids": [
+       1012,
+       1005
+      ],
+      "speed_kmh": 12.0,
+      "offset": 0.0
+     },
+     {
+      "unit_id": "JR-EM-22",
+      "agency": "jan_rakshak",
+      "label": "Jan Rakshak JR-EM-22 · yatra beat (EMULATED)",
+      "status": "patrol",
+      "mode": "patrol",
+      "segment_ids": [
+       1012,
+       1005
+      ],
+      "speed_kmh": 12.0,
+      "offset": 0.5
+     },
+     {
+      "unit_id": "AMB-EM-108",
+      "agency": "ambulance",
+      "label": "108 ambulance AMB-EM-108 · green-corridor run (EMULATED)",
+      "status": "en_route",
+      "arrival_status": "arrived",
+      "mode": "run",
+      "segment_ids": [
+       1005,
+       1015
+      ],
+      "speed_kmh": 24.0,
+      "start_sec": 600.0
+     }
+    ],
+    "route_geometry": {
+     "1005": [
+      [
+       72.5798,
+       23.0254
+      ],
+      [
+       72.585,
+       23.02
+      ],
+      [
+       72.59,
+       23.018
+      ]
+     ],
+     "1012": [
+      [
+       72.5798,
+       23.0254
+      ],
+      [
+       72.581,
+       23.028
+      ],
+      [
+       72.583,
+       23.031
+      ]
+     ],
+     "1015": [
+      [
+       72.5714,
+       23.0225
+      ],
+      [
+       72.575,
+       23.025
+      ],
+      [
+       72.5798,
+       23.0254
+      ]
+     ]
+    }
+   }
   }
  },
  {
@@ -217,7 +307,7 @@
    },
    "convoy_speed_kmh": 40,
    "departure_time": "2025-01-29T04:30:00+05:30",
-   "description": "A Kumbh-class bathing-day window (the Maha Kumbh 2025 class: ~660 million visits over the mela, largest gathering on earth). The corridor problem inverts: the zone interior is car-free and frozen; what the engine manages is the perimeter ring and the ingress surges. Modeled on the seed network's riverfront cluster — Ashram Road south (1001) onto Riverfront West (1006) toward Usmanpura (1010) — with an X-class supply/medical shuttle entering the zone at 04:30 pre-dawn under signal_hold (signals keep cycling: staged ingress, not blanket freeze).",
+   "description": "A Kumbh-class bathing-day window (the Maha Kumbh 2025 class: ~660 million visits over the mela, largest gathering on earth). The corridor problem inverts: the zone interior is car-free and frozen; what the engine manages is the perimeter ring and the ingress surges. Modeled on the corridor network's riverfront cluster — Ashram Road south (1001) onto Riverfront West (1006) and up Ashram Road through Usmanpura (1009) — with an X-class supply/medical shuttle entering the zone at 04:30 pre-dawn under signal_hold (signals keep cycling: staged ingress, not blanket freeze).",
    "event_overrides": {},
    "expected_features": [
     "mass_gathering",
@@ -260,7 +350,7 @@
    "route_segment_ids": [
     1001,
     1006,
-    1010
+    1009
    ],
    "scenario_id": "kumbh_scale_gathering",
    "seed": 20250129,
@@ -278,7 +368,7 @@
    },
    "convoy_speed_kmh": 12,
    "departure_time": "2024-11-24T05:45:00+05:30",
-   "description": "Adani Ahmedabad Marathon class (9th edition: 24,000+ runners on the Sabarmati Riverfront, 24 Nov 2024; World Athletics calendar). A 05:45 gun start means the race corridor (Riverfront East 1007 - Ashram South 1001 - Riverfront West 1006 - Usmanpura 1010) is closed to vehicles in the dark and reopens in stages behind the sweep. Modeled as an X-class pace/sweep convoy at 12 km/h under full closure with spectator spillover forced on the two approach segments.",
+   "description": "Adani Ahmedabad Marathon class (9th edition: 24,000+ runners on the Sabarmati Riverfront, 24 Nov 2024; World Athletics calendar). A 05:45 gun start means the race corridor (Riverfront East 1007 - Nehru Bridge 1015 - Ashram South 1001 - Riverfront West 1006) is closed to vehicles in the dark and reopens in stages behind the sweep. Modeled as an X-class pace/sweep convoy at 12 km/h under full closure with spectator spillover forced on the two approach segments.",
    "event_overrides": {},
    "expected_features": [
     "road_race",
@@ -311,9 +401,9 @@
    "n_replications": 10,
    "route_segment_ids": [
     1007,
+    1015,
     1001,
-    1006,
-    1010
+    1006
    ],
    "scenario_id": "riverfront_marathon",
    "seed": 20241124,
@@ -331,7 +421,7 @@
    },
    "convoy_speed_kmh": 60,
    "departure_time": "2027-01-26T08:35:00+05:30",
-   "description": "The two fixed ceremonial days every year. At the 76th Republic Day (26 Jan 2025) the Governor hoisted the flag and took the parade salute with the CM present (Gujarat CMO) — a Z-class protected movement to the venue up the GN Highway strip. Modeled: dignitary runs airport (1028-1027) onto the GN Highway parade strip (1024-1025) at 08:35, arriving before the 09:00 flag, while spectator and parking load saturates the strip itself. Independence Day (15 Aug) is the calendar mirror.",
+   "description": "The two fixed ceremonial days every year. At the 76th Republic Day (26 Jan 2025) the Governor hoisted the flag and took the parade salute with the CM present (Gujarat CMO) — a Z-class protected movement to the venue up the GN Highway strip. Modeled: dignitary runs from SVPI airport (1029-1028) over the Indira Bridge (1048) onto the GN Highway parade strip at Bhat (1024-1025) at 08:35, arriving before the 09:00 flag, while spectator and parking load saturates the strip itself. Independence Day (15 Aug) is the calendar mirror.",
    "event_overrides": {},
    "expected_features": [
     "national_day",
@@ -363,8 +453,9 @@
    "name": "Republic Day / Independence Day — Ceremonial Parade Corridor",
    "n_replications": 10,
    "route_segment_ids": [
+    1029,
     1028,
-    1027,
+    1048,
     1024,
     1025
    ],
@@ -384,7 +475,7 @@
    },
    "convoy_speed_kmh": 50,
    "departure_time": "2026-03-08T20:05:00+05:30",
-   "description": "Narendra Modi Stadium (Motera): ~132,000 seats, the world's largest cricket ground; ~130,000 in the house for the IPL 2026 final and ~3,000 police + ~1,000 home guards with published traffic advisories and diversions for the T20 World Cup 2026 final. The corridor event is the 90-120 min egress surge — modeled at 20:05, just after a final ball: an X-class ambulance with a green-corridor request fights the dispersal wave from Motera Stadium Road (1032) down the Ashram spine (1002-1001) under signal_hold, with the surge and one stalled car forced on the egress segments.",
+   "description": "Narendra Modi Stadium (Motera): ~132,000 seats, the world's largest cricket ground; ~130,000 in the house for the IPL 2026 final and ~3,000 police + ~1,000 home guards with published traffic advisories and diversions for the T20 World Cup 2026 final. The corridor event is the 90-120 min egress surge — modeled at 20:05, just after a final ball: an X-class ambulance with a green-corridor request fights the dispersal wave from Motera Stadium Road (1032) over the Chimanbhai Patel Flyover (1041) down the Ashram spine (1009-1002-1001) under signal_hold, with the surge and one stalled car forced on the egress segments.",
    "event_overrides": {},
    "expected_features": [
     "stadium_egress",
@@ -425,6 +516,8 @@
    "n_replications": 12,
    "route_segment_ids": [
     1032,
+    1041,
+    1009,
     1002,
     1001
    ],
@@ -444,7 +537,7 @@
    },
    "convoy_speed_kmh": 40,
    "departure_time": "2024-08-27T11:20:00+05:30",
-   "description": "Gujarat floods, 27 Aug 2024 class: ~280 mm of rain in 24 h, 28+ dead, 24,000+ relocated statewide, NDRF and Army columns running boat rescues as low-lying city cores went under. Modeled on the seed network: the low-lying river spine (1001/1006/1015) waterlogs while an X-class relief column runs the reverse-flow evacuation spine — Sarkhej (1040) onto SP Ring Road (1021-1022-1008), the high-ground detour — at 11:20 in 22 mm/h rain under signal_hold, with evacuee traffic surging onto the ring road behind it.",
+   "description": "Gujarat floods, 27 Aug 2024 class: ~280 mm of rain in 24 h, 28+ dead, 24,000+ relocated statewide, NDRF and Army columns running boat rescues as low-lying city cores went under. Modeled on the corridor network: the low-lying river spine (1001/1006/1015) waterlogs while an X-class relief column runs the reverse-flow evacuation spine — Sarkhej (1040) onto SP Ring Road (1021-1022-1008), the high-ground detour — at 11:20 in 22 mm/h rain under signal_hold, with evacuee traffic surging onto the ring road behind it.",
    "event_overrides": {
     "breakdown": 1.8,
     "waterlogging": 3
@@ -526,7 +619,7 @@
    },
    "convoy_speed_kmh": 40,
    "departure_time": "2025-08-14T09:15:00+05:30",
-   "description": "The most predictable corridor event: months-long lane loss published in advance. Ahmedabad Metro Phase 2 (Motera to Gandhinagar's Mahatma Mandir, built since Feb 2021; 77.63 km network approved) put Kankaria Road under a published 3 Jul - 30 Sep closure with diversions, and ~100 m at Kalupur Bridge shut for bullet-train pillar work. Modeled: an X-class inspection convoy at 09:15 runs CTM Road (1031) through the Kalupur pinch (1014) onto GN Highway south (1024) while both work zones hold two barricaded lanes (long-duration forced lane-loss) and diverted bazaar traffic squeezes Kankaria Road (1038).",
+   "description": "The most predictable corridor event: months-long lane loss published in advance. Ahmedabad Metro Phase 2 (Motera to Gandhinagar's Mahatma Mandir, built since Feb 2021; 77.63 km network approved) put Kankaria Road under a published 3 Jul - 30 Sep closure with diversions, and ~100 m at Kalupur Bridge shut for bullet-train pillar work. Modeled: an X-class inspection convoy at 09:15 runs Kasturba Gandhi Road (1031) through the Kalupur pinch (1014), south past Sarangpur Darwaja (1049) and onto Kankaria Road (1038) while both work zones hold two barricaded lanes (long-duration forced lane-loss) and diverted bazaar traffic squeezes Kankaria Road itself.",
    "event_overrides": {
     "market": 1.5
    },
@@ -568,7 +661,8 @@
    "route_segment_ids": [
     1031,
     1014,
-    1024
+    1049,
+    1038
    ],
    "scenario_id": "metro_work_zone",
    "seed": 20250814,
@@ -586,12 +680,12 @@
    },
    "convoy_speed_kmh": 40,
    "departure_time": "2026-11-05T10:30:00+05:30",
-   "description": "EMULATED WATCHLIST SCENARIO (clearly labelled, never a live feed). A stolen-vehicle FIR drives an ANPR camera sweep along the old-city belt: Jamalpur (1012) up Gandhi Road (1015) to Relief Road (1005) and Tilak Road (1013). Deterministic camera reads include the STOLEN plate (hit: stolen_vehicle) and an EARMARKED plate (hit: earmarked_plate) among background traffic — every synthetic plate carries an EM segment, every sighting lands with source emulated_anpr, and the reads feed deterministic e-challan recommendations that only a human officer can approve. Two Jan Rakshak patrol units animate alongside (agency_unit frames). Vehicles only, never persons.",
+   "description": "EMULATED WATCHLIST SCENARIO (clearly labelled, never a live feed). A stolen-vehicle FIR drives an ANPR camera sweep around the walled city: over Nehru Bridge (1015) to Lal Darwaja, east along one-way Gandhi Road (1012) to Kalupur, south past Sarangpur Darwaja (1049) and west along one-way Swami Vivekananda Road (1013). Deterministic camera reads cover background traffic, the FIR-named STOLEN plate GJ27EM9001 and the earmark-exercise plate GJ27EM4321 — every synthetic plate carries an EM segment, every sighting lands with source emulated_anpr, and the oracle, never the tape, computes each hit and rule. The FIR is the scenario's premise, stated at t0 as a labelled EMULATED precondition (a stolen_vehicle_fir earmark on GJ27EM9001 by 'event-emulator (system) — scenario precondition'; if the oracle cannot take it, that plate's reads are skipped): the stolen car's reads hit as stolen_vehicle and file evidence-only R_STOLEN_SIGHTING recommendations, never a fine. GJ27EM4321 is an OPERATOR EXERCISE: the emulator never earmarks it, so its reads hit as earmarked_plate only when a duty officer has earmarked GJ27EM4321 (Watchlist: a lawful basis and their name) before the run — on a fresh install they are ordinary sightings. Only a named human officer acts on any recommendation. Two Jan Rakshak patrol units animate alongside (agency_unit frames). Vehicles only, never persons.",
    "event_overrides": {},
    "expected_features": [
     "emulated_anpr",
     "stolen_plate_hit",
-    "earmarked_plate_hit",
+    "operator_earmark_exercise",
     "human_approval_flow"
    ],
    "forced_events": [],
@@ -599,9 +693,9 @@
    "name": "Stolen-Vehicle ANPR Sweep — Old-City Belt (Emulated)",
    "n_replications": 8,
    "route_segment_ids": [
-    1012,
     1015,
-    1005,
+    1012,
+    1049,
     1013
    ],
    "scenario_id": "watchlist_anpr_sweep",

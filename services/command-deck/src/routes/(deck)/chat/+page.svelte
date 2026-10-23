@@ -6,13 +6,16 @@
 	 * step that creates this route, so /chat never resolves twice and never
 	 * loses its feed. The console keeps the real NDJSON streamChat wiring
 	 * (POST /api/convoy/chat/stream) on the new design system; its context
-	 * header is the SELECTED EVENT from the ops store.
+	 * header is the SELECTED EVENT from the ops store (sent as event_id,
+	 * contract C-D2). The agent's canvas directives queue on the canvas bus
+	 * and wait on City Command for a human to apply them.
 	 */
 	import { onMount, onDestroy } from 'svelte';
 	import { ops } from '$lib/ops/store.svelte';
 	import { commandBar } from '$lib/shell/command-bar.svelte';
 	import ChatConsole from '$lib/comms/ChatConsole.svelte';
 	import '$lib/i18n/strings.citizen';
+	import '$lib/i18n/packs.agent';
 
 	onMount(() => {
 		ops.start();

@@ -34,7 +34,9 @@ class TestToolSurface:
     def test_simulate_twin_added(self):
         names = [t["name"] for t in TOOL_DEFINITIONS]
         assert "simulate_twin" in names
-        assert len(names) == 12
+        # 12 compute/read tools + get_active_corridor_events + 9 read-only
+        # city tools + 6 canvas verbs (wave 3, C-D2)
+        assert len(names) == 28
         twin = next(t for t in TOOL_DEFINITIONS if t["name"] == "simulate_twin")
         assert twin["inputSchema"]["required"] == ["route_segment_ids"]
 
@@ -57,7 +59,7 @@ class TestJsonRpcDispatch:
             "jsonrpc": "2.0", "id": 1, "method": "tools/list",
         }))
         payload = json.loads(response)
-        assert len(payload["result"]["tools"]) == 12
+        assert len(payload["result"]["tools"]) == 28
 
     async def test_tools_call_dispatches(self):
         executor = FakeExecutor(routes={"get_live_traffic": {"segments": []}})
@@ -171,3 +173,132 @@ class TestSimulateTwinProxy:
         })
         assert seen["json"] == {"segment_ids": [9]}
         await executor.close()
+
+
+def executor_with(handler):
+    import httpx
+
+    from convoy_brain.mcp.server import ToolExecutor
+
+    return ToolExecutor(
+        traffic_oracle_url="http://localhost:8081",
+        client=httpx.AsyncClient(
+            base_url="http://localhost:8081", transport=httpx.MockTransport(handler)
+        ),
+    )
+
+
+class TestOracleShapeFixes:
+    async def test_predict_eta_sends_dow_and_weighted_score(self):
+        import httpx
+
+        seen: dict = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            seen["path"] = request.url.path
+            seen["json"] = json.loads(request.content)
+            return httpx.Response(200, json={"eta_seconds": 610.0, "model": "fallback"})
+
+        executor = executor_with(handler)
+        result = await executor.dispatch("predict_eta", {
+            "route_length_m": 8000, "num_segments": 6, "avg_predicted_speed": 40,
+            "avg_predicted_congestion": 0.3, "hour": 9, "day_of_week": 3,
+            "road_class_score": 80,
+        })
+        assert seen["path"] == "/api/v1/predict/eta"
+        body = seen["json"]
+        assert body["dow"] == 3 and "day_of_week" not in body
+        assert body["weighted_road_class_score"] == 80 and "road_class_score" not in body
+        assert "num_signals" not in body  # oracle default 0 applies
+        assert result["eta_seconds"] == 610.0
+        await executor.close()
+
+    async def test_predict_eta_missing_keys_fail_fast(self):
+        from convoy_brain.mcp.server import ToolExecutionError
+
+        executor = executor_with(lambda r: (_ for _ in ()).throw(AssertionError("no call")))
+        with pytest.raises(ToolExecutionError) as err:
+            await executor.dispatch("predict_eta", {"route_length_m": 1})
+        assert err.value.retryable is False
+        assert "day_of_week" in str(err.value)
+        await executor.close()
+
+    async def test_active_corridor_events_reads_the_events_board(self):
+        import httpx
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            assert request.method == "GET"
+            assert request.url.path == "/api/v1/events/active"
+            return httpx.Response(200, json={"events": [
+                {"event_id": "e1", "event_kind": "protected_movement", "title": "Z run",
+                 "status": "planning", "protection_class": "Z", "movement_id": "m1",
+                 "routes": [{"label": "primary", "segment_ids": [1, 2]}],
+                 "phases": [], "metadata": {"source": "convoy-brain"},
+                 "zone_geojson": {"type": "Polygon", "coordinates": []}},
+                {"event_id": "e2", "event_kind": "vehicle_pursuit", "title": "pursuit",
+                 "status": "active", "routes": [], "phases": [], "metadata": {}},
+            ]})
+
+        executor = executor_with(handler)
+        everything = await executor.dispatch("get_active_corridor_events", {})
+        assert everything["count"] == 2
+        assert "zone_geojson" not in everything["events"][0]
+        assert everything["events"][0]["routes"][0]["label"] == "primary"
+        only = await executor.dispatch("get_active_corridor_events", {"movement_id": "m1"})
+        assert [e["event_id"] for e in only["events"]] == ["e1"]
+        # Drafted wildcards / unknown kinds must never hide the board.
+        for wildcard in ("all", "ANY", "*", ""):
+            loose = await executor.dispatch("get_active_corridor_events",
+                                            {"event_kind": wildcard})
+            assert loose["count"] == 2
+        unknown = await executor.dispatch("get_active_corridor_events",
+                                          {"event_kind": "convoys"})
+        assert unknown["count"] == 2
+        assert unknown["ignored_event_kind_filter"] == "convoys"
+        pursuits = await executor.dispatch("get_active_corridor_events",
+                                           {"event_kind": "vehicle_pursuit"})
+        assert [e["event_id"] for e in pursuits["events"]] == ["e2"]
+        assert pursuits["total_active"] == 2
+        await executor.close()
+
+    async def test_key_and_type_errors_are_typed_and_not_retryable(self):
+        from convoy_brain.mcp.server import ToolExecutionError
+
+        executor = executor_with(lambda r: (_ for _ in ()).throw(AssertionError("no call")))
+        with pytest.raises(ToolExecutionError) as err:
+            await executor.dispatch("get_live_traffic", {})
+        assert err.value.retryable is False
+        assert "segment_ids" in str(err.value)
+        await executor.close()
+
+    async def test_http_4xx_is_not_retryable_but_5xx_is(self):
+        import httpx
+
+        from convoy_brain.mcp.server import ToolExecutionError
+
+        for code, retryable in ((422, False), (404, False), (429, True), (503, True)):
+            executor = executor_with(lambda r, c=code: httpx.Response(c, text="nope"))
+            with pytest.raises(ToolExecutionError) as err:
+                await executor.dispatch("get_live_traffic", {"segment_ids": [1]})
+            assert err.value.status_code == code
+            assert err.value.retryable is retryable
+            await executor.close()
+
+    async def test_segment_history_resource_uses_the_segment_id(self):
+        import httpx
+
+        seen: dict = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            seen["path"] = request.url.path
+            return httpx.Response(200, json={"history": []})
+
+        executor = executor_with(handler)
+        await executor.read_resource("traffic://segments/101/history")
+        assert seen["path"] == "/api/v1/traffic/history/101"
+        await executor.close()
+
+    def test_stdio_transport_has_its_asyncio_import(self):
+        import convoy_brain.mcp.server as srv
+
+        assert hasattr(srv, "asyncio")  # run_stdio_transport NameError'd before

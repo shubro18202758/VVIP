@@ -7,8 +7,10 @@ Tier layout (see VVIP architecture):
 
 Service URLs are resolved in this order (contract C0):
     1. Environment variables MODEL_HOST_URL / LLAMA_BASE_URL / EMBEDDING_SERVICE_URL
-    2. The ``services:`` block of VVIP/models/configs/veer_models.yaml
-       (owned by the models stream; read-only for us)
+    2. The ``services:`` block of veer_models.yaml — VEER_MODELS_CONFIG when
+       set, else VVIP/models-config/configs/veer_models.yaml (owned by the
+       models stream; read-only for us). The retired-tree VVIP/models
+       symlink is no longer read.
     3. The compile-time defaults below.
 
 These endpoints are platform configuration constants, NOT user-supplied URLs;
@@ -32,10 +34,18 @@ DEFAULT_EMBEDDING_URL = "http://127.0.0.1:8085"
 DEFAULT_TRAFFIC_ORACLE_URL = "http://localhost:8081"
 DEFAULT_VALKEY_URL = "redis://localhost:6379"
 
-# Repo root discovery: <repo>/VVIP/services/convoy-brain/src/convoy_brain/config.py
+# VVIP root discovery: <VVIP>/services/convoy-brain/src/convoy_brain/config.py
+# (the same layout in a checkout, a worktree and the container's /repo/VVIP).
 _PACKAGE_DIR = Path(__file__).resolve().parent
-_REPO_ROOT = _PACKAGE_DIR.parents[4]  # src/convoy_brain -> convoy-brain -> services -> VVIP -> root
-MODELS_CONFIG_PATH = _REPO_ROOT / "VVIP" / "models" / "configs" / "veer_models.yaml"
+_VVIP_ROOT = _PACKAGE_DIR.parents[3]  # convoy_brain -> src -> convoy-brain -> services -> VVIP
+MODELS_CONFIG_PATH = _VVIP_ROOT / "models-config" / "configs" / "veer_models.yaml"
+
+
+def models_config_path(env: dict[str, str] | None = None) -> Path:
+    """veer_models.yaml location: VEER_MODELS_CONFIG, else models-config/."""
+    env = env if env is not None else dict(os.environ)
+    override = (env.get("VEER_MODELS_CONFIG") or "").strip()
+    return Path(override) if override else MODELS_CONFIG_PATH
 
 
 # ---------------------------------------------------------------------------
@@ -53,10 +63,52 @@ DECIDER_MODEL_ID = "pplx-decider-v1-27b"
 # unbounded generation is a latency bomb (a 2048-token ramble = ~110 s).
 # Per-call wall bound and per-call-site token budgets keep the worst case
 # inside the 60 s suite latency budget and the 120 s turn cap.
-LLAMA_CALL_TIMEOUT_SEC = 30.0     # per tactical-call HTTP wall bound
+LLAMA_CALL_TIMEOUT_SEC = 30.0     # per tactical-call HTTP wall floor (stretched to
+                                  # cover a larger budget's decode time, see below)
 TACTICAL_SELECT_MAX_TOKENS = 48   # tool-selection reply (one JSON name)
 TACTICAL_ARGS_MAX_TOKENS = 192    # argument drafting (schema-constrained; worst ≈ 10 s)
-TACTICAL_FINAL_MAX_TOKENS = 384   # final structured answer
+TACTICAL_FINAL_MAX_TOKENS = 512   # final structured answer: the schema caps
+                                  # 'reasoning' at 1200 chars, and a cut reply's
+                                  # complete reasoning string is rescued; 384
+                                  # still cut a 1200-char reasoning mid-string
+                                  # live (1 in 5 repeats), so the cap is 512
+
+# Structured-agent budgets (agents/base.structured_agent_call). The live
+# route plan hit the old flat 512-token cap on BOTH the primary and the
+# identical repair call (~2 × 23 s, then the heuristic floor), and a budget
+# smaller than the reply the schema allows only moves the waste: a 500-token
+# route narration and a 384-token diversion reply were still cut on the Z+
+# plan and paid a second Gemma call (86-92 s plans). So every plan agent's
+# schema is BOUNDED (maxLength / maxItems / additionalProperties false, no
+# echoed segment lists or scores), the prompt asks for compact single-line
+# JSON, and the FIRST call's budget is the schema's own bounded maximum
+# (agents/base.agent_budget): max_tokens only caps generation, so a short
+# reply costs nothing extra and a long one is never cut. A cut (whitespace
+# the grammar still allows) is retried ONCE as compact JSON under a larger
+# cap — never the identical call.
+AGENT_DEFAULT_MAX_TOKENS = 512    # an unbounded schema (no derivable maximum)
+AGENT_RETRY_MAX_TOKENS = 1024     # ceiling of the one compact retry after a cut
+AGENT_MAX_TOKENS_CEILING = 1024   # no first-call budget above this (a schema whose
+                                  # bounded maximum exceeds it is too loose — tested)
+#: Non-digit characters per token of the agents' JSON replies on Gemma's
+#: tokenizer (every DIGIT is its own token — a full-precision float is 18).
+#: MEASURED 2026-10-23 on six live Z+ plan replies (llama-server's own
+#: completion_tokens): 3.00-4.44 non-digit chars/token; the floor of that
+#: range keeps the estimate at or above every recorded reply (tested).
+AGENT_CHARS_PER_TOKEN = 3.0
+AGENT_BUDGET_MARGIN = 1.1         # tokenizer variance + the whitespace the grammar allows
+#: A repair round is not started with less plan budget left than this
+#: (the repair would be cut mid-call and only add latency).
+AGENT_REPAIR_MIN_SEC = 12.0
+
+# Per-call HTTP wall (llm/llama_bridge): never shorter than the call's own
+# budget takes to decode. The flat 30 s wall killed a 704-token compact
+# diversion reply at 30.0 s (decoding at 24 tok/s) — the budget allowed the
+# reply, the wall did not. The wall is max(LLAMA_CALL_TIMEOUT_SEC,
+# prefill allowance + max_tokens / decode floor); the plan deadline and the
+# chat turn deadline still bound every call from outside.
+LLAMA_PREFILL_ALLOWANCE_SEC = 5.0  # measured prefill 0.4-3.9 s (2-3.5k-token prompts)
+LLAMA_DECODE_FLOOR_TOK_PER_SEC = 16.0  # measured 21.5-24.3 tok/s with 2 slots busy
 
 # -- Decider cadence / degradation (event-driven, never per-GPS-tick) --------
 DECIDER_MIN_CHECKPOINT_INTERVAL_SEC = 5.0   # >=5 s between checkpoints per movement
@@ -121,6 +173,19 @@ NOVELTY_MEMO_TTL_SEC = 30.0       # memoize one search per (movement, state_doc)
 # decider.py (confident + memory-covered only).
 DECISION_MEMORY_RECORD_TIMEOUT_SEC = 5.0  # wall bound for one POST /embed/documents
 
+
+def decision_memory_record_enabled(env: dict[str, str] | None = None) -> bool:
+    """VVIP_MEMORY_RECORD: the decision-memory feeder's write side (default ON).
+
+    "0" / "false" / "no" / "off" turns the feeder off: checkpoints still
+    SEARCH the corpus (novelty latch, tier-0 gate), but nothing is upserted
+    into traffic.memory_docs. Sandbox and test brains run with it off — the
+    embedding service writes to whatever database it serves, and a sandbox
+    brain must never add rows to the live corpus.
+    """
+    env = env if env is not None else dict(os.environ)
+    return env.get("VVIP_MEMORY_RECORD", "").strip().lower() not in ("0", "false", "no", "off")
+
 # -- Decider tier-0 gate (routine-checkpoint cache in front of the 27B) -------
 # A ROUTINE checkpoint — same movement, same trigger, same canonical question
 # set, and a situation whose best memory maxsim clears TIER0_ROUTINE_SIMILARITY_FLOOR —
@@ -157,6 +222,18 @@ TIER0_ELIGIBLE_TRIGGERS = frozenset({
 })  # operator_chat is EXCLUDED in v1: the orchestrator trusts only
     # tier == "decider" for tool selection, so a cache hit there would
     # silently hand tool selection to Gemma while skipping the 27B.
+# Triggers whose stored routine answer is ALSO filed for the movement's own
+# decision docs: served when the best memory is ANY decision doc this
+# movement's checkpoints of the trigger recorded (its ref_id names movement
+# and trigger), for the identical question set. A pre_movement question set
+# names the plan's candidates, and the tactical tier trims the tail
+# alternates in some plans and not in others (live, 2026-10-24: 3 / 5 / 3
+# candidates for three identical bodies), so a set recurs non-consecutively.
+# Its first answer was stored only under the best doc seen BEFORE the
+# feeder upserted its own doc, which no repeat matches again, so a set
+# needed three occurrences before a hit and alternating sets never hit.
+# The escort triggers ask fixed question sets and keep their filing.
+TIER0_OWN_DOC_TRIGGERS = frozenset({"pre_movement"})
 
 
 def tier0_enabled(env: dict[str, str] | None = None) -> bool:
@@ -202,6 +279,94 @@ BASE_SCORING_WEIGHTS: dict[str, float] = dict(BASELINE_SCORING_WEIGHTS)
 
 # -- Tool-result truncation ----------------------------------------------------
 TOOL_RESULT_TRUNCATE_BYTES = 4096
+
+# -- Live escort (R9 adaptive loop; contracts C-B / C-J) -----------------------
+# Ahmedabad operating area (min_lon, min_lat, max_lon, max_lat): a convoy fix
+# outside it is refused (422) by POST /movements/{id}/position and ignored on
+# the WebSocket position.update path.
+CITY_BBOX = (72.40, 22.90, 72.80, 23.20)
+
+ESCORT_GPS_STALE_SEC = 15.0          # a fix older than this reads as "GPS lost"
+ESCORT_GPS_TIMEOUT_SEC = 300.0       # waiting_for_gps longer than this FAILS the
+                                     # escort — a missing fix never completes it
+ESCORT_INCIDENT_COOLDOWN_SEC = 60.0  # one incident checkpoint per congestion
+                                     # crossing; a re-crossing inside the window
+                                     # is deferred, not dropped: still congested
+                                     # when it ends, it is the next incident
+ESCORT_CONGESTION_HYSTERESIS = 0.05  # a crossing clears only below threshold-0.05
+ESCORT_CLEAR_CONFIRM_SEC = 10.0      # ... read on every reporting tick for this
+                                     # long (one low sample is not a clear; the
+                                     # synthetic feed refreshes a segment ~4 s)
+ESCORT_LOOKAHEAD_M = 3000.0          # route segments starting this far ahead are watched
+ESCORT_ARRIVAL_RADIUS_M = 40.0       # remaining route distance that counts as arrival
+ESCORT_OFF_ROUTE_M = 150.0           # cross-track distance that raises an off-route alert
+ESCORT_HOLD_MAX_SEC = 180.0          # a hold lifts itself after this; one whose
+                                     # segments are still congested is re-decided
+ESCORT_REROUTE_MAX_DETOUR = 2.0      # a re-route longer than this multiple of the
+                                     # distance left goes to an officer, not the loop
+ESCORT_MAX_ITERATIONS = 14400        # safety valve (~4 h at the 1 s baseline tick)
+ESCORT_SIM_SPEED_KMH = 80.0          # emulated cruise speed (each segment's limit caps
+                                     # it): a protected convoy drives at the limit, so
+                                     # the emulated run matches the plan's solver ETA
+                                     # (live: 45 km/h made 'planned 10 min' read 15 min)
+ESCORT_SIM_TICK_SEC = 1.0            # emulated GPS publish interval
+#: Expected speed (km/h) on a segment with no speed limit on record, for
+#: the escort's remaining-route ETA (the planner's fallback corridor speed).
+ESCORT_ETA_FALLBACK_KMH = 40.0
+ESCORT_EVENT_CHECK_SEC = 15.0        # how often the loop re-reads its corridor event
+                                     # (an officer may cancel / complete it on /ops)
+ESCORT_APPROVAL_TIMEOUT_SEC = 90.0   # an escort proposal (route switch, Plan B, hold,
+                                     # closures) no officer answered in this long
+                                     # EXPIRES: the convoy holds the current approved plan
+
+# POST /api/v1/adaptive/health wall bound (brain -> oracle degradation ladder).
+ADAPTIVE_HEALTH_TIMEOUT_SEC = 2.5
+
+
+def _env_flag(env: dict[str, str] | None, name: str) -> bool:
+    env = env if env is not None else dict(os.environ)
+    return env.get(name, "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def _env_float(
+    env: dict[str, str] | None, name: str, default: float, lo: float, hi: float,
+) -> float:
+    env = env if env is not None else dict(os.environ)
+    try:
+        value = float(env.get(name, "") or default)
+    except ValueError:
+        return default
+    return min(max(value, lo), hi)
+
+
+def escort_sim_gps_enabled(env: dict[str, str] | None = None) -> bool:
+    """VVIP_ESCORT_SIM_GPS: walk the primary route with an EMULATED GPS
+    producer while no real fix arrives (default off — demo stacks opt in)."""
+    return _env_flag(env, "VVIP_ESCORT_SIM_GPS")
+
+
+def officer_required(env: dict[str, str] | None = None) -> bool:
+    """VVIP_REQUIRE_OFFICER: escort start/stop/clear need a named officer."""
+    return _env_flag(env, "VVIP_REQUIRE_OFFICER")
+
+
+def escort_sim_speed_kmh(env: dict[str, str] | None = None) -> float:
+    """Emulated convoy cruise speed (VVIP_ESCORT_SIM_SPEED_KMH, 5..120)."""
+    return _env_float(env, "VVIP_ESCORT_SIM_SPEED_KMH", ESCORT_SIM_SPEED_KMH, 5.0, 120.0)
+
+
+def escort_gps_timeout_sec(env: dict[str, str] | None = None) -> float:
+    """How long an escort waits for a fix (VVIP_ESCORT_GPS_TIMEOUT_SEC, 10..3600)."""
+    return _env_float(env, "VVIP_ESCORT_GPS_TIMEOUT_SEC", ESCORT_GPS_TIMEOUT_SEC, 10.0, 3600.0)
+
+
+def escort_approval_timeout_sec(env: dict[str, str] | None = None) -> float:
+    """How long an escort proposal waits for a named officer before it
+    expires and the convoy holds its current approved plan
+    (VVIP_ESCORT_APPROVAL_TIMEOUT_SEC, 15..600; default 90)."""
+    return _env_float(
+        env, "VVIP_ESCORT_APPROVAL_TIMEOUT_SEC", ESCORT_APPROVAL_TIMEOUT_SEC, 15.0, 600.0,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -273,11 +438,13 @@ def _read_models_config(path: Path = MODELS_CONFIG_PATH) -> dict[str, str]:
 
 def load_service_urls(
     env: dict[str, str] | None = None,
-    config_path: Path = MODELS_CONFIG_PATH,
+    config_path: Path | None = None,
 ) -> ServiceUrls:
     """Resolve service URLs: env > veer_models.yaml ``services:`` > defaults."""
     env = env if env is not None else dict(os.environ)
-    yaml_services = _read_models_config(config_path)
+    yaml_services = _read_models_config(
+        config_path if config_path is not None else models_config_path(env)
+    )
 
     model_host = (
         env.get("MODEL_HOST_URL")

@@ -19,10 +19,20 @@ Request/response shapes are fixed by C5:
                    sets the calibrated flag)
 
 The router never requires a database or forecaster: it reads
-``request.app.state.pool`` / ``.forecaster`` when present (DB signal-program
-overrides per C6, DSTGAT forecast coupling) and degrades to the deterministic
-seed-network + internal demand model otherwise. FastAPI sync-less design: the
-engine is pure-CPU (~ms per replication) and runs inline.
+``request.app.state.pool`` / ``.forecaster`` when present (DB segments the
+seed lacks + per-approach DB signal programs per C6, forecast coupling) and
+degrades to the deterministic seed-network + internal demand model
+otherwise. FastAPI sync-less design: the engine is pure-CPU (~ms per
+replication) and runs inline.
+
+Honesty fields (additive): ``forecast_coupling`` names the rung that
+actually shaped demand — ``internal`` (the twin's own TOD model) whenever
+the forecaster contributed no shape for the route — with
+``forecast_coverage`` {covered, route_segments}; ``route_coverage`` says
+how many requested segments the twin network models; every run carries
+``censored`` (recovery not reached inside the horizon, measured against a
+paired no-closure run).  Departure instants are read in IST however they
+are written.
 """
 
 from __future__ import annotations
@@ -35,8 +45,8 @@ from pydantic import BaseModel, Field, field_validator
 
 from traffic_oracle.simulation.calibration import (
     CALIBRATION,
-    apply_signal_overrides,
-    load_signal_overrides,
+    build_twin_network,
+    persist_calibration,
     run_replay,
 )
 from traffic_oracle.simulation.engine import (
@@ -45,8 +55,8 @@ from traffic_oracle.simulation.engine import (
     SimulationEngine,
     shapes_from_forecaster,
 )
-from traffic_oracle.simulation.network import default_network
 from traffic_oracle.simulation.scenarios import get_scenario
+from traffic_oracle.simulation.tod import to_ist
 
 logger = structlog.get_logger(__name__)
 
@@ -108,47 +118,71 @@ class ReplayRequest(BaseModel):
 
 
 def _coerce_h(dt: datetime) -> datetime:
-    """Naive datetimes are interpreted as IST (Asia/Kolkata, UTC+5:30)."""
-    if dt.tzinfo is None:
-        from datetime import timedelta, timezone
+    """The instant in IST (Asia/Kolkata); naive datetimes are taken as IST.
 
-        return dt.replace(tzinfo=timezone(timedelta(hours=5, minutes=30)))
-    return dt
+    Equivalent instants (``…T03:30Z`` vs ``…T09:00+05:30``) therefore drive
+    the identical twin run.
+    """
+    return to_ist(dt)
 
 
 async def _build_engine(request: Request) -> tuple[SimulationEngine, dict]:
-    """Engine with DB-backed signal-program overrides when available (C6)."""
-    network = default_network()
+    """Engine over the live twin network (C6) with the calibrated scales.
+
+    Capacity scales apply only while the twin is calibrated: an
+    unvalidated fit never moves the twin.
+    """
     pool = getattr(request.app.state, "pool", None)
-    extras: dict = {}
-    if pool is not None:
-        overrides = await load_signal_overrides(pool)
-        n = apply_signal_overrides(network, overrides)
-        if n:
-            extras["signal_programs_applied"] = n
-    cfg = SimulationConfig(capacity_scale=CALIBRATION.capacity_scale)
+    network, extras = await build_twin_network(pool)
+    if CALIBRATION.calibrated:
+        cfg = SimulationConfig(
+            capacity_scale=CALIBRATION.capacity_scale,
+            class_capacity_scale=dict(CALIBRATION.per_road_class_scale),
+        )
+    else:
+        cfg = SimulationConfig()
     return SimulationEngine(network=network, config=cfg), extras
 
 
-async def _forecast_shapes(request: Request, segment_ids: list[int]) -> tuple[dict, str]:
+async def _forecast_shapes(
+    request: Request, segment_ids: list[int]
+) -> tuple[dict, str, dict]:
     """Forecaster horizon shapes when a forecaster is wired (C5 coupling).
 
     The twin consumes the POINT fields only (shapes_from_forecaster), so
     the foundation rung's optional ``quantiles`` objects degrade to point
-    values here by design. The source label reflects the rung that
-    actually produced the forecast (foundation | dstgat | heuristic),
-    falling back to "dstgat" for forecasters without the rung attribute.
+    values here by design. The source label is the rung that actually
+    produced the forecast (foundation | dstgat | heuristic) — and
+    ``internal`` whenever no shape covers the route (an empty forecast
+    used to be labelled with the rung name anyway).  The third value is
+    the coverage {covered, route_segments}.
     """
+    route = list(dict.fromkeys(int(s) for s in segment_ids))
+    coverage = {"covered": 0, "route_segments": len(route)}
     forecaster = getattr(request.app.state, "forecaster", None)
     if forecaster is None:
-        return {}, "internal"
+        return {}, "internal", coverage
     try:
-        forecast = await forecaster.predict(list(segment_ids), [5, 10, 15, 30])
-        source = getattr(forecaster, "last_forecast_rung", None) or "dstgat"
-        return shapes_from_forecaster(forecast), source
+        predict_with_meta = getattr(forecaster, "predict_with_meta", None)
+        if predict_with_meta is not None:
+            forecast, meta = await predict_with_meta(route, [5, 10, 15, 30])
+            rung = meta.rung
+        else:
+            forecast = await forecaster.predict(route, [5, 10, 15, 30])
+            rung = getattr(forecaster, "last_forecast_rung", None)
+        shapes = shapes_from_forecaster(forecast)
     except Exception as exc:
         logger.warning("simulate.twin_forecast_unavailable", error=str(exc))
-        return {}, "internal"
+        return {}, "internal", coverage
+    coverage["covered"] = sum(1 for sid in route if sid in shapes)
+    if not coverage["covered"]:
+        return {}, "internal", coverage
+    return shapes, rung or "dstgat", coverage
+
+
+def _route_coverage(results: list, requested: list[int]) -> dict:
+    modelled = results[0].route_segments_modelled if results else 0
+    return {"modelled": modelled, "requested": len(requested)}
 
 
 @router.post("/twin")
@@ -207,7 +241,9 @@ async def simulate_twin(req: TwinSimRequest, request: Request) -> dict:
 
     try:
         engine, extras = await _build_engine(request)
-        shapes, forecast_source = await _forecast_shapes(request, route)
+        shapes, forecast_source, forecast_coverage = await _forecast_shapes(
+            request, route
+        )
 
         weather = None
         event_config = None
@@ -252,6 +288,9 @@ async def simulate_twin(req: TwinSimRequest, request: Request) -> dict:
         "horizon_min": horizon_min,
         "n_replications": n_replications,
         "forecast_coupling": forecast_source,
+        "forecast_coverage": forecast_coverage,
+        "route_coverage": _route_coverage(results, route),
+        "censored_runs": sum(1 for r in results if r.censored),
         "calibration": CALIBRATION.to_dict(),
         **extras,
     }
@@ -277,11 +316,16 @@ async def simulate_replay(req: ReplayRequest, request: Request) -> dict:
         )
     pool = getattr(request.app.state, "pool", None)
     report = await run_replay(pool, window_start, window_end)
+    report["trigger"] = "api"
+    calibration_id = await persist_calibration(pool, report)
+    if calibration_id is not None:
+        report["calibration_id"] = calibration_id
     logger.info(
         "simulate.replay",
         status=report.get("status"),
         calibrated=report.get("calibrated"),
         n=report.get("n_observations", 0),
+        calibration_id=calibration_id,
     )
     return report
 
@@ -304,7 +348,13 @@ _METRIC_KEYS = (
 
 
 def _arm_summary(runs: list[dict]) -> dict:
-    return {key: round(_mean([r.get(key, 0.0) for r in runs]), 3) for key in _METRIC_KEYS}
+    summary = {
+        key: round(_mean([r.get(key, 0.0) for r in runs]), 3) for key in _METRIC_KEYS
+    }
+    # additive: how many runs never recovered inside the horizon (their
+    # recovery_sec is a lower bound, so the mean is one too)
+    summary["recovery_censored_runs"] = sum(1 for r in runs if r.get("censored"))
+    return summary
 
 
 @router.post("/twin/compare")
@@ -344,7 +394,9 @@ async def simulate_twin_compare(req: TwinCompareRequest, request: Request) -> di
 
     try:
         engine, extras = await _build_engine(request)
-        shapes, forecast_source = await _forecast_shapes(request, route)
+        shapes, forecast_source, forecast_coverage = await _forecast_shapes(
+            request, route
+        )
         weather = scenario.weather_state()
         event_config = scenario.event_config()
         scheduled_events = scenario.scheduled_events()
@@ -400,6 +452,8 @@ async def simulate_twin_compare(req: TwinCompareRequest, request: Request) -> di
         "candidate": {"summary": summaries["candidate"], "runs": run_rows["candidate"]},
         "deltas": deltas,
         "forecast_coupling": forecast_source,
+        "forecast_coverage": forecast_coverage,
         "calibrated": CALIBRATION.calibrated,
+        "calibration_reason": CALIBRATION.reason,
         **extras,
     }

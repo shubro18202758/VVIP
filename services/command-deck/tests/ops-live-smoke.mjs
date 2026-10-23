@@ -1,18 +1,29 @@
 /**
- * Ops showcase live smoke — run against the LIVE fleet on this box.
+ * Ops live smoke — the /ops data contract probed straight at the argus
+ * upstreams, so the client's assumptions cannot drift from the stack
+ * silently.
  *
  *   node tests/ops-live-smoke.mjs [oracleBase] [brainBase] [emulatorBase]
  *
- * Defaults match the deck's fixed endpoint constants (through the vite dev
- * proxy the client uses the same paths; here we probe the upstreams directly
- * plus one probe through the dev proxy when it is running). Asserts exactly
- * the fallback ladder the /ops client implements, so any drift between the
- * client's assumptions and the live stack fails loudly.
+ * Defaults are the live argus stack (infra/compose.argus-override.yml):
+ * oracle :8091, brain :8092, emulator :8090 — or ORACLE_URL / BRAIN_URL /
+ * EMULATOR_URL, or just ORACLE_PORT / BRAIN_PORT / EMULATOR_PORT (the
+ * scripts/veer_env.sh names), so the same smoke reaches a private sandbox
+ * stack. It talks to the upstreams on loopback, never through the deck, so
+ * the deck's operator gate is not in the path (the deck smokes cover the
+ * proxy and the gate).
+ *
+ * Read-only (R8): every probe is a GET except the twin's pure compute POSTs
+ * (simulate/twin, twin/compare) and ONE informational chat turn (the brain's
+ * read-only rail; it drives the shared models, one call). It never starts an
+ * emulator run, never decides, approves, dispatches or earmarks anything.
+ * Exits 0 with `ok <name> — <detail>` lines; 1 on any failure.
  */
 
-const ORACLE = process.argv[2] ?? 'http://localhost:8081';
-const BRAIN = process.argv[3] ?? 'http://localhost:8080';
-const EMULATOR = process.argv[4] ?? 'http://localhost:8090';
+const env = process.env;
+const ORACLE = (process.argv[2] ?? env.ORACLE_URL ?? `http://127.0.0.1:${env.ORACLE_PORT ?? '8091'}`).replace(/\/+$/, '');
+const BRAIN = (process.argv[3] ?? env.BRAIN_URL ?? `http://127.0.0.1:${env.BRAIN_PORT ?? '8092'}`).replace(/\/+$/, '');
+const EMULATOR = (process.argv[4] ?? env.EMULATOR_URL ?? `http://127.0.0.1:${env.EMULATOR_PORT ?? '8090'}`).replace(/\/+$/, '');
 
 let failures = 0;
 
@@ -39,18 +50,25 @@ async function status(url, opts = {}, timeoutMs = 8000) {
 	}
 }
 
+function json(r) {
+	try {
+		return JSON.parse(r.text);
+	} catch {
+		return null;
+	}
+}
+
+console.log(`ops live smoke: oracle ${ORACLE} · brain ${BRAIN} · emulator ${EMULATOR}`);
+
 // ─── board feed ──────────────────────────────────────────────────────────────
+let activeEvents = [];
 {
 	const r = await status(`${ORACLE}/api/v1/events/active`);
-	ok('events/active responds', r.status > 0, `status=${r.status}`);
-	ok(
-		'events/active 404 means the client falls back (expected today)',
-		r.status === 404 || r.status === 200,
-		`status=${r.status} body=${r.text.slice(0, 80)}`,
-	);
+	activeEvents = json(r)?.events ?? [];
+	ok('events/active is 200 (the board\'s primary rung)', r.status === 200 && Array.isArray(json(r)?.events), `status=${r.status} events=${activeEvents.length}`);
 
 	const m = await status(`${ORACLE}/api/v1/movements/active`);
-	ok('movements/active is 200 (fallback rung live)', m.status === 200, m.text.slice(0, 80));
+	ok('movements/active is 200 (the convoy-era fallback rung)', m.status === 200, m.text.slice(0, 80));
 }
 
 // ─── adaptive band ───────────────────────────────────────────────────────────
@@ -58,25 +76,19 @@ async function status(url, opts = {}, timeoutMs = 8000) {
 	const s = await status(`${ORACLE}/api/v1/adaptive/status`);
 	ok('adaptive/status is 200 (band fallback rung)', s.status === 200, s.text.slice(0, 80));
 
-	const log = await status(`${ORACLE}/api/v1/adaptive/situation_log?event_id=demo&limit=10`);
-	ok(
-		'situation_log is 404 (primary rung not deployed) or 200',
-		log.status === 404 || log.status === 200,
-		`status=${log.status}`,
-	);
+	// Scoped to a real event when the board has one (the store never polls it unscoped).
+	const scope = activeEvents[0]?.event_id ? `event_id=${encodeURIComponent(activeEvents[0].event_id)}&` : '';
+	const log = await status(`${ORACLE}/api/v1/adaptive/situation_log?${scope}limit=10`);
+	ok('situation_log is 200 (the band\'s primary rung)', log.status === 200, `status=${log.status}${scope ? ' (scoped to the first active event)' : ''}`);
 
-	const ov = await status(`${ORACLE}/api/v1/adaptive/overrides?event_id=demo&limit=10`);
-	ok(
-		'overrides is 404 (not deployed) or 200',
-		ov.status === 404 || ov.status === 200,
-		`status=${ov.status}`,
-	);
+	const ov = await status(`${ORACLE}/api/v1/adaptive/overrides?${scope}limit=10`);
+	ok('overrides is 200 (the AMA card\'s evidence)', ov.status === 200, `status=${ov.status}`);
 
 	const p = await status(`${ORACLE}/api/v1/adaptive/params?vvip_class=X`);
 	ok('adaptive/params is 200 (shadow-eval evidence rung)', p.status === 200, p.text.slice(0, 100));
 }
 
-// ─── twin ────────────────────────────────────────────────────────────────────
+// ─── twin (pure compute) ─────────────────────────────────────────────────────
 {
 	const c = await status(`${ORACLE}/api/v1/simulate/twin/compare`, {
 		method: 'POST',
@@ -85,17 +97,14 @@ async function status(url, opts = {}, timeoutMs = 8000) {
 			scenario_id: 'rath_yatra_ahmedabad',
 			candidate_policy: { advance_closure_sec: 60, closure_type: 'partial_closure' },
 		}),
-	});
-	ok(
-		'twin/compare is 404 (fallback path) or 200 (contract C2 deployed)',
-		c.status === 404 || c.status === 200,
-		`status=${c.status}`,
-	);
+	}, 60000);
+	ok('twin/compare is 200 (contract C2)', c.status === 200, `status=${c.status}`);
 
-	// The labelled fallback: explicit fields, NO scenario_id → explicit policy
-	// must be echoed (the C2 clobber bug was scenario_id-only).
+	// Explicit fields, NO scenario_id → the explicit policy must be echoed (the
+	// C2 clobber bug was scenario_id-only). The spine is the emulator's sweep
+	// belt, a drivable chain on the real-road network (WP-20).
 	const explicit = {
-		route_segment_ids: [1012, 1015, 1005, 1013],
+		route_segment_ids: [1015, 1012, 1049, 1013],
 		departure_time: '2025-06-27T07:00:00+05:30',
 		closure_policy: { advance_closure_sec: 60, closure_type: 'partial_closure' },
 		horizon_min: 60,
@@ -106,37 +115,39 @@ async function status(url, opts = {}, timeoutMs = 8000) {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify(explicit),
-	});
-	let runs = [];
-	try {
-		const parsed = JSON.parse(t.text);
-		runs = parsed.runs ?? [];
-	} catch {
-		/* body not json */
-	}
+	}, 120000);
+	const twin = json(t);
+	const runs = twin?.runs ?? [];
 	ok('simulate/twin (explicit fields) is 200', t.status === 200, t.text.slice(0, 100));
 	ok('simulate/twin returned replication runs', Array.isArray(runs) && runs.length === 4, `runs=${runs.length}`);
+	ok(
+		'simulate/twin echoes the explicit closure policy',
+		twin?.closure_policy?.advance_closure_sec === 60 && twin?.closure_policy?.closure_type === 'partial_closure',
+		JSON.stringify(twin?.closure_policy ?? null),
+	);
 }
 
-// ─── brain audit channels ────────────────────────────────────────────────────
+// ─── brain ───────────────────────────────────────────────────────────────────
 {
-	const h = await status(`${BRAIN}/health`);
-	ok('brain /health is 200', h.status === 200, h.text.slice(0, 80));
+	const h = await status(`${BRAIN}/health`, {}, 15000);
+	const hb = json(h);
+	ok(
+		'brain /health ok with both model tiers connected',
+		h.status === 200 && hb?.status === 'ok'
+			&& hb?.strategic_tier?.model_host === 'connected' && hb?.tactical_tier?.llama_server === 'connected',
+		h.text.slice(0, 100),
+	);
 
-	// NDJSON audit rung: one short probe, informational (drives the LLM).
+	// NDJSON audit rung: one short turn, informational (drives the shared models).
 	const ctrl = new AbortController();
-	const timer = setTimeout(() => ctrl.abort(), 60000);
+	const timer = setTimeout(() => ctrl.abort(), 120000);
 	let ndjsonLines = 0;
 	let sawType = '';
 	try {
 		const res = await fetch(`${BRAIN}/chat/stream`, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				message: 'In one sentence: what tools do you have for corridor traffic?',
-				movement_id: null,
-				vvip_class: null,
-			}),
+			body: JSON.stringify({ message: 'In one sentence: what tools do you have for corridor traffic?' }),
 			signal: ctrl.signal,
 		});
 		ok('chat/stream responds 200', res.status === 200, `status=${res.status}`);
@@ -163,11 +174,7 @@ async function status(url, opts = {}, timeoutMs = 8000) {
 			}
 			reader.cancel().catch(() => {});
 		}
-		ok(
-			'chat/stream delivers NDJSON lines (audit rung 3)',
-			ndjsonLines >= 1,
-			`lines=${ndjsonLines} lastType=${sawType}`,
-		);
+		ok('chat/stream delivers NDJSON lines (audit rung 3)', ndjsonLines >= 1, `lines=${ndjsonLines} lastType=${sawType}`);
 	} catch (err) {
 		ok('chat/stream delivers NDJSON lines (audit rung 3)', false, String(err));
 	} finally {
@@ -175,85 +182,51 @@ async function status(url, opts = {}, timeoutMs = 8000) {
 	}
 }
 
-// ─── emulator (real contract, deployed by the emulator stream mid-build) ────
+// ─── emulator (GET only — this smoke never starts a run) ─────────────────────
 {
-	const e = await status(`${EMULATOR}/health`, {}, 4000);
+	const e = await status(`${EMULATOR}/health`, {}, 5000);
+	const eb = json(e);
+	const stack = eb?.stack ?? {};
+	// connectivity, not status: 'degraded' also reports historical conditions
+	// (a failed last run) that no wiring fix changes — printed, not failed
 	ok(
-		'emulator :8090 health answers (online → panel drives the real API; refused → "emulator offline")',
-		e.status === 0 || e.status === 200,
-		`status=${e.status} ${e.text.slice(0, 100)}`,
+		'emulator /health connected (store, valkey, twin, nats)',
+		e.status === 200 && !!(stack.store && stack.valkey && stack.twin && stack.nats),
+		`status=${eb?.status ?? e.status}${eb?.degraded_reasons?.length ? ` degraded_reasons=${eb.degraded_reasons.join('; ')}` : ''}`,
 	);
 
-	if (e.status === 200) {
-		const uc = await status(`${EMULATOR}/api/v1/emulator/use-cases`, {}, 5000);
-		let useCaseIds = [];
-		try {
-			useCaseIds = JSON.parse(uc.text).map((u) => u.id);
-		} catch {
-			/* not json */
-		}
-		ok('emulator use-cases list matches the showcase library ids', uc.status === 200 && useCaseIds.length >= 8, `ids=${useCaseIds.slice(0, 3).join(',')}…`);
+	const uc = await status(`${EMULATOR}/api/v1/emulator/use-cases`, {}, 5000);
+	const useCaseIds = (json(uc) ?? []).map?.((u) => u.id) ?? [];
+	ok('emulator use-cases list matches the showcase library', uc.status === 200 && useCaseIds.length >= 8, `ids=${useCaseIds.slice(0, 3).join(',')}…`);
 
-		// The POST holds until the tape finishes; confirmation is the run ROW
-		// (written immediately). Fire the POST, then poll the list — this is
-		// exactly what the panel does (client timeout does not stop the tape).
-		const before = await status(`${EMULATOR}/api/v1/emulator/runs?limit=1`, {}, 5000);
-		const beforeId = (() => {
-			try {
-				return JSON.parse(before.text).runs?.[0]?.run_id ?? 0;
-			} catch {
-				return 0;
-			}
-		})();
-		const abortCtrl = new AbortController();
-		fetch(`${EMULATOR}/api/v1/emulator/runs`, {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ use_case_id: 'vvip_convoy_base', clock_scale: 60 }),
-			signal: abortCtrl.signal,
-		}).catch(() => {});
-		let staged = null;
-		for (let i = 0; i < 10 && !staged; i++) {
-			await new Promise((r) => setTimeout(r, 1000));
-			const list = await status(`${EMULATOR}/api/v1/emulator/runs?limit=3`, {}, 5000);
-			try {
-				const rows = JSON.parse(list.text).runs ?? [];
-				staged = rows.find((r) => r.run_id > beforeId && r.spec?.use_case_id === 'vvip_convoy_base') ?? null;
-			} catch {
-				/* retry */
-			}
-		}
-		abortCtrl.abort(); // response not needed; the tape runs server-side
-		ok(
-			'emulator run row appears after POST /api/v1/emulator/runs',
-			staged !== null,
-			staged ? `run_id=${staged.run_id} status=${staged.status}` : 'no new run row within 10s',
-		);
-
-		const runs = await status(`${EMULATOR}/api/v1/emulator/runs?limit=5`, {}, 5000);
-		ok('emulator runs listable (panel runs table feed)', runs.status === 200, runs.text.slice(0, 100));
-	}
+	const runs = await status(`${EMULATOR}/api/v1/emulator/runs?limit=5`, {}, 5000);
+	// counts only: a run document's spec can carry the sweep's (emulated) earmarked plate
+	ok('emulator runs listable (the panel\'s runs table feed)', runs.status === 200 && Array.isArray(json(runs)?.runs),
+		`status=${runs.status} runs=${json(runs)?.runs?.length ?? '?'}`);
 }
 
-// ─── decision surfaces (ops-screens; GET only — writers stubbed per R8) ─────
+// ─── decision surfaces (GET only — the writers stay human actions, R8) ──────
 {
+	// A detail line never echoes a decision-surface body: the recommendation,
+	// dispatch, unit, watchlist and interception rows carry plates, FIRs and
+	// unit ids, and a smoke log is no place for one (C6) — counts only.
 	const recs = await status(`${ORACLE}/api/v1/enforcement/recommendations?status=pending&limit=10`);
-	ok('enforcement/recommendations 200 (the queue feed)', recs.status === 200, recs.text.slice(0, 90));
+	ok('enforcement/recommendations 200 (the queue feed)', recs.status === 200,
+		`status=${recs.status} rows=${json(recs)?.recommendations?.length ?? '?'}`);
 	if (recs.status === 200) {
-		const body = JSON.parse(recs.text);
-		const first = body.recommendations?.[0];
+		const body = json(recs);
+		const first = body?.recommendations?.[0];
 		ok(
 			'recommendation rows carry evidence + rule (the card expander)',
 			!first || (typeof first.rule_id === 'string' && first.evidence != null),
-			`pending=${body.recommendations.length}${first ? ` rule=${first.rule_id}` : ''}`,
+			`pending=${body?.recommendations?.length ?? 0}${first ? ` rule=${first.rule_id}` : ''}`,
 		);
 	}
 
 	const disp = await status(`${ORACLE}/api/v1/dispatches?limit=5`);
-	ok('dispatches 200 (the tiles feed)', disp.status === 200, disp.text.slice(0, 90));
+	ok('dispatches 200 (the tiles feed)', disp.status === 200, `status=${disp.status} rows=${json(disp)?.dispatches?.length ?? '?'}`);
 	if (disp.status === 200) {
-		const body = JSON.parse(disp.text);
-		const jr = body.dispatches?.find((d) => d.agency === 'jan_rakshak');
+		const jr = json(disp)?.dispatches?.find((d) => d.agency === 'jan_rakshak');
 		ok(
 			'jan_rakshak dispatches carry the audit trail',
 			!jr || Array.isArray(jr.audit),
@@ -262,44 +235,41 @@ async function status(url, opts = {}, timeoutMs = 8000) {
 	}
 
 	const units = await status(`${ORACLE}/api/v1/units`);
-	ok('units 200 (canvas agency layer)', units.status === 200, units.text.slice(0, 80));
+	ok('units 200 (canvas agency layer)', units.status === 200,
+		`status=${units.status} units=${json(units)?.units?.length ?? '?'} source=${json(units)?.source ?? '?'}`);
 
 	const plans = await status(`${ORACLE}/api/v1/signals/plans`);
 	ok('signals/plans 200 (the gate card)', plans.status === 200, plans.text.slice(0, 90));
 	if (plans.status === 200) {
-		const body = JSON.parse(plans.text);
+		const body = json(plans);
 		ok(
 			'band plan table rows are rank-able (band + floors)',
-			Array.isArray(body.band_plan_table) && body.band_plan_table.every((r) => typeof r.band === 'string'),
-			`${body.band_plan_table.length} rows · writer_enabled=${body.writer_enabled}`,
+			Array.isArray(body?.band_plan_table) && body.band_plan_table.every((r) => typeof r.band === 'string'),
+			`${body?.band_plan_table?.length ?? 0} rows · writer_enabled=${body?.writer_enabled}`,
 		);
+		ok('signals/plans carries the city band provenance (city_band_since)', typeof body?.city_band_since === 'string', `city_band=${body?.city_band} since ${body?.city_band_since}`);
 	}
 
 	const hist = await status(`${ORACLE}/api/v1/signals/history?limit=5`);
 	ok('signals/history 200 or 503 (one click away, honest when down)', hist.status === 200 || hist.status === 503, `status=${hist.status}`);
 
 	const vehicles = await status(`${ORACLE}/api/v1/vehicles`);
-	ok('vehicles 200 (watchlist feed)', vehicles.status === 200, vehicles.text.slice(0, 80));
+	ok('vehicles 200 (watchlist feed)', vehicles.status === 200, `status=${vehicles.status} rows=${json(vehicles)?.vehicles?.length ?? '?'}`);
 	if (vehicles.status === 200) {
-		const body = JSON.parse(vehicles.text);
-		const flagged = body.vehicles?.find((v) => v.earmark_state === 'flagged');
+		const flagged = json(vehicles)?.vehicles?.find((v) => v.earmark_state === 'flagged');
 		ok(
 			'earmarked rows carry lawful basis + retention (C6 shape)',
 			!flagged || (typeof flagged.lawful_basis === 'string' && typeof flagged.retention_until === 'string'),
-			flagged ? `plate=${flagged.plate} basis=${flagged.lawful_basis}` : 'none flagged',
+			flagged ? `basis=${flagged.lawful_basis}` : 'none flagged',
 		);
 	}
 
-	const active = await status(`${ORACLE}/api/v1/events/active`);
-	if (active.status === 200) {
-		const body = JSON.parse(active.text);
-		const pursuit = (body.events ?? []).find((e) => e.event_kind === 'vehicle_pursuit');
-		if (pursuit) {
-			const plan = await status(`${ORACLE}/api/v1/events/${pursuit.event_id}/interception-plan`);
-			ok('interception-plan 200 for the live pursuit', plan.status === 200, plan.text.slice(0, 80));
-		} else {
-			ok('interception-plan (skipped — no pursuit active)', true, 'none');
-		}
+	const pursuit = activeEvents.find((e) => e.event_kind === 'vehicle_pursuit');
+	if (pursuit) {
+		const plan = await status(`${ORACLE}/api/v1/events/${pursuit.event_id}/interception-plan`);
+		ok('interception-plan 200 for the live pursuit', plan.status === 200, `status=${plan.status}`);
+	} else {
+		console.log('skip interception-plan — no pursuit active on the board');
 	}
 }
 

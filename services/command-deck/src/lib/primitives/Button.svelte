@@ -6,9 +6,12 @@
 	 * MUST NOT render enabled without a named-actor prop: passing no `actor`
 	 * yields a visibly disabled button with the officer hint — the C6 gate
 	 * at primitive level. danger-outline (band-red hairline) is for
-	 * reject/abort. No navigation is ever orange.
+	 * reject/abort. No navigation is ever orange. The lock hint and the busy
+	 * label read in the console's language (the shell's, unless `lang` is
+	 * passed).
 	 */
 	import { t } from '$lib/i18n/strings';
+	import { commandBar } from '$lib/shell/command-bar.svelte';
 
 	type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger-outline';
 	type ButtonSize = 'sm' | 'm' | 'citizen';
@@ -22,6 +25,8 @@
 		actor?: string | null;
 		type?: 'button' | 'submit';
 		title?: string;
+		/** UI language for the hint / busy label (defaults to the shell's). */
+		lang?: string | null;
 		onclick?: (e: MouseEvent) => void;
 		children?: import('svelte').Snippet;
 	}
@@ -34,14 +39,16 @@
 		actor = null,
 		type = 'button',
 		title,
+		lang = null,
 		onclick,
 		children
 	}: Props = $props();
 
+	const uiLang = $derived(lang ?? commandBar.lang);
 	/** The gate: a human-commit button cannot enable without an actor. */
 	const commitLocked = $derived(variant === 'primary' && !actor);
 	const reallyDisabled = $derived(disabled || busy || commitLocked);
-	const hint = $derived(commitLocked ? t('en', 'officer_hint') : title);
+	const hint = $derived(commitLocked ? t(uiLang, 'officer_hint') : title);
 </script>
 
 <button
@@ -56,7 +63,7 @@
 		data-prim="button"
 >
 	<span class="label" class:busy-hidden={busy}>{@render children?.()}</span>
-	{#if busy}<span class="busy-label mono">{t('en', 'btn_busy')}…</span>{/if}
+	{#if busy}<span class="busy-label mono">{t(uiLang, 'btn_busy')}…</span>{/if}
 </button>
 
 <style>

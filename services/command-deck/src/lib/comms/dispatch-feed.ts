@@ -39,15 +39,45 @@ export function agencyByCode(code: string): AgencyInfo {
 	return AGENCIES.find((a) => a.code === code) ?? { code, label: code, label_native: code, role: '' };
 }
 
-/** Dispatch statuses the lifecycle walks (CAD grammar, units/router.py:83). */
+/**
+ * Dispatch statuses the backend lifecycle emits (units/router.py
+ * DISPATCH_TRANSITIONS): requested → approved → en_route → on_scene →
+ * completed, with deferred (officer declined the request) and cancelled
+ * as terminal exits.
+ */
 export type DispatchStatus =
 	| 'requested'
 	| 'approved'
-	| 'declined'
 	| 'en_route'
 	| 'on_scene'
-	| 'standing_down'
+	| 'completed'
+	| 'deferred'
+	| 'cancelled'
 	| (string & {});
+
+/** The happy-path ladder, in order (the comms thread's step chips). */
+export const DISPATCH_LADDER = ['requested', 'approved', 'en_route', 'on_scene', 'completed'] as const;
+
+/** Terminal exits — rendered as their own chip, never as "requested". */
+export const DISPATCH_EXITS = ['deferred', 'cancelled'] as const;
+
+/**
+ * Ladder steps a dispatch actually reached: the audit tail's to_status
+ * history plus its current status (a cancelled en-route unit shows
+ * requested · approved · en_route reached, then the cancelled exit).
+ */
+export function reachedSteps(d: Pick<DispatchRecord, 'status' | 'audit'>): Set<string> {
+	const reached = new Set<string>(['requested']);
+	for (const step of d.audit ?? []) reached.add(step.to_status);
+	reached.add(d.status);
+	// The ladder is monotone: reaching a later step implies the earlier ones.
+	let furthest = -1;
+	DISPATCH_LADDER.forEach((s, i) => {
+		if (reached.has(s)) furthest = i;
+	});
+	for (let i = 0; i <= furthest; i++) reached.add(DISPATCH_LADDER[i]);
+	return reached;
+}
 
 export interface DispatchAuditStep {
 	from_status: string | null;

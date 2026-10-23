@@ -1,0 +1,1576 @@
+{
+ "about": "Veer's Ahmedabad road network re-anchored on OpenStreetMap (WP-20): the REVIEWABLE mapping table. Per junction (ids 1-33 kept, 34 added where the real topology needs it): the OSM node of the real intersection, EN + Gujarati name, evidence, confidence. Per segment (ids 1001-1049 kept): the real road it is (seed name kept unless it is not a real road: rename_reason), its two junctions (or a dead-end OSM node), the regex of the OSM names it follows, the class of carriageway it keeps to (min_class), one-way per OSM. Cameras and agency stations are placed from it. scripts/gen_osm_network.py traces every path and writes the seed, the network step and scripts/data/osm_network.json. Road data (c) OpenStreetMap contributors, ODbL 1.0.",
+ "junctions": [
+  {
+   "junction_id": 1,
+   "osm_node_id": 1782653296,
+   "name": "Nehru Bridge - Ashram Road Junction",
+   "name_gu": "નહેરુ બ્રિજ - આશ્રમ રોડ જંક્શન",
+   "junction_type": "intersection",
+   "signal_control": true,
+   "evidence": "node on Ashram Road's northbound (west) carriageway where the Nehru Bridge approach crosses to it — the bridge's west landing; the southbound carriageway node is 12 m east",
+   "confidence": "high",
+   "schematic_name": "Ashram Road - Riverfront Junction"
+  },
+  {
+   "junction_id": 2,
+   "osm_node_id": 4486315451,
+   "name": "Income Tax Circle",
+   "name_gu": "ઇન્કમ ટેક્સ સર્કલ",
+   "junction_type": "roundabout",
+   "signal_control": false,
+   "evidence": "at-grade circle under the Income Tax Flyover where CG Road ends and the Gandhi Bridge lands on Ashram Road",
+   "confidence": "high"
+  },
+  {
+   "junction_id": 3,
+   "osm_node_id": 1782729595,
+   "name": "Lal Darwaja",
+   "name_gu": "લાલ દરવાજા",
+   "junction_type": "signal",
+   "signal_control": true,
+   "evidence": "west end of Relief Road where Rustom Cama Marg (from Nehru Bridge) arrives, by the Lal Darwaja bus terminus",
+   "confidence": "high"
+  },
+  {
+   "junction_id": 4,
+   "osm_node_id": 1781956430,
+   "name": "Paldi Cross Roads (Ashram Road - CG Road)",
+   "name_gu": "પાલડી ચાર રસ્તા (આશ્રમ રોડ - સી.જી. રોડ)",
+   "junction_type": "roundabout",
+   "signal_control": false,
+   "evidence": "node shared by Ashram Road and Chimanlal Girdharlal (CG) Road at Paldi",
+   "confidence": "high",
+   "schematic_name": "Paldi - CG Road Circle"
+  },
+  {
+   "junction_id": 5,
+   "osm_node_id": 1837657318,
+   "name": "Astodia Darwaja",
+   "name_gu": "આસ્ટોડિયા દરવાજા",
+   "junction_type": "intersection",
+   "signal_control": true,
+   "evidence": "node shared by Swami Vivekananda Road and the Astodia Darwaza cross road (the walled city's south-east gate)",
+   "confidence": "high",
+   "schematic_name": "Relief Road - Tilak Road - Kankaria Junction"
+  },
+  {
+   "junction_id": 6,
+   "osm_node_id": 323127572,
+   "name": "Ellis Bridge East (Swami Vivekananda Road)",
+   "name_gu": "એલિસ બ્રિજ પૂર્વ (સ્વામી વિવેકાનંદ રોડ)",
+   "junction_type": "signal",
+   "signal_control": true,
+   "evidence": "node shared by the Swami Vivekananda (Ellis) Bridge and Swami Vivekananda Road at the bridge's east landing",
+   "confidence": "high",
+   "schematic_name": "Riverfront West Junction"
+  },
+  {
+   "junction_id": 7,
+   "osm_node_id": 11955015902,
+   "name": "Gandhi Ashram Junction",
+   "name_gu": "ગાંધી આશ્રમ જંક્શન",
+   "junction_type": "intersection",
+   "signal_control": true,
+   "evidence": "node shared by Ashram Road and Radhaswami Road, 200 m south-west of the Sabarmati (Gandhi) Ashram",
+   "confidence": "high"
+  },
+  {
+   "junction_id": 8,
+   "osm_node_id": 323124555,
+   "name": "Kalupur Station Junction",
+   "name_gu": "કાલુપુર સ્ટેશન જંક્શન",
+   "junction_type": "signal",
+   "signal_control": true,
+   "evidence": "node shared by Station Road, Naroda Road and Gheekanta Road at Kalupur (the Kalupur Overbridge approach)",
+   "confidence": "high"
+  },
+  {
+   "junction_id": 9,
+   "osm_node_id": 1467956877,
+   "name": "Iskcon Cross Roads (SG Highway)",
+   "name_gu": "ઇસ્કોન ચાર રસ્તા (એસ.જી. હાઈવે)",
+   "junction_type": "intersection",
+   "signal_control": true,
+   "evidence": "node shared by Satellite Road and Ambli Bopal Road under the ISKCON Flyover (SG Highway, NH147)",
+   "confidence": "high",
+   "schematic_name": "IIM - Vastrapur Junction (SG Highway)"
+  },
+  {
+   "junction_id": 10,
+   "osm_node_id": 11166257177,
+   "name": "Sarkhej - SP Ring Road Junction (NH147)",
+   "name_gu": "સરખેજ - એસ.પી. રિંગ રોડ જંક્શન (એનએચ ૧૪૭)",
+   "junction_type": "intersection",
+   "signal_control": true,
+   "evidence": "node on the Sardar Patel Ring Road carriageway at the south end of the Sarkhej interchange, where the ring's flyover over NH147 (SG Highway) / NH47 begins and the slip roads to NH147 leave it",
+   "confidence": "high",
+   "schematic_name": "Sarkhej - Bopal Junction (SP Ring Road)"
+  },
+  {
+   "junction_id": 11,
+   "osm_node_id": 778608540,
+   "name": "Odhav Ring Road Circle (SP Ring Road)",
+   "name_gu": "ઓઢવ રિંગ રોડ સર્કલ (એસ.પી. રિંગ રોડ)",
+   "junction_type": "intersection",
+   "signal_control": true,
+   "evidence": "node on NH47 / the Sardar Patel Ring Road where the ring's carriageways meet the Odhav Road circle (Odhav Ring Road Circle, under the Odhav Ring Road Flyover), 44 m east of the circle's Odhav Road node",
+   "confidence": "high",
+   "schematic_name": "SP Ring Road (East) Junction"
+  },
+  {
+   "junction_id": 12,
+   "osm_node_id": 6880345388,
+   "name": "Vaishnodevi Circle (SG Highway - SP Ring Road)",
+   "name_gu": "વૈષ્ણોદેવી સર્કલ (એસ.જી. હાઈવે - એસ.પી. રિંગ રોડ)",
+   "junction_type": "roundabout",
+   "signal_control": false,
+   "evidence": "Vaishnodevi Circle, where the SG Highway crosses the Sardar Patel Ring Road",
+   "confidence": "high",
+   "schematic_name": "SG Highway - SP Ring Road Circle"
+  },
+  {
+   "junction_id": 13,
+   "osm_node_id": 1792982719,
+   "name": "Indira Bridge Circle (Airport Road - Gandhinagar Highway)",
+   "name_gu": "ઇન્દિરા બ્રિજ સર્કલ (એરપોર્ટ રોડ - ગાંધીનગર હાઈવે)",
+   "junction_type": "signal",
+   "signal_control": true,
+   "evidence": "node shared by Airport Road and the Gandhinagar-Ahmedabad Highway at the Indira Bridge's south approach",
+   "confidence": "high",
+   "schematic_name": "Gandhinagar Highway - Airport Road Junction"
+  },
+  {
+   "junction_id": 14,
+   "osm_node_id": 1792928694,
+   "name": "Airport Circle (Hansol)",
+   "name_gu": "એરપોર્ટ સર્કલ (હાંસોલ)",
+   "junction_type": "intersection",
+   "signal_control": true,
+   "evidence": "Airport Circle on Airport Road at Hansol, the SVPI terminals' access junction",
+   "confidence": "high",
+   "schematic_name": "Hansol Junction (Gandhinagar Highway)"
+  },
+  {
+   "junction_id": 15,
+   "osm_node_id": 1837679262,
+   "name": "Kalupur (Relief Road - Station Road)",
+   "name_gu": "કાલુપુર (રિલીફ રોડ - સ્ટેશન રોડ)",
+   "junction_type": "intersection",
+   "signal_control": false,
+   "evidence": "node shared by the east end of Relief Road and Station Road, opposite Kalupur railway station",
+   "confidence": "high",
+   "schematic_name": "Tilak Road - Station Road (Kalupur)"
+  },
+  {
+   "junction_id": 16,
+   "osm_node_id": 1795363332,
+   "name": "Pakwan Cross Roads (SG Highway - Bodakdev)",
+   "name_gu": "પકવાન ચાર રસ્તા (એસ.જી. હાઈવે - બોડકદેવ)",
+   "junction_type": "intersection",
+   "signal_control": false,
+   "evidence": "node shared by Sindhu Bhavan Road and Judges Bunglow Road at the Pakwan Flyover (SG Highway)",
+   "confidence": "high",
+   "schematic_name": "SG Highway - Bodakdev"
+  },
+  {
+   "junction_id": 17,
+   "osm_node_id": 1784599372,
+   "name": "Thaltej Cross Roads (SG Highway)",
+   "name_gu": "થલતેજ ચાર રસ્તા (એસ.જી. હાઈવે)",
+   "junction_type": "intersection",
+   "signal_control": false,
+   "evidence": "Thaltej Cross Roads: Thaltej Road meets Drive-in Road at the Thaltej Underpass (SG Highway)",
+   "confidence": "high",
+   "schematic_name": "Thaltej - Sarkhej Road Junction"
+  },
+  {
+   "junction_id": 18,
+   "osm_node_id": 1795621353,
+   "name": "Shivranjani Cross Roads (Satellite Road)",
+   "name_gu": "શિવરંજની ચાર રસ્તા (સેટેલાઇટ રોડ)",
+   "junction_type": "intersection",
+   "signal_control": false,
+   "evidence": "Satellite Road under the Shivranjani Flyover, where the 132 Ft. Ring Road's slip roads join",
+   "confidence": "medium",
+   "schematic_name": "Satellite - Prahlad Nagar Junction"
+  },
+  {
+   "junction_id": 19,
+   "osm_node_id": 1822949350,
+   "name": "Aslali Circle (SP Ring Road)",
+   "name_gu": "અસલાલી સર્કલ (એસ.પી. રિંગ રોડ)",
+   "junction_type": "intersection",
+   "signal_control": false,
+   "evidence": "Aslali Circle on the Sardar Patel Ring Road (NH47)",
+   "confidence": "high",
+   "schematic_name": "SP Ring Road (South)"
+  },
+  {
+   "junction_id": 20,
+   "osm_node_id": 429460731,
+   "name": "Shahibaug (Airport Road - Riverfront Road)",
+   "name_gu": "શાહીબાગ (એરપોર્ટ રોડ - રિવરફ્રન્ટ રોડ)",
+   "junction_type": "intersection",
+   "signal_control": false,
+   "evidence": "node shared by Airport Road and the east-bank Riverfront Road at Shahibaug",
+   "confidence": "high",
+   "schematic_name": "Airport Road Junction"
+  },
+  {
+   "junction_id": 21,
+   "osm_node_id": 1792961428,
+   "name": "SVPI Airport Terminal",
+   "name_gu": "એસ.વી.પી.આઈ. એરપોર્ટ ટર્મિનલ",
+   "junction_type": "intersection",
+   "signal_control": false,
+   "evidence": "terminal forecourt end of the Domestic Airport Road (Sardar Vallabhbhai Patel International Airport)",
+   "confidence": "high",
+   "schematic_name": "SVPI Airport Junction"
+  },
+  {
+   "junction_id": 22,
+   "osm_node_id": 1784529282,
+   "name": "CG Road - Commerce College Road Junction",
+   "name_gu": "સી.જી. રોડ - કોમર્સ કોલેજ રોડ જંક્શન",
+   "junction_type": "intersection",
+   "signal_control": false,
+   "evidence": "node shared by Chimanlal Girdharlal (CG) Road and Commerce College Road",
+   "confidence": "high",
+   "schematic_name": "SP Ring Road (North)"
+  },
+  {
+   "junction_id": 23,
+   "osm_node_id": 13327893579,
+   "name": "Science City Circle (SP Ring Road)",
+   "name_gu": "સાયન્સ સિટી સર્કલ (એસ.પી. રિંગ રોડ)",
+   "junction_type": "intersection",
+   "signal_control": false,
+   "evidence": "node shared by Science City Road and the Sardar Patel Ring Road at the Science City Flyover",
+   "confidence": "high",
+   "schematic_name": "SP Ring Road - Science City Road"
+  },
+  {
+   "junction_id": 24,
+   "osm_node_id": 8407861810,
+   "name": "Motera Junction",
+   "name_gu": "મોટેરા જંક્શન",
+   "junction_type": "intersection",
+   "signal_control": false,
+   "evidence": "SH41 roundabout north of the Narendra Modi Stadium where the SH71 road from Bhat (Asharam Ashram Road) joins",
+   "confidence": "medium"
+  },
+  {
+   "junction_id": 25,
+   "osm_node_id": 1789945982,
+   "name": "Motera Cross Roads (Chimanbhai Patel Flyover)",
+   "name_gu": "મોટેરા ચાર રસ્તા (ચીમનભાઈ પટેલ ફ્લાયઓવર)",
+   "junction_type": "intersection",
+   "signal_control": false,
+   "evidence": "north landing of the Chimanbhai Patel Flyover on the Motera-Chandkheda road (SH41)",
+   "confidence": "high",
+   "schematic_name": "Drive-In Road (East)"
+  },
+  {
+   "junction_id": 26,
+   "osm_node_id": 11133720900,
+   "name": "Sola Cross Roads (SG Highway - Science City Road)",
+   "name_gu": "સોલા ચાર રસ્તા (એસ.જી. હાઈવે - સાયન્સ સિટી રોડ)",
+   "junction_type": "intersection",
+   "signal_control": false,
+   "evidence": "node shared by the Sola Overbridge ramp (SG Highway) and Sola Road toward Science City Road",
+   "confidence": "medium",
+   "schematic_name": "Usmanpura Junction"
+  },
+  {
+   "junction_id": 27,
+   "osm_node_id": 11112867178,
+   "name": "Helmet Cross Roads (Drive-In Road - 132 Ft. Ring Road)",
+   "name_gu": "હેલ્મેટ ચાર રસ્તા (ડ્રાઇવ-ઇન રોડ - ૧૩૨ ફૂટ રિંગ રોડ)",
+   "junction_type": "intersection",
+   "signal_control": false,
+   "evidence": "Helmet Cross Road on Drive-in Road under the Dr. Vikram Sarabhai Flyover (132 Ft. Ring Road)",
+   "confidence": "high",
+   "schematic_name": "Drive-In Road (West)"
+  },
+  {
+   "junction_id": 28,
+   "osm_node_id": 11088927034,
+   "name": "Prahlad Nagar Junction (SG Highway)",
+   "name_gu": "પ્રહલાદનગર જંક્શન (એસ.જી. હાઈવે)",
+   "junction_type": "intersection",
+   "signal_control": false,
+   "evidence": "south-west end of Prahlad Nagar Road at the SG Highway service road",
+   "confidence": "medium",
+   "schematic_name": "Prahlad Nagar Junction"
+  },
+  {
+   "junction_id": 29,
+   "osm_node_id": 5510651166,
+   "name": "Bopal Junction (SP Ring Road - Ambli Bopal Road)",
+   "name_gu": "બોપલ જંક્શન (એસ.પી. રિંગ રોડ - આંબલી બોપલ રોડ)",
+   "junction_type": "intersection",
+   "signal_control": false,
+   "evidence": "node shared by the Sardar Patel Ring Road and Ambli Bopal Road",
+   "confidence": "high",
+   "schematic_name": "SP Ring Road (West)"
+  },
+  {
+   "junction_id": 30,
+   "osm_node_id": 8389481353,
+   "name": "Indira Bridge North (Bhat - Motera Road)",
+   "name_gu": "ઇન્દિરા બ્રિજ ઉત્તર (ભાટ - મોટેરા રોડ)",
+   "junction_type": "intersection",
+   "signal_control": false,
+   "evidence": "Gandhinagar-Ahmedabad Highway north of the Indira Bridge where the road west to Motera leaves it",
+   "confidence": "high",
+   "schematic_name": "SP Ring Road (Northwest)"
+  },
+  {
+   "junction_id": 31,
+   "osm_node_id": 12954086319,
+   "name": "Dehgam Circle (SP Ring Road)",
+   "name_gu": "દહેગામ સર્કલ (એસ.પી. રિંગ રોડ)",
+   "junction_type": "intersection",
+   "signal_control": false,
+   "evidence": "Dehgam Circle: the Sardar Patel Ring Road meets the Naroda-Dehgam Road (SH68)",
+   "confidence": "high",
+   "schematic_name": "SP Ring Road (Northeast)"
+  },
+  {
+   "junction_id": 32,
+   "osm_node_id": 1877421988,
+   "name": "Bhat Circle (Gandhinagar Highway - SP Ring Road)",
+   "name_gu": "ભાટ સર્કલ (ગાંધીનગર હાઈવે - એસ.પી. રિંગ રોડ)",
+   "junction_type": "intersection",
+   "signal_control": false,
+   "evidence": "Bhat Circle: the Sardar Patel Ring Road meets the Gandhinagar-Ahmedabad Highway",
+   "confidence": "high",
+   "schematic_name": "Gandhinagar Highway - SP Ring Road"
+  },
+  {
+   "junction_id": 33,
+   "osm_node_id": 1837685063,
+   "name": "Ellisbridge (Ashram Road - Surendra Mangaldas Road)",
+   "name_gu": "એલિસબ્રિજ (આશ્રમ રોડ - સુરેન્દ્ર મંગળદાસ રોડ)",
+   "junction_type": "intersection",
+   "signal_control": false,
+   "evidence": "node shared by Ashram Road and Surendra Mangaldas Road, the at-grade approach to the Ellis (Swami Vivekananda) Bridge",
+   "confidence": "high",
+   "schematic_name": "Ashram Road - CG Road (East) Crossing"
+  },
+  {
+   "junction_id": 34,
+   "osm_node_id": 441511122,
+   "name": "Koba Circle (Gandhinagar Highway)",
+   "name_gu": "કોબા સર્કલ (ગાંધીનગર હાઈવે)",
+   "junction_type": "intersection",
+   "signal_control": false,
+   "evidence": "Koba Circle on the Gandhinagar-Ahmedabad Highway (new junction: the highway's Central and North stretches meet here)",
+   "confidence": "high"
+  }
+ ],
+ "segments": [
+  {
+   "segment_id": 1001,
+   "road_name": "Ashram Road (South)",
+   "from_junction": 33,
+   "to_junction": 1,
+   "follow": "^Ashram Road",
+   "oneway": false,
+   "seed": {
+    "road_name": "Ashram Road (South)",
+    "road_class": "trunk",
+    "lanes": 6,
+    "speed_limit_kmh": 60,
+    "oneway": false
+   }
+  },
+  {
+   "segment_id": 1002,
+   "road_name": "Ashram Road (North)",
+   "from_junction": 1,
+   "to_junction": 2,
+   "follow": "^Ashram Road|Income Tax",
+   "oneway": false,
+   "seed": {
+    "road_name": "Ashram Road (North)",
+    "road_class": "trunk",
+    "lanes": 6,
+    "speed_limit_kmh": 60,
+    "oneway": false
+   }
+  },
+  {
+   "segment_id": 1003,
+   "road_name": "CG Road (South)",
+   "from_junction": 4,
+   "to_junction": 22,
+   "follow": "Chimanlal|Parimal",
+   "oneway": false,
+   "seed": {
+    "road_name": "CG Road (West)",
+    "road_class": "primary",
+    "lanes": 4,
+    "speed_limit_kmh": 50,
+    "oneway": false
+   },
+   "rename_reason": "Chimanlal Girdharlal (CG) Road runs north-south from Paldi to Income Tax Circle: the seed's west and east halves are its south and north halves"
+  },
+  {
+   "segment_id": 1004,
+   "road_name": "CG Road (North)",
+   "from_junction": 22,
+   "to_junction": 2,
+   "follow": "Chimanlal|Income Tax Underpass",
+   "oneway": false,
+   "seed": {
+    "road_name": "CG Road (East)",
+    "road_class": "primary",
+    "lanes": 4,
+    "speed_limit_kmh": 50,
+    "oneway": false
+   },
+   "rename_reason": "Chimanlal Girdharlal (CG) Road runs north-south from Paldi to Income Tax Circle: the seed's west and east halves are its south and north halves"
+  },
+  {
+   "segment_id": 1005,
+   "road_name": "Relief Road",
+   "from_junction": 3,
+   "to_junction": 15,
+   "follow": "^Relief Road",
+   "oneway": false,
+   "seed": {
+    "road_name": "Relief Road",
+    "road_class": "primary",
+    "lanes": 4,
+    "speed_limit_kmh": 40,
+    "oneway": false
+   }
+  },
+  {
+   "segment_id": 1006,
+   "road_name": "Riverfront Road (West)",
+   "from_junction": 33,
+   "to_junction": 2,
+   "follow": "Riverfront|River front",
+   "oneway": false,
+   "seed": {
+    "road_name": "Riverfront Road (West)",
+    "road_class": "trunk",
+    "lanes": 6,
+    "speed_limit_kmh": 60,
+    "oneway": false
+   }
+  },
+  {
+   "segment_id": 1007,
+   "road_name": "Riverfront Road (East)",
+   "from_junction": 3,
+   "to_junction": 20,
+   "follow": "Riverfront|River front",
+   "oneway": false,
+   "seed": {
+    "road_name": "Riverfront Road (East)",
+    "road_class": "trunk",
+    "lanes": 6,
+    "speed_limit_kmh": 60,
+    "oneway": false
+   }
+  },
+  {
+   "segment_id": 1008,
+   "road_name": "SP Ring Road (East)",
+   "from_junction": 31,
+   "to_junction": 11,
+   "follow": "Sardar Patel Ring|S P Ring|Odhav Ring",
+   "oneway": false,
+   "seed": {
+    "road_name": "SP Ring Road (East)",
+    "road_class": "motorway",
+    "lanes": 8,
+    "speed_limit_kmh": 80,
+    "oneway": false
+   },
+   "min_class": "trunk"
+  },
+  {
+   "segment_id": 1009,
+   "road_name": "Ashram Road (Sabarmati Ashram)",
+   "from_junction": 2,
+   "to_junction": 7,
+   "follow": "^Ashram Road",
+   "oneway": false,
+   "seed": {
+    "road_name": "Sabarmati Ashram Road",
+    "road_class": "secondary",
+    "lanes": 4,
+    "speed_limit_kmh": 40,
+    "oneway": false
+   },
+   "rename_reason": "OpenStreetMap has no road named Sabarmati Ashram Road: the road that reaches the Sabarmati (Gandhi) Ashram is Ashram Road"
+  },
+  {
+   "segment_id": 1010,
+   "road_name": "SH71 (Bhat–Motera Road)",
+   "from_junction": 30,
+   "to_junction": 24,
+   "follow": "Asharam|SH71|SH41",
+   "oneway": false,
+   "seed": {
+    "road_name": "Usmanpura Overbridge Road",
+    "road_class": "secondary",
+    "lanes": 4,
+    "speed_limit_kmh": 40,
+    "oneway": false
+   },
+   "rename_reason": "no Usmanpura overbridge road lies on the re-anchored network; the id carries the real road west from the Indira Bridge's north end to Motera, state highway SH71 at its Motera end",
+   "name_note": "OpenStreetMap names little of the 4997 m path: 1204 m at the Motera end carry the ref SH71, 508 m a misspelt local name and the rest none; the segment is named for its state-highway ref and its two ends, as junction J30 (Bhat - Motera Road) is. OSM tags no lanes on any of its ways: the 4 lanes are the seed's own value for this id",
+   "fallback": {
+    "lanes": 4,
+    "speed_limit_kmh": 50,
+    "why": "a state-highway link (SH71), not the replaced Usmanpura overbridge road"
+   }
+  },
+  {
+   "segment_id": 1011,
+   "road_name": "Drive-In Road",
+   "from_junction": 17,
+   "to_junction": 27,
+   "follow": "Drive",
+   "oneway": false,
+   "seed": {
+    "road_name": "Drive-In Road",
+    "road_class": "primary",
+    "lanes": 4,
+    "speed_limit_kmh": 50,
+    "oneway": false
+   }
+  },
+  {
+   "segment_id": 1012,
+   "road_name": "Gandhi Road",
+   "from_junction": 3,
+   "to_junction": 15,
+   "follow": "^Gandhi Road|Fernandes",
+   "oneway": true,
+   "seed": {
+    "road_name": "Gandhi Road",
+    "road_class": "trunk",
+    "lanes": 6,
+    "speed_limit_kmh": 40,
+    "oneway": false
+   }
+  },
+  {
+   "segment_id": 1013,
+   "road_name": "Swami Vivekananda Road",
+   "from_junction": 5,
+   "to_junction": 6,
+   "follow": "Vivekananda Road",
+   "oneway": true,
+   "seed": {
+    "road_name": "Tilak Road",
+    "road_class": "primary",
+    "lanes": 4,
+    "speed_limit_kmh": 50,
+    "oneway": true
+   },
+   "rename_reason": "OpenStreetMap has no road named Tilak Road; the old city's one-way street the seed drew from the Kankaria side toward the river is Swami Vivekananda Road (one-way westbound, Astodia Darwaja to the Ellis Bridge)"
+  },
+  {
+   "segment_id": 1014,
+   "road_name": "Station Road (Kalupur)",
+   "from_junction": 15,
+   "to_junction": 8,
+   "follow": "^Station Road",
+   "oneway": false,
+   "seed": {
+    "road_name": "Station Road (Kalupur)",
+    "road_class": "primary",
+    "lanes": 4,
+    "speed_limit_kmh": 50,
+    "oneway": false
+   }
+  },
+  {
+   "segment_id": 1015,
+   "road_name": "Nehru Bridge Road",
+   "from_junction": 1,
+   "to_junction": 3,
+   "follow": "Nehru|Rustom",
+   "oneway": false,
+   "seed": {
+    "road_name": "Nehru Bridge Road",
+    "road_class": "trunk",
+    "lanes": 6,
+    "speed_limit_kmh": 60,
+    "oneway": false
+   }
+  },
+  {
+   "segment_id": 1016,
+   "road_name": "SG Highway (Vastrapur)",
+   "from_junction": 9,
+   "to_junction": 16,
+   "follow": "NH147|SG Highway|Sarkhej-Gandhinagar|ISKCON|Pakwan",
+   "oneway": false,
+   "seed": {
+    "road_name": "SG Highway (Vastrapur)",
+    "road_class": "motorway",
+    "lanes": 8,
+    "speed_limit_kmh": 80,
+    "oneway": false
+   },
+   "min_class": "trunk",
+   "name_note": "OSM names only the NH147 (SG Highway) trunk here; the at-grade carriageways under the ISKCON flyover that reach Iskcon Cross Roads and run north to Pakwan carry no name, so the name match is low although every way is the SG Highway corridor"
+  },
+  {
+   "segment_id": 1017,
+   "road_name": "SG Highway (Bodakdev)",
+   "from_junction": 16,
+   "to_junction": 17,
+   "follow": "NH147|SG Highway|Sarkhej-Gandhinagar|Pakwan|Thaltej Underpass",
+   "oneway": false,
+   "seed": {
+    "road_name": "SG Highway (Bodakdev)",
+    "road_class": "motorway",
+    "lanes": 8,
+    "speed_limit_kmh": 80,
+    "oneway": false
+   },
+   "min_class": "trunk"
+  },
+  {
+   "segment_id": 1018,
+   "road_name": "SG Highway (Thaltej)",
+   "from_junction": 17,
+   "to_junction": 26,
+   "follow": "NH147|SG Highway|Sarkhej-Gandhinagar|Sola Overbridge|Thaltej Underpass",
+   "oneway": false,
+   "seed": {
+    "road_name": "SG Highway (Thaltej)",
+    "road_class": "motorway",
+    "lanes": 8,
+    "speed_limit_kmh": 80,
+    "oneway": false
+   },
+   "min_class": "trunk"
+  },
+  {
+   "segment_id": 1019,
+   "road_name": "Satellite Road",
+   "from_junction": 9,
+   "to_junction": 18,
+   "follow": "Satellite",
+   "oneway": false,
+   "seed": {
+    "road_name": "Satellite Road",
+    "road_class": "secondary",
+    "lanes": 4,
+    "speed_limit_kmh": 40,
+    "oneway": false
+   }
+  },
+  {
+   "segment_id": 1020,
+   "road_name": "Prahlad Nagar Road",
+   "from_junction": 28,
+   "to_junction": null,
+   "follow": "Prahlad",
+   "oneway": false,
+   "seed": {
+    "road_name": "Prahlad Nagar Road",
+    "road_class": "secondary",
+    "lanes": 4,
+    "speed_limit_kmh": 40,
+    "oneway": false
+   },
+   "end_osm_node_id": 1635310523
+  },
+  {
+   "segment_id": 1021,
+   "road_name": "SP Ring Road (South)",
+   "from_junction": 19,
+   "to_junction": 10,
+   "follow": "Sardar Patel Ring|S P Ring",
+   "oneway": false,
+   "seed": {
+    "road_name": "SP Ring Road (South)",
+    "road_class": "motorway",
+    "lanes": 8,
+    "speed_limit_kmh": 80,
+    "oneway": false
+   },
+   "min_class": "trunk"
+  },
+  {
+   "segment_id": 1022,
+   "road_name": "SP Ring Road (Southeast)",
+   "from_junction": 11,
+   "to_junction": 19,
+   "follow": "Sardar Patel Ring|S P Ring",
+   "oneway": false,
+   "seed": {
+    "road_name": "SP Ring Road (Southeast)",
+    "road_class": "motorway",
+    "lanes": 8,
+    "speed_limit_kmh": 80,
+    "oneway": false
+   },
+   "min_class": "trunk"
+  },
+  {
+   "segment_id": 1023,
+   "road_name": "Ambli Bopal Road",
+   "from_junction": 9,
+   "to_junction": 29,
+   "follow": "Ambli",
+   "oneway": false,
+   "seed": {
+    "road_name": "Bopal Road",
+    "road_class": "primary",
+    "lanes": 4,
+    "speed_limit_kmh": 50,
+    "oneway": false
+   },
+   "rename_reason": "OpenStreetMap names the Iskcon - Bopal road Ambli Bopal Road"
+  },
+  {
+   "segment_id": 1024,
+   "road_name": "Gandhinagar Highway (South)",
+   "from_junction": 30,
+   "to_junction": 32,
+   "follow": "Gandhinagar-Ahmedabad|Bhat Circle",
+   "oneway": false,
+   "seed": {
+    "road_name": "Gandhinagar Highway (South)",
+    "road_class": "motorway",
+    "lanes": 8,
+    "speed_limit_kmh": 100,
+    "oneway": false
+   },
+   "min_class": "primary"
+  },
+  {
+   "segment_id": 1025,
+   "road_name": "Gandhinagar Highway (Central)",
+   "from_junction": 32,
+   "to_junction": 34,
+   "follow": "Gandhinagar-Ahmedabad|Bhat Circle|Koba Circle",
+   "oneway": false,
+   "seed": {
+    "road_name": "Gandhinagar Highway (Central)",
+    "road_class": "motorway",
+    "lanes": 8,
+    "speed_limit_kmh": 100,
+    "oneway": false
+   },
+   "min_class": "primary"
+  },
+  {
+   "segment_id": 1026,
+   "road_name": "Gandhinagar Highway (North)",
+   "from_junction": 34,
+   "to_junction": null,
+   "follow": "Koba|Gandhinagar",
+   "oneway": false,
+   "seed": {
+    "road_name": "Gandhinagar Highway (North)",
+    "road_class": "motorway",
+    "lanes": 8,
+    "speed_limit_kmh": 100,
+    "oneway": false
+   },
+   "end_osm_node_id": 11693152408,
+   "min_class": "primary"
+  },
+  {
+   "segment_id": 1027,
+   "road_name": "Airport Road (South)",
+   "from_junction": 20,
+   "to_junction": 14,
+   "follow": "Airport Road|Airport Circle",
+   "oneway": false,
+   "seed": {
+    "road_name": "Airport Road (South)",
+    "road_class": "motorway",
+    "lanes": 8,
+    "speed_limit_kmh": 80,
+    "oneway": false
+   },
+   "min_class": "primary"
+  },
+  {
+   "segment_id": 1028,
+   "road_name": "Airport Road (North)",
+   "from_junction": 14,
+   "to_junction": 13,
+   "follow": "Airport Road|Airport Circle",
+   "oneway": false,
+   "seed": {
+    "road_name": "Airport Road (North)",
+    "road_class": "motorway",
+    "lanes": 8,
+    "speed_limit_kmh": 80,
+    "oneway": false
+   },
+   "min_class": "primary"
+  },
+  {
+   "segment_id": 1029,
+   "road_name": "Domestic Airport Road (Hansol)",
+   "from_junction": 14,
+   "to_junction": 21,
+   "follow": "Domestic Airport|Airport Circle|Airport Road",
+   "oneway": false,
+   "seed": {
+    "road_name": "Hansol-Airport Connector",
+    "road_class": "motorway",
+    "lanes": 6,
+    "speed_limit_kmh": 80,
+    "oneway": false
+   },
+   "rename_reason": "the Hansol - airport connector is the real terminal approach: Airport Road south of Airport Circle, then the Domestic Airport Road"
+  },
+  {
+   "segment_id": 1030,
+   "road_name": "Naroda Road",
+   "from_junction": 8,
+   "to_junction": 31,
+   "follow": "Naroda|Dehgam|Rakhiyal|Kalupur Overbridge|Manubhai Parmar|SH68",
+   "oneway": false,
+   "seed": {
+    "road_name": "Naroda Road",
+    "road_class": "trunk",
+    "lanes": 6,
+    "speed_limit_kmh": 60,
+    "oneway": false
+   }
+  },
+  {
+   "segment_id": 1031,
+   "road_name": "Kasturba Gandhi Road",
+   "from_junction": 2,
+   "to_junction": 8,
+   "follow": "Kasturba|Gandhi Bridge",
+   "oneway": false,
+   "seed": {
+    "road_name": "CTM Road",
+    "road_class": "primary",
+    "lanes": 4,
+    "speed_limit_kmh": 50,
+    "oneway": false
+   },
+   "rename_reason": "OpenStreetMap has no CTM Road near Kalupur: the seed line from Kalupur toward the river lies along Kasturba Gandhi Road and the Gandhi Bridge (CTM Cross Roads is 5 km south-east, on NH8)"
+  },
+  {
+   "segment_id": 1032,
+   "road_name": "Motera Stadium Road",
+   "from_junction": 25,
+   "to_junction": 24,
+   "follow": "Motera|SH41",
+   "oneway": false,
+   "seed": {
+    "road_name": "Motera Stadium Road",
+    "road_class": "trunk",
+    "lanes": 6,
+    "speed_limit_kmh": 60,
+    "oneway": false
+   },
+   "name_note": "OSM names this road Motera- chandkheda road (ref SH41) and leaves its southern half unnamed (SH41 only); Motera Stadium Road is its everyday name past the Narendra Modi Stadium"
+  },
+  {
+   "segment_id": 1033,
+   "road_name": "SP Ring Road (West)",
+   "from_junction": 29,
+   "to_junction": 23,
+   "follow": "Sardar Patel Ring|S P Ring|Science City Flyover|Vakil Saheb",
+   "oneway": false,
+   "seed": {
+    "road_name": "SP Ring Road (West)",
+    "road_class": "motorway",
+    "lanes": 8,
+    "speed_limit_kmh": 80,
+    "oneway": false
+   },
+   "min_class": "trunk"
+  },
+  {
+   "segment_id": 1034,
+   "road_name": "SP Ring Road (North)",
+   "from_junction": 12,
+   "to_junction": 32,
+   "follow": "Sardar Patel Ring|S P Ring|Vaishnodevi|Tapovan|Bhat Circle|Puna",
+   "oneway": false,
+   "seed": {
+    "road_name": "SP Ring Road (North)",
+    "road_class": "motorway",
+    "lanes": 8,
+    "speed_limit_kmh": 70,
+    "oneway": false
+   },
+   "min_class": "trunk"
+  },
+  {
+   "segment_id": 1035,
+   "road_name": "SP Ring Road (Northeast)",
+   "from_junction": 32,
+   "to_junction": 31,
+   "follow": "Sardar Patel Ring|S P Ring|Bhat Circle|Dehgam",
+   "oneway": false,
+   "seed": {
+    "road_name": "SP Ring Road (Northeast)",
+    "road_class": "motorway",
+    "lanes": 6,
+    "speed_limit_kmh": 70,
+    "oneway": false
+   },
+   "min_class": "trunk"
+  },
+  {
+   "segment_id": 1036,
+   "road_name": "Ashram Road (Paldi)",
+   "from_junction": 4,
+   "to_junction": 33,
+   "follow": "^Ashram Road",
+   "oneway": false,
+   "seed": {
+    "road_name": "Paldi Road",
+    "road_class": "secondary",
+    "lanes": 4,
+    "speed_limit_kmh": 40,
+    "oneway": false
+   },
+   "rename_reason": "OpenStreetMap has no road named Paldi Road: the Paldi - Ellisbridge stretch is Ashram Road"
+  },
+  {
+   "segment_id": 1037,
+   "road_name": "Science City Road",
+   "from_junction": 26,
+   "to_junction": 23,
+   "follow": "science city|Sola Road|CIMS",
+   "oneway": false,
+   "seed": {
+    "road_name": "Science City Road",
+    "road_class": "secondary",
+    "lanes": 4,
+    "speed_limit_kmh": 40,
+    "oneway": false
+   }
+  },
+  {
+   "segment_id": 1038,
+   "road_name": "Kankaria Road",
+   "from_junction": 5,
+   "to_junction": null,
+   "follow": "Kankaria|Astodia",
+   "oneway": false,
+   "seed": {
+    "road_name": "Kankaria Road",
+    "road_class": "secondary",
+    "lanes": 4,
+    "speed_limit_kmh": 40,
+    "oneway": false
+   },
+   "end_osm_node_id": 5287421949
+  },
+  {
+   "segment_id": 1039,
+   "road_name": "Swami Vivekananda Bridge (Ellis Bridge)",
+   "from_junction": 33,
+   "to_junction": 6,
+   "follow": "Vivekananda Bridge|Surendra|Ellis",
+   "oneway": false,
+   "seed": {
+    "road_name": "Ellis Bridge Road",
+    "road_class": "secondary",
+    "lanes": 4,
+    "speed_limit_kmh": 40,
+    "oneway": false
+   },
+   "rename_reason": "the Ellis Bridge crossing is mapped as the Swami Vivekananda Bridge, approached from Ashram Road over Surendra Mangaldas Road"
+  },
+  {
+   "segment_id": 1040,
+   "road_name": "SG Highway (Sarkhej)",
+   "from_junction": 10,
+   "to_junction": 28,
+   "follow": "NH147|SG Highway|Sarkhej-Gandhinagar|Sanand Chokdi|Flyover",
+   "oneway": false,
+   "seed": {
+    "road_name": "Sarkhej Road",
+    "road_class": "primary",
+    "lanes": 4,
+    "speed_limit_kmh": 50,
+    "oneway": false
+   },
+   "rename_reason": "OpenStreetMap has no road named Sarkhej Road: the Sarkhej approach is the Sarkhej-Gandhinagar (SG) Highway, NH147",
+   "min_class": "trunk",
+   "fallback": {
+    "lanes": 8,
+    "speed_limit_kmh": 80,
+    "why": "the SG Highway (NH147) carriageway: the seed's SG Highway attributes (1016-1018), not the replaced link road's"
+   }
+  },
+  {
+   "segment_id": 1041,
+   "road_name": "Chimanbhai Patel Flyover (Ashram Road–Motera)",
+   "from_junction": 7,
+   "to_junction": 25,
+   "follow": "Chimanbhai|RTO Circle|Radhaswami|132 Ft",
+   "oneway": false,
+   "seed": {
+    "road_name": "Ashram Road (Motera Link)",
+    "road_class": "trunk",
+    "lanes": 6,
+    "speed_limit_kmh": 60,
+    "oneway": false
+   },
+   "rename_reason": "connector: the real way from Ashram Road to Motera runs Radhaswami Road, the 132 Ft. Ring Road, RTO Circle and the Chimanbhai Patel Flyover"
+  },
+  {
+   "segment_id": 1042,
+   "road_name": "Commerce College Road (Drive-In Road–CG Road)",
+   "from_junction": 27,
+   "to_junction": 22,
+   "follow": "Drive|Commerce|University",
+   "oneway": false,
+   "seed": {
+    "road_name": "Drive-In Riverfront Link",
+    "road_class": "primary",
+    "lanes": 4,
+    "speed_limit_kmh": 50,
+    "oneway": false
+   },
+   "rename_reason": "connector: the real link from Drive-In Road to the riverfront side is Drive-in Road east and Commerce College Road to CG Road"
+  },
+  {
+   "segment_id": 1043,
+   "road_name": "Dr. Ambedkar Road (Lal Darwaja–Shahibaug)",
+   "from_junction": 3,
+   "to_junction": 20,
+   "follow": "Ambedkar|Airport Road|Maharana",
+   "oneway": false,
+   "seed": {
+    "road_name": "Usmanpura Riverfront Link",
+    "road_class": "secondary",
+    "lanes": 4,
+    "speed_limit_kmh": 40,
+    "oneway": false
+   },
+   "rename_reason": "connector: no Usmanpura riverfront link lies on the re-anchored network; the id carries the old city's north artery from Lal Darwaja through Delhi Darwaja and Dr. Ambedkar Road to Shahibaug",
+   "name_note": "OpenStreetMap names 1115 m of the 4753 m path Dr. Ambedkar Road; the Lal Darwaja - Delhi Darwaja stretch is unnamed there and the last 1190 m into Shahibaug is tagged Airport Road. The connector is named for its central artery and its two ends"
+  },
+  {
+   "segment_id": 1044,
+   "road_name": "132 Ft. Ring Road (IIM)",
+   "from_junction": 18,
+   "to_junction": 27,
+   "follow": "132",
+   "oneway": false,
+   "seed": {
+    "road_name": "Drive-In Road (IIM Link)",
+    "road_class": "primary",
+    "lanes": 4,
+    "speed_limit_kmh": 50,
+    "oneway": false
+   },
+   "rename_reason": "connector: Satellite Road reaches Drive-In Road over the 132 Ft. Ring Road past IIM Ahmedabad"
+  },
+  {
+   "segment_id": 1045,
+   "road_name": "SG Highway (Prahlad Nagar)",
+   "from_junction": 28,
+   "to_junction": 9,
+   "follow": "NH147|SG Highway|Sarkhej-Gandhinagar|ISKCON",
+   "oneway": false,
+   "seed": {
+    "road_name": "Prahlad Nagar Link Road",
+    "road_class": "secondary",
+    "lanes": 4,
+    "speed_limit_kmh": 40,
+    "oneway": false
+   },
+   "rename_reason": "connector: the real link from Prahlad Nagar to Iskcon Cross Roads is the SG Highway itself",
+   "min_class": "trunk",
+   "fallback": {
+    "lanes": 8,
+    "speed_limit_kmh": 80,
+    "why": "the SG Highway (NH147) carriageway: the seed's SG Highway attributes (1016-1018), not the replaced link road's"
+   }
+  },
+  {
+   "segment_id": 1046,
+   "road_name": "SP Ring Road (Northwest)",
+   "from_junction": 23,
+   "to_junction": 12,
+   "follow": "Sardar Patel Ring|S P Ring|Science City Flyover|Vaishnodevi",
+   "oneway": false,
+   "seed": {
+    "road_name": "SP Ring Road (Northwest)",
+    "road_class": "motorway",
+    "lanes": 8,
+    "speed_limit_kmh": 80,
+    "oneway": false
+   },
+   "min_class": "trunk"
+  },
+  {
+   "segment_id": 1047,
+   "road_name": "SP Ring Road (Southwest)",
+   "from_junction": 10,
+   "to_junction": 29,
+   "follow": "Sardar Patel Ring|S P Ring|Shantipura|Vakil|Mumatpura",
+   "oneway": false,
+   "seed": {
+    "road_name": "SP Ring Road - Gandhinagar Hwy Link",
+    "road_class": "motorway",
+    "lanes": 6,
+    "speed_limit_kmh": 70,
+    "oneway": false
+   },
+   "rename_reason": "no separate link road exists: the SP Ring Road meets the Gandhinagar-Ahmedabad Highway at Bhat Circle (J32); the id carries the ring's south-west arc",
+   "min_class": "trunk"
+  },
+  {
+   "segment_id": 1048,
+   "road_name": "Indira Bridge (Airport–Motera)",
+   "from_junction": 13,
+   "to_junction": 30,
+   "follow": "Indira|Gandhinagar-Ahmedabad",
+   "oneway": false,
+   "seed": {
+    "road_name": "Indira Bridge Road (Airport–Motera)",
+    "road_class": "trunk",
+    "lanes": 6,
+    "speed_limit_kmh": 60,
+    "oneway": false
+   },
+   "rename_reason": "connector: the Indira Bridge carries the airport side over the Sabarmati toward Bhat and Motera",
+   "min_class": "primary"
+  },
+  {
+   "segment_id": 1049,
+   "road_name": "Sarangpur Road (Kalupur–Astodia)",
+   "from_junction": 15,
+   "to_junction": 5,
+   "follow": "Sarangpur|^Station Road|NH8|Astodia",
+   "oneway": false,
+   "seed": {
+    "road_name": "Sarangpur Road (Kalupur–Relief Road)",
+    "road_class": "primary",
+    "lanes": 4,
+    "speed_limit_kmh": 40,
+    "oneway": false
+   },
+   "via_osm_node_ids": [
+    429460295
+   ],
+   "rename_reason": "connector: the real road from Kalupur runs south through Sarangpur Darwaja and along the walled city's east side to Astodia Darwaja",
+   "name_note": "OSM leaves the road along the walled city's east side unnamed (ref NH8 on 53 m of it); it is named for the Sarangpur Darwaja it passes between Kalupur and Astodia Darwaja"
+  }
+ ],
+ "cameras": [
+  {
+   "camera_id": "EM-J01",
+   "kind": "anpr",
+   "mode": "approach",
+   "junction_id": 1,
+   "segment_id": 1001
+  },
+  {
+   "camera_id": "EM-J01B",
+   "kind": "anpr",
+   "mode": "approach",
+   "junction_id": 1,
+   "segment_id": 1015
+  },
+  {
+   "camera_id": "EM-J02",
+   "kind": "cctv",
+   "mode": "approach",
+   "junction_id": 2,
+   "segment_id": 1002
+  },
+  {
+   "camera_id": "EM-J03",
+   "kind": "anpr",
+   "mode": "approach",
+   "junction_id": 3,
+   "segment_id": 1007
+  },
+  {
+   "camera_id": "EM-J03B",
+   "kind": "anpr",
+   "mode": "approach",
+   "junction_id": 3,
+   "segment_id": 1005
+  },
+  {
+   "camera_id": "EM-J04",
+   "kind": "cctv",
+   "mode": "approach",
+   "junction_id": 4,
+   "segment_id": 1003
+  },
+  {
+   "camera_id": "EM-J05",
+   "kind": "anpr",
+   "mode": "approach",
+   "junction_id": 5,
+   "segment_id": 1049
+  },
+  {
+   "camera_id": "EM-J06",
+   "kind": "anpr",
+   "mode": "approach",
+   "junction_id": 6,
+   "segment_id": 1013
+  },
+  {
+   "camera_id": "EM-J07",
+   "kind": "anpr",
+   "mode": "approach",
+   "junction_id": 7,
+   "segment_id": 1009
+  },
+  {
+   "camera_id": "EM-J07B",
+   "kind": "anpr",
+   "mode": "approach",
+   "junction_id": 7,
+   "segment_id": 1041
+  },
+  {
+   "camera_id": "EM-J08",
+   "kind": "anpr",
+   "mode": "approach",
+   "junction_id": 8,
+   "segment_id": 1014
+  },
+  {
+   "camera_id": "EM-J08B",
+   "kind": "anpr",
+   "mode": "approach",
+   "junction_id": 8,
+   "segment_id": 1031
+  },
+  {
+   "camera_id": "EM-J09",
+   "kind": "anpr",
+   "mode": "approach",
+   "junction_id": 9,
+   "segment_id": 1016
+  },
+  {
+   "camera_id": "EM-J10",
+   "kind": "anpr",
+   "mode": "approach",
+   "junction_id": 10,
+   "segment_id": 1021
+  },
+  {
+   "camera_id": "EM-J11",
+   "kind": "anpr",
+   "mode": "approach",
+   "junction_id": 11,
+   "segment_id": 1008
+  },
+  {
+   "camera_id": "EM-J12",
+   "kind": "cctv",
+   "mode": "approach",
+   "junction_id": 12,
+   "segment_id": 1046
+  },
+  {
+   "camera_id": "EM-J13",
+   "kind": "anpr",
+   "mode": "approach",
+   "junction_id": 13,
+   "segment_id": 1048
+  },
+  {
+   "camera_id": "EM-J13B",
+   "kind": "anpr",
+   "mode": "approach",
+   "junction_id": 13,
+   "segment_id": 1028
+  },
+  {
+   "camera_id": "EM-J14",
+   "kind": "anpr",
+   "mode": "approach",
+   "junction_id": 14,
+   "segment_id": 1027
+  },
+  {
+   "camera_id": "EM-J15",
+   "kind": "cctv",
+   "mode": "approach",
+   "junction_id": 15,
+   "segment_id": 1005
+  },
+  {
+   "camera_id": "EM-BR-NEHRU-W",
+   "kind": "anpr",
+   "mode": "bridge",
+   "segment_id": 1015,
+   "head": "start",
+   "label": "Nehru Bridge: west head, eastbound"
+  },
+  {
+   "camera_id": "EM-BR-NEHRU-E",
+   "kind": "anpr",
+   "mode": "bridge",
+   "segment_id": 1015,
+   "head": "end",
+   "label": "Nehru Bridge: east head, westbound"
+  },
+  {
+   "camera_id": "EM-BR-ELLIS-W",
+   "kind": "anpr",
+   "mode": "bridge",
+   "segment_id": 1039,
+   "head": "start",
+   "label": "Swami Vivekananda (Ellis) Bridge: west head, eastbound"
+  },
+  {
+   "camera_id": "EM-BR-ELLIS-E",
+   "kind": "anpr",
+   "mode": "bridge",
+   "segment_id": 1039,
+   "head": "end",
+   "label": "Swami Vivekananda (Ellis) Bridge: east head, westbound"
+  },
+  {
+   "camera_id": "EM-CAM-01",
+   "kind": "anpr",
+   "mode": "sweep",
+   "segment_id": 1012,
+   "label": "Emulated ANPR sweep camera 1: Gandhi Road"
+  },
+  {
+   "camera_id": "EM-CAM-02",
+   "kind": "anpr",
+   "mode": "sweep",
+   "segment_id": 1015,
+   "label": "Emulated ANPR sweep camera 2: Nehru Bridge Road"
+  },
+  {
+   "camera_id": "EM-CAM-03",
+   "kind": "anpr",
+   "mode": "sweep",
+   "segment_id": 1049,
+   "label": "Emulated ANPR sweep camera 3: Sarangpur Road"
+  },
+  {
+   "camera_id": "EM-CAM-04",
+   "kind": "anpr",
+   "mode": "sweep",
+   "segment_id": 1013,
+   "label": "Emulated ANPR sweep camera 4: Swami Vivekananda Road"
+  }
+ ],
+ "stations": [
+  {
+   "station_id": "PS-KALUPUR",
+   "agency": "police",
+   "kind": "police_station",
+   "name": "Kalupur Police Station",
+   "name_gu": "કાલુપુર પોલીસ સ્ટેશન",
+   "lon": 72.59385,
+   "lat": 23.02807,
+   "source": "osm",
+   "osm_ref": "node/3247518115"
+  },
+  {
+   "station_id": "PS-KARANJ",
+   "agency": "police",
+   "kind": "police_station",
+   "name": "Karanj Police Station",
+   "name_gu": "કારંજ પોલીસ સ્ટેશન",
+   "lon": 72.58433,
+   "lat": 23.03084,
+   "source": "osm",
+   "osm_ref": "way/326848214"
+  },
+  {
+   "station_id": "PS-ELLISBRIDGE",
+   "agency": "police",
+   "kind": "police_station",
+   "name": "Ellisbridge Police Station",
+   "name_gu": "એલિસબ્રિજ પોલીસ સ્ટેશન",
+   "lon": 72.57164,
+   "lat": 23.02289,
+   "source": "osm",
+   "osm_ref": "node/3236022280"
+  },
+  {
+   "station_id": "PS-NAVRANGPURA",
+   "agency": "police",
+   "kind": "police_station",
+   "name": "Navrangpura Police Station",
+   "name_gu": "નવરંગપુરા પોલીસ સ્ટેશન",
+   "lon": 72.56722,
+   "lat": 23.03498,
+   "source": "osm",
+   "osm_ref": "way/318502779"
+  },
+  {
+   "station_id": "PS-VASTRAPUR",
+   "agency": "police",
+   "kind": "police_station",
+   "name": "Vastrapur Police Station",
+   "name_gu": "વસ્ત્રાપુર પોલીસ સ્ટેશન",
+   "lon": 72.52332,
+   "lat": 23.04918,
+   "source": "osm",
+   "osm_ref": "way/318379671"
+  },
+  {
+   "station_id": "PS-SABARMATI",
+   "agency": "police",
+   "kind": "police_station",
+   "name": "Sabarmati Police Station",
+   "name_gu": "સાબરમતી પોલીસ સ્ટેશન",
+   "lon": 72.59162,
+   "lat": 23.08531,
+   "source": "osm",
+   "osm_ref": "way/118695624"
+  },
+  {
+   "station_id": "PS-SATELLITE",
+   "agency": "police",
+   "kind": "police_station",
+   "name": "Satellite Police Station",
+   "name_gu": "સેટેલાઇટ પોલીસ સ્ટેશન",
+   "lon": 72.511,
+   "lat": 23.02761,
+   "source": "osm",
+   "osm_ref": "way/318335639"
+  },
+  {
+   "station_id": "PS-SHAHIBAUG",
+   "agency": "police",
+   "kind": "police_station",
+   "name": "Shahibaug Police Station",
+   "name_gu": "શાહીબાગ પોલીસ સ્ટેશન",
+   "lon": 72.5889,
+   "lat": 23.04986,
+   "source": "osm",
+   "osm_ref": "way/322229998"
+  },
+  {
+   "station_id": "FS-BODAKDEV",
+   "agency": "fire",
+   "kind": "fire_station",
+   "name": "Bodakdev Fire Station",
+   "name_gu": "બોડકદેવ ફાયર સ્ટેશન",
+   "lon": 72.51632,
+   "lat": 23.03981,
+   "source": "osm",
+   "osm_ref": "node/429410556"
+  },
+  {
+   "station_id": "FS-BOPAL",
+   "agency": "fire",
+   "kind": "fire_station",
+   "name": "Bopal Fire Station",
+   "name_gu": "બોપલ ફાયર સ્ટેશન",
+   "lon": 72.47155,
+   "lat": 23.01253,
+   "source": "osm",
+   "osm_ref": "way/1553565826"
+  },
+  {
+   "station_id": "HOSP-CIVIL-ASARWA",
+   "agency": "ambulance",
+   "kind": "hospital",
+   "name": "Civil Hospital, Asarwa",
+   "name_gu": "સિવિલ હોસ્પિટલ, અસારવા",
+   "lon": 72.60512,
+   "lat": 23.05144,
+   "source": "osm",
+   "osm_ref": "way/327204068"
+  },
+  {
+   "station_id": "HOSP-VS",
+   "agency": "ambulance",
+   "kind": "hospital",
+   "name": "V. S. Hospital",
+   "name_gu": "વી. એસ. હોસ્પિટલ",
+   "lon": 72.57087,
+   "lat": 23.01932,
+   "source": "osm",
+   "osm_ref": "node/6881054345"
+  },
+  {
+   "station_id": "HOSP-LG-MANINAGAR",
+   "agency": "ambulance",
+   "kind": "hospital",
+   "name": "L. G. Hospital, Maninagar",
+   "name_gu": "એલ. જી. હોસ્પિટલ, મણિનગર",
+   "lon": 72.60505,
+   "lat": 22.99956,
+   "source": "osm",
+   "osm_ref": "node/6885004580"
+  },
+  {
+   "station_id": "JR-LAL-DARWAJA",
+   "agency": "jan_rakshak",
+   "kind": "jr_post",
+   "name": "Jan Rakshak Post - Lal Darwaja (emulated)",
+   "name_gu": "જન રક્ષક પોસ્ટ - લાલ દરવાજા (ઇમ્યુલેટેડ)",
+   "lon": 72.58155,
+   "lat": 23.02664,
+   "source": "emulated",
+   "osm_ref": null
+  },
+  {
+   "station_id": "JR-INCOME-TAX",
+   "agency": "jan_rakshak",
+   "kind": "jr_post",
+   "name": "Jan Rakshak Post - Income Tax Circle (emulated)",
+   "name_gu": "જન રક્ષક પોસ્ટ - ઇન્કમ ટેક્સ સર્કલ (ઇમ્યુલેટેડ)",
+   "lon": 72.56902,
+   "lat": 23.03997,
+   "source": "emulated",
+   "osm_ref": null
+  },
+  {
+   "station_id": "JR-KALUPUR",
+   "agency": "jan_rakshak",
+   "kind": "jr_post",
+   "name": "Jan Rakshak Post - Kalupur (emulated)",
+   "name_gu": "જન રક્ષક પોસ્ટ - કાલુપુર (ઇમ્યુલેટેડ)",
+   "lon": 72.59913,
+   "lat": 23.0314,
+   "source": "emulated",
+   "osm_ref": null
+  },
+  {
+   "station_id": "EMS-108-ASARWA",
+   "agency": "ambulance",
+   "kind": "ems_base",
+   "name": "108 Emergency Ambulance Base - Asarwa (emulated)",
+   "name_gu": "૧૦૮ ઇમરજન્સી એમ્બ્યુલન્સ બેઝ - અસારવા (ઇમ્યુલેટેડ)",
+   "lon": 72.604,
+   "lat": 23.0505,
+   "source": "emulated",
+   "osm_ref": null
+  },
+  {
+   "station_id": "TP-INCOME-TAX",
+   "agency": "traffic",
+   "kind": "police_station",
+   "name": "Traffic Police Chowky - Income Tax Circle (emulated)",
+   "name_gu": "ટ્રાફિક પોલીસ ચોકી - ઇન્કમ ટેક્સ સર્કલ (ઇમ્યુલેટેડ)",
+   "lon": 72.56965,
+   "lat": 23.03993,
+   "source": "emulated",
+   "osm_ref": null
+  }
+ ]
+}

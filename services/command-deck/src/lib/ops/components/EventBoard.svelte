@@ -2,16 +2,23 @@
 	/**
 	 * EventBoard — the live event board with lifecycle state. Rebuilt on the
 	 * design system: per-subject BandChip (the only legal band renderer),
-	 * source badges, and the fixed lifecycle verb set — planned renders
-	 * hollow, active fills and carries the 8 s corridor sweep sheen,
-	 * complete desaturates over 2 s and lifts toward history. Every mutable
-	 * number (windows, spine ids, ages) is mono.
+	 * source badges (EMULATED for emulator-staged rows), and the C-F verb
+	 * rail — APPROVE / ACTIVATE / COMPLETE / CANCEL under the named officer
+	 * (EventLifecycleVerbs). Planned renders hollow, active fills and
+	 * carries the 8 s corridor sweep sheen, complete desaturates over 2 s.
+	 * Windows print in IST through the one formatter the dossier uses, so
+	 * the two always agree; titles are plate-masked unless an officer is
+	 * named (C6). The PREVIEW toggle shows the labelled use-case fixtures
+	 * beside a healthy live board.
 	 */
 	import Panel from '$lib/primitives/Panel.svelte';
 	import Badge from '$lib/primitives/Badge.svelte';
 	import BandChip from '$lib/primitives/BandChip.svelte';
 	import EmptyState from '$lib/primitives/EmptyState.svelte';
+	import EventLifecycleVerbs from './EventLifecycleVerbs.svelte';
 	import { ops } from '$lib/ops/store.svelte';
+	import { POLL_MS } from '$lib/ops/endpoints';
+	import { fmtWindowIst } from '$lib/ops/format';
 	import { t } from '$lib/i18n/strings';
 	import { tOps } from '$lib/i18n/strings.ops';
 	import type { Band } from '$lib/design/tokens';
@@ -27,17 +34,11 @@
 		emergency_evacuation: '⛈',
 		work_zone: '🚧',
 		vehicle_pursuit: '➤',
+		crime_incident: '⚑',
 	};
 
-	function fmtWindow(phase: EventPhase): string {
-		const fmt = (iso: string | null) =>
-			iso ? new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—';
-		return `${fmt(phase.startTime)} → ${phase.endTime ? fmt(phase.endTime) : 'open'}`;
-	}
-
-	function phaseLive(ev: CorridorEvent, phase: EventPhase): boolean {
+	function phaseLive(ev: CorridorEvent, phase: EventPhase, now: number): boolean {
 		if (ev.source === 'offline-fixture') return false;
-		const now = Date.now();
 		const s = phase.startTime ? Date.parse(phase.startTime) : NaN;
 		const e = phase.endTime ? Date.parse(phase.endTime) : Infinity;
 		return Number.isFinite(s) ? now >= s && now <= e : false;
@@ -49,6 +50,16 @@
 		return 'pending';
 	}
 
+	/** Spine segment ids with their road names (geometry registry), compact. */
+	function spineLabel(ev: CorridorEvent): string {
+		return ev.routeSegmentIds
+			.map((id) => {
+				const road = ops.roadName(id);
+				return road ? `${id} ${road}` : String(id);
+			})
+			.join(' · ');
+	}
+
 	let clock = $state(Date.now());
 	$effect(() => {
 		const id = setInterval(() => (clock = Date.now()), 1000);
@@ -58,12 +69,26 @@
 	const lang = $derived(ops.lang);
 </script>
 
+{#snippet headRight()}
+	<label class="preview-toggle" title={tOps(lang, 'previewToggleHint')}>
+		<input
+			type="checkbox"
+			checked={ops.previewFixtures}
+			onchange={(e) => ops.setPreviewFixtures(e.currentTarget.checked)}
+			data-testid="preview-toggle"
+		/>
+		<span class="mono">{tOps(lang, 'previewToggle')}</span>
+	</label>
+{/snippet}
+
 <Panel
 	title={t(lang, 'opsTitle')}
 	sub={t(lang, 'opsSub')}
 	status={ops.boardUpdated ? { state: ops.boardStatus === 'offline' ? 'stale' : ops.boardStatus === 'mixed' ? 'mixed' : 'live', updatedAt: ops.boardUpdated } : null}
+	pollMs={POLL_MS.board}
 	lang={lang}
 	scroll
+	{...{ 'header-right': headRight }}
 >
 	{#if ops.boardNote}<p class="board-note mono">{ops.boardNote}</p>{/if}
 
@@ -76,41 +101,47 @@
 					class="event-card st-{ev.state}"
 					class:selected={ops.selectedEventId === ev.eventId}
 					class:fixture={ev.source === 'offline-fixture'}
+					data-testid="event-card"
+					data-event-id={ev.eventId}
+					data-status={ev.status ?? ev.state}
 				>
 					<div class="card-head">
 						<span class="kind-icon" title={ev.eventKind}>{KIND_ICONS[ev.eventKind] ?? '◈'}</span>
 						<div class="titles">
-							<h3>{ev.name}</h3>
+							<h3 title={ops.text(ev.name)}>{ops.text(ev.name)}</h3>
 							<span class="kind-label">{t(lang, `kind_${ev.eventKind}`) !== `kind_${ev.eventKind}` ? t(lang, `kind_${ev.eventKind}`) : ev.eventKind}</span>
 						</div>
 						{#if ev.band}
 							<BandChip band={ev.band as Band} size="sm" />
 						{:else}
-							<span class="band-unknown mono">band —</span>
+							<span class="band-unknown mono">{tOps(lang, 'bandUnknown')}</span>
 						{/if}
 					</div>
 
 					<div class="chips">
 						<Badge variant="neutral" label={ev.protectionClass} />
 						<Badge variant="neutral" label={t(lang, `crowd_${ev.crowdClass}`)} />
-						<Badge variant={stateVariant(ev.state)} label={ev.state} />
+						<Badge variant={stateVariant(ev.state)} label={ev.status ?? ev.state} />
 						<Badge
-							variant={ev.source === 'live-events-api' ? 'live' : ev.source === 'live-movements-api' ? 'live' : 'fixture'}
+							variant={ev.source === 'offline-fixture' ? 'fixture' : 'live'}
 							label={ev.source === 'live-events-api'
 								? t(lang, 'opsSourceLive')
 								: ev.source === 'live-movements-api'
 									? t(lang, 'opsSourceMovements')
 									: t(lang, 'opsSourceOffline')}
 						/>
+						{#if ev.emulated}
+							<Badge variant="emulated" label={tOps(lang, 'labelEmulated')} title={ev.metadata?.runId ? `run #${ev.metadata.runId}` : 'event-emulator'} />
+						{/if}
 					</div>
 
 					{#if ev.phases.length}
 						<div class="phases">
 							{#each ev.phases as ph, i (i)}
-								<div class="phase-row" class:live={phaseLive(ev, ph)}>
-									<span class="phase-dot" class:live={phaseLive(ev, ph)}></span>
+								<div class="phase-row" class:live={phaseLive(ev, ph, clock)}>
+									<span class="phase-dot" class:live={phaseLive(ev, ph, clock)}></span>
 									<span class="phase-label">{ph.label}</span>
-									<span class="phase-window mono">{fmtWindow(ph)}</span>
+									<span class="phase-window mono" data-testid="phase-window" data-phase-index={i}>{fmtWindowIst(ph.startTime, ph.endTime, clock)}</span>
 									{#if ph.closurePolicy?.closureType}
 										<span class="phase-policy mono">{ph.closurePolicy.closureType}{ph.closurePolicy.advanceClosureSec != null ? ` +${ph.closurePolicy.advanceClosureSec}s` : ''}</span>
 									{/if}
@@ -121,8 +152,10 @@
 
 					<div class="spine">
 						<span class="spine-label">{t(lang, 'opsRouteSpine')}</span>
-						<span class="spine-ids mono">{ev.routeSegmentIds.join(' · ')}</span>
+						<span class="spine-ids mono" title={spineLabel(ev)}>{spineLabel(ev)}</span>
 					</div>
+
+					<EventLifecycleVerbs event={ev} compact />
 
 					<div class="row-foot">
 						<button
@@ -146,6 +179,22 @@
 </Panel>
 
 <style>
+	.preview-toggle {
+		display: inline-flex;
+		align-items: center;
+		gap: var(--v-space-1);
+		font-size: var(--v-text-2xs);
+		color: var(--v-ink-3);
+		letter-spacing: var(--v-tracking-status);
+		text-transform: uppercase;
+		cursor: pointer;
+	}
+
+	.preview-toggle input {
+		accent-color: var(--v-data);
+		margin: 0;
+	}
+
 	.board-note {
 		margin: 0 0 var(--v-space-2);
 		font-size: var(--v-text-2xs);
@@ -252,12 +301,12 @@
 
 	.kind-label {
 		font-size: var(--v-text-2xs);
-		color: var(--v-ink-4);
+		color: var(--v-ink-3);
 	}
 
 	.band-unknown {
 		font-size: var(--v-text-2xs);
-		color: var(--v-ink-4);
+		color: var(--v-ink-3);
 		border: 1px dashed var(--v-line-2);
 		border-radius: var(--v-radius-chip);
 		padding: 1px var(--v-space-2);
@@ -308,7 +357,7 @@
 	}
 
 	.phase-policy {
-		color: var(--v-ink-4);
+		color: var(--v-ink-3);
 	}
 
 	.spine {
@@ -321,7 +370,7 @@
 
 	.spine-label {
 		font-size: var(--v-text-2xs);
-		color: var(--v-ink-4);
+		color: var(--v-ink-3);
 		white-space: nowrap;
 	}
 
@@ -365,7 +414,7 @@
 
 	.age {
 		font-size: var(--v-text-2xs);
-		color: var(--v-ink-4);
+		color: var(--v-ink-3);
 	}
 
 	.mono {

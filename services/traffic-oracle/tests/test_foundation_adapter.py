@@ -19,8 +19,16 @@ Coverage:
     - Input-contract failures: empty/short/ragged/1-D/all-NaN history raise
       FoundationInputError with machine-readable reason tokens — never a
       silent zero-pad.
-    - RollingHistoryWindow: warm-up readiness, loud short-history failure,
-      unobserved segments dropped (not zero-padded), maxlen clipping.
+    - RollingHistoryWindow (300 s bins keyed by OBSERVATION time):
+      samples inside one bin average into one step; a re-read of the same
+      observation is ignored; a new step appears only when a new bin
+      opens; gaps and ragged starts are NaN-padded on one aligned grid;
+      not-ready (short or stale) segments are dropped from the batch,
+      labelled; the batch fails loudly only when none is ready; anomalous
+      samples never enter; synthetic provenance is kept per bin;
+      authoritative bin upserts (the DB feed); max-steps clipping.
+    - Per-segment free flow: derived congestion uses each segment's own
+      free-flow speed when supplied.
     - Determinism: identical inputs give bitwise-identical floats.
     - Contract preservation: rows feed
       simulation.engine.shapes_from_forecaster with all four knots (the
@@ -36,6 +44,7 @@ import pytest
 from structlog.testing import capture_logs
 
 from traffic_oracle.predict.nn.foundation_adapter import (
+    BIN_SEC,
     CONTRACT_HORIZONS,
     DEFAULT_FREE_FLOW_KMH,
     DEFAULT_WINDOW_STEPS,
@@ -314,52 +323,150 @@ class TestReshapeContractFailures:
 
 # ─── RollingHistoryWindow ─────────────────────────────────────────────────────
 
+#: A bin-aligned epoch (ms) so every sample's bin is exact in the tests.
+T0_MS = 1_792_000_200 * 1000
+BIN_MS = BIN_SEC * 1000
+
+
+def fill(window, sid, steps, speed=40.0, start_bin=0, every=1, quality="real"):
+    """One sample per ``every`` bins, ``steps`` samples, mid-bin stamps."""
+    for i in range(steps):
+        ts = T0_MS + (start_bin + i * every) * BIN_MS + BIN_MS // 2
+        window.record(sid, ts, speed + i, quality)
+
 
 class TestRollingHistoryWindow:
-    def test_warm_up_then_ready(self):
+    def test_bins_are_keyed_by_observation_time_not_by_calls(self):
         window = RollingHistoryWindow()
-        for i in range(MIN_CONTEXT_STEPS - 1):
-            window.push(100, 40.0 + i)
-            assert not window.ready(100)
-        window.push(100, 51.0)
+        # twelve samples taken within ONE five-minute bin are ONE step
+        for k in range(12):
+            window.record(100, T0_MS + k * 20_000, 40.0 + k)
+        assert window.observed_steps(100) == 1
+        assert not window.ready(100)
+        # the bin holds their mean, not the last value
+        hist_bins = window._series[100]
+        (only,) = hist_bins.values()
+        assert only.mean == pytest.approx(45.5) and only.count == 12
+
+    def test_a_new_step_only_on_a_new_bin_and_rereads_are_ignored(self):
+        window = RollingHistoryWindow()
+        assert window.record(100, T0_MS + 1_000, 40.0) is True     # new bin
+        assert window.record(100, T0_MS + 60_000, 42.0) is False   # same bin
+        assert window.record(100, T0_MS + 60_000, 99.0) is False   # re-read: ignored
+        assert window._series[100][window.bin_of(T0_MS)].count == 2
+        assert window.record(100, T0_MS + BIN_MS + 5, 44.0) is True  # next bin
+        assert window.observed_steps(100) == 2
+
+    def test_a_late_sample_lands_in_its_own_earlier_bin(self):
+        window = RollingHistoryWindow()
+        window.record(100, T0_MS + 2 * BIN_MS + 1, 40.0)
+        assert window.record(100, T0_MS + 1, 30.0) is True   # late: earlier bin
+        assert window.observed_steps(100) == 2
+        small = RollingHistoryWindow(min_steps=1, max_steps=2)
+        small.record(100, T0_MS + 10 * BIN_MS, 1.0)
+        assert small.record(100, T0_MS, 2.0) is False        # older than the window
+
+    def test_warm_up_then_ready_on_the_five_minute_grid(self):
+        window = RollingHistoryWindow()
+        fill(window, 100, MIN_CONTEXT_STEPS - 1)
+        assert not window.ready(100)
+        fill(window, 100, 1, speed=51.0, start_bin=MIN_CONTEXT_STEPS - 1)
         assert window.ready(100)
         hist = window.history([100])
         assert hist[100].shape == (MIN_CONTEXT_STEPS,)
         assert hist[100][-1] == 51.0  # newest last
 
-    def test_short_history_fails_loudly_for_the_whole_batch(self):
+    def test_gaps_are_nan_padded_on_one_aligned_grid(self):
         window = RollingHistoryWindow()
-        for _ in range(MIN_CONTEXT_STEPS):
-            window.push(100, 40.0)
-        window.push(200, 41.0)  # 1 sample: warm-up blocks the batch
-        with pytest.raises(FoundationInputError, match="history_too_short"):
-            window.history([100, 200])
+        fill(window, 100, 14)                       # bins 0..13
+        fill(window, 200, 13, start_bin=1)          # bins 1..13 (ragged start)
+        fill(window, 300, 12, start_bin=0, every=1)
+        del window._series[300][window.bin_of(T0_MS) + 4]  # a hole at bin 4
+        window.record(300, T0_MS + 12 * BIN_MS + 9, 33.0)  # bin 12
+        window.record(300, T0_MS + 13 * BIN_MS + 9, 34.0)  # bin 13
+        hist = window.history([100, 200, 300])
+        lengths = {len(v) for v in hist.values()}
+        assert lengths == {14}                        # ONE grid: bins 0..13
+        assert math.isnan(hist[200][0])               # ragged start padded
+        assert math.isnan(hist[300][4])               # gap padded
+        assert not np.isnan(hist[100]).any()          # fully observed row
+        assert hist[300][-1] == 34.0                  # aligned on the newest bin
 
-    def test_unobserved_segments_are_dropped_not_zero_padded(self):
+    def test_not_ready_segments_are_dropped_and_labelled(self):
         window = RollingHistoryWindow()
-        for _ in range(MIN_CONTEXT_STEPS):
-            window.push(100, 40.0)
+        fill(window, 100, MIN_CONTEXT_STEPS)
+        fill(window, 200, 3, start_bin=MIN_CONTEXT_STEPS - 3)   # warming up
+        fill(window, 300, MIN_CONTEXT_STEPS, start_bin=-20)      # stale feed
         with capture_logs() as logs:
-            hist = window.history([100, 999])
-        assert set(hist) == {100}  # 999 never observed: no zero-padded row
-        assert any(
-            e["event"] == "foundation_adapter.history_unobserved_dropped"
-            for e in logs
+            hist = window.history([100, 200, 300, 999])
+        assert set(hist) == {100}
+        event = next(
+            e for e in logs
+            if e["event"] == "foundation_adapter.history_segments_not_ready"
         )
+        assert event["segments"] == [200, 300, 999]
 
-    def test_all_unobserved_raises_history_empty(self):
+    def test_whole_batch_fails_loudly_only_when_none_is_ready(self):
         window = RollingHistoryWindow()
+        fill(window, 200, 3)
+        with pytest.raises(FoundationInputError, match="history_too_short"):
+            window.history([200])
         with pytest.raises(FoundationInputError, match="history_empty"):
             window.history([999])
 
+    def test_wall_clock_staleness_blocks_an_old_window(self):
+        window = RollingHistoryWindow()
+        fill(window, 100, MIN_CONTEXT_STEPS)
+        fresh_now = T0_MS + MIN_CONTEXT_STEPS * BIN_MS
+        assert window.ready(100, now_ms=fresh_now)
+        stale_now = fresh_now + 10 * BIN_MS
+        assert not window.ready(100, now_ms=stale_now)
+        with pytest.raises(FoundationInputError, match="history_too_short"):
+            window.history([100], now_ms=stale_now)
+
+    def test_anomalous_samples_never_enter_and_provenance_is_kept(self):
+        window = RollingHistoryWindow()
+        assert window.record(100, T0_MS + 1, 40.0, "anomalous") is False
+        assert window.segments() == []
+        fill(window, 100, 2, quality="synthetic")
+        fill(window, 200, 2, quality="real")
+        fill(window, 300, 1, quality="real")
+        fill(window, 300, 1, start_bin=1, quality="synthetic")
+        assert window.quality([100, 200, 300]) == {
+            100: "synthetic", 200: "real", 300: "mixed",
+        }
+
+    def test_set_bin_upserts_an_authoritative_aggregate(self):
+        window = RollingHistoryWindow()
+        v0 = window.version
+        window.set_bin(100, 7, 38.5, count=40, synthetic=40)
+        window.set_bin(100, 7, 39.5, count=44, synthetic=44)  # refined
+        assert window._series[100][7].mean == 39.5
+        assert window._series[100][7].count == 44
+        assert window.version > v0
+        window.set_bin(100, 8, float("nan"), count=3)  # refused
+        assert 8 not in window._series[100]
+
     def test_window_clips_at_max_steps(self):
         window = RollingHistoryWindow(max_steps=16)
-        for i in range(30):
-            window.push(100, float(i))
+        fill(window, 100, 30)
         hist = window.history([100])
         assert hist[100].shape == (16,)
-        assert hist[100][0] == 14.0 and hist[100][-1] == 29.0
+        assert hist[100][0] == 54.0 and hist[100][-1] == 69.0
         assert DEFAULT_WINDOW_STEPS == 96  # 8 h at 5-min steps
+
+
+class TestPerSegmentFreeFlow:
+    def test_congestion_uses_each_segments_own_free_flow(self):
+        adapter = make_adapter()
+        rows = adapter.forecast(
+            history({1: 40.0, 2: 40.0}), free_flow={1: 100.0}
+        )
+        # step 1 p50 = 30 km/h: motorway (100) -> 0.7, unknown -> 60 -> 0.5
+        assert rows[1][5]["congestion_idx"] == pytest.approx(0.7)
+        assert rows[2][5]["congestion_idx"] == pytest.approx(0.5)
+        band = rows[1][5]["quantiles"]["congestion_idx"]
+        assert band["p50"] == pytest.approx(0.7)
 
 
 # ─── Leaf helpers ─────────────────────────────────────────────────────────────

@@ -15,17 +15,21 @@ rows, or only healthy rows → an EMPTY taxonomy with the scan counts
 that prove it; Valkey unavailable → 503 (the deck panel labels the
 source); corrupt context payloads are skipped and counted, never
 silently treated as empty movements.
+
+The scanner reads contexts with batched MGET (one round trip per 100
+keys, not one GET per movement) and is shared with the city fusion
+feed (city/feed.py), which narrates the same decisions_log rows.
 """
 
 from __future__ import annotations
 
-import json
 from datetime import datetime, timezone
-from typing import Any, AsyncIterator
+from typing import Any
 
 import structlog
 from fastapi import APIRouter, HTTPException, Request
 
+from traffic_oracle.city.common import json_doc, mget_values, scan_keys
 from traffic_oracle.ops.degradation_taxonomy import build_taxonomy
 
 logger = structlog.get_logger(__name__)
@@ -44,6 +48,48 @@ CONTEXT_KEY_PREFIX = "convoy:context:"
 MAX_CONTEXTS = 500
 
 
+def context_key(movement_id: str) -> str:
+    return f"{CONTEXT_KEY_PREFIX}{movement_id}"
+
+
+async def read_contexts(client: Any, keys: list[str]) -> tuple[list[tuple[str | None, dict]], int]:  # noqa: E501
+    """MGET the given context keys; ``((movement_id, payload) pairs, corrupt)``.
+
+    Keys that vanished between scan and read are skipped; payloads that
+    are not JSON objects are counted as corrupt, never treated as empty.
+    """
+    contexts: list[tuple[str | None, dict]] = []
+    corrupt = 0
+    for key, raw in await mget_values(client, keys):
+        if raw is None:
+            continue
+        data = json_doc(raw)
+        if data is None:
+            corrupt += 1
+            continue
+        movement_id = data.get("movement_id")
+        if not isinstance(movement_id, str) or not movement_id:
+            # The key still identifies the subject when the payload lost it.
+            movement_id = key[len(CONTEXT_KEY_PREFIX):] or None
+        contexts.append((movement_id, data))
+    return contexts, corrupt
+
+
+async def scan_contexts(client: Any) -> tuple[list[tuple[str | None, dict]], int, int]:
+    """Every convoy context payload (sorted keys, bounded by MAX_CONTEXTS).
+
+    Returns ``(contexts, truncated_after, corrupt)``.
+    """
+    keys, truncated_after = await scan_keys(client, CONTEXT_KEY_PREFIX, max_keys=MAX_CONTEXTS)
+    contexts, corrupt = await read_contexts(client, keys)
+    return contexts, truncated_after, corrupt
+
+
+def decisions_of(payload: dict) -> list[dict]:
+    rows = payload.get("decisions_log")
+    return rows if isinstance(rows, list) else []
+
+
 async def _scan_contexts(client: Any) -> tuple[list[tuple[str | None, list[dict]]], int, int]:
     """Read every convoy context's decisions_log from Valkey.
 
@@ -53,33 +99,8 @@ async def _scan_contexts(client: Any) -> tuple[list[tuple[str | None, list[dict]
     scan found beyond :data:`MAX_CONTEXTS`, and ``corrupt`` counts
     payloads that failed to parse.
     """
-    keys: list[str] = []
-    async for key in client.scan_iter(match=f"{CONTEXT_KEY_PREFIX}*", count=100):
-        keys.append(key)
-    truncated_after = max(0, len(keys) - MAX_CONTEXTS)
-
-    contexts: list[tuple[str | None, list[dict]]] = []
-    corrupt = 0
-    for key in keys[:MAX_CONTEXTS]:
-        raw = await client.get(key)
-        if raw is None:
-            continue
-        try:
-            data = json.loads(raw)
-            if not isinstance(data, dict):
-                raise TypeError("context payload is not an object")
-        except (json.JSONDecodeError, TypeError, ValueError):
-            corrupt += 1
-            continue
-        rows = data.get("decisions_log")
-        if not isinstance(rows, list):
-            rows = []
-        movement_id = data.get("movement_id")
-        if not isinstance(movement_id, str) or not movement_id:
-            # The key still identifies the subject when the payload lost it.
-            movement_id = key[len(CONTEXT_KEY_PREFIX):] or None
-        contexts.append((movement_id, rows))
-    return contexts, truncated_after, corrupt
+    contexts, truncated_after, corrupt = await scan_contexts(client)
+    return [(mid, decisions_of(data)) for mid, data in contexts], truncated_after, corrupt
 
 
 @router.get("/degradation-taxonomy")
@@ -110,4 +131,12 @@ async def degradation_taxonomy(request: Request) -> dict:
     }
 
 
-__all__ = ["CONTEXT_KEY_PREFIX", "MAX_CONTEXTS", "router"]
+__all__ = [
+    "CONTEXT_KEY_PREFIX",
+    "MAX_CONTEXTS",
+    "context_key",
+    "decisions_of",
+    "read_contexts",
+    "router",
+    "scan_contexts",
+]

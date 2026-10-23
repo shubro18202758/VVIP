@@ -273,6 +273,7 @@ class TestMemoryClientParsing:
         assert result.best_score_raw == 0.58
         assert result.best_doc_id == "d2"
         assert result.best_kind == "aar"
+        assert result.best_ref_id == "r2"  # the best row's, like doc_id/kind
         assert result.maxsim_present is True
         # Request carried the contract body.
         assert seen["query"] == "TRIGGER: incident"
@@ -287,7 +288,17 @@ class TestMemoryClientParsing:
         assert result.status == "ok"
         assert result.hits == 0
         assert result.best_score is None
+        assert result.best_ref_id is None
         assert result.maxsim_present is False
+
+    async def test_a_row_without_a_ref_id_reports_none(self):
+        result = await client_with(lambda r: httpx.Response(200, json={
+            "query_token_count": 2,
+            "results": [{"doc_id": "d1", "kind": "decision", "title": "t",
+                         "maxsim_score": 1.2, "strategy": "maxsim"}],
+        })).search("TRIGGER: pre_movement")
+        assert result.best_doc_id == "d1"
+        assert result.best_ref_id is None
 
     async def test_missing_query_token_count_passes_raw_through(self):
         # Fail-open legacy shape: a response without query_token_count (an

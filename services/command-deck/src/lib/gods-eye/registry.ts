@@ -16,6 +16,10 @@
  *   - `colors`/`credit` become `color`/`credit` on a per-layer basis in the
  *     layer module itself; the registry keeps the id/prefix integrity rules.
  *   - added `defaultOn` so a share link can restore layer toggles.
+ *   - added `urnOf` (VEER CITY COMMAND): every picked primitive maps back to
+ *     the C-C entity URN it draws (`event:<id>`, `vehicle:<id>`, …), so a
+ *     click on any layer opens the same dossier the fusion rail and the
+ *     board open — the pick prefix says WHICH layer, the URN says WHAT.
  */
 
 /** Handed to `create()` once by the canvas controller. */
@@ -40,6 +44,14 @@ export interface LayerCoverageStats {
 	/** e.g. 'live', 'fixtures', 'not-deployed (404)', 'offline'. */
 	hint: string;
 	error: string | null;
+	/**
+	 * Named sub-counts behind `count` (e.g. events {live, preview}, flow
+	 * {coloured, segments, simulated}) — published on the test snapshot's
+	 * layerStats and the legend, never invented: each is a count of drawn rows.
+	 */
+	detail?: Record<string, number>;
+	/** Where the layer's rows came from right now ('city-api' | 'fallback' | …). */
+	via?: string;
 }
 
 /** One provider instance, created per canvas mount. */
@@ -55,6 +67,8 @@ export interface GodsEyeLayerInstance {
 	refresh(): void;
 	/** The picked entity id carries this layer's own prefix. */
 	handlePick(pickId: string): boolean;
+	/** The C-C entity URN a picked primitive id draws (null when it draws none). */
+	urnOf?(pickId: string): string | null;
 	coverageStats(): LayerCoverageStats;
 	destroy(): void;
 }

@@ -60,9 +60,11 @@ from traffic_oracle.predict.forecast_quantiles import (
 )
 
 __all__ = [
+    "BIN_SEC",
     "CONTRACT_HORIZONS",
     "DEFAULT_FREE_FLOW_KMH",
     "FoundationInputError",
+    "MAX_LAG_BINS",
     "MIN_CONTEXT_STEPS",
     "RollingHistoryWindow",
     "T0FoundationAdapter",
@@ -96,14 +98,28 @@ MIN_CONTEXT_STEPS = 12
 #: Rolling window depth the builder keeps per segment (8 h at 5-min steps).
 DEFAULT_WINDOW_STEPS = 96
 
+#: The grid the artifact's horizons assume: one context step = 300 s of
+#: OBSERVATION time (HORIZON_TO_STEP maps 5/10/15/30 min onto it).
+BIN_SEC = 300
+
+#: A segment whose newest observed bin lags the newest bin of the batch
+#: (or the wall-clock bin) by more than this is stale: its forecast would
+#: start from old data, so it is dropped from the batch (labelled).
+MAX_LAG_BINS = 2
+
 #: Labelled assumption: congestion_idx is DERIVED, not learned — the
-#: artifact is univariate speed-only. 60 km/h mirrors the
-#: speed_norm = speed_kmh / 60.0 convention baked into the DSTGAT runtime
-#: feature build; the deployment stage may override per corridor.
+#: artifact is univariate speed-only.  Each segment's own free-flow speed
+#: (``corridor.road_segments.speed_limit_kmh``, the twin's free flow) is
+#: used when the caller supplies it; 60 km/h — the DSTGAT feature
+#: convention — only for a segment without one.
 DEFAULT_FREE_FLOW_KMH = 60.0
 
 #: Tolerance for the quantile-monotonicity sanity check (fp32 headroom).
 _QUANTILE_TOL = 1e-6
+
+#: Observation timestamps remembered per segment for re-read de-duplication
+#: (~4 h of a 1 Hz feed; the DB feed upserts whole bins and needs none).
+_SEEN_PER_SEGMENT = 16384
 
 GraphRunner = Callable[[dict[str, np.ndarray]], np.ndarray]
 
@@ -136,19 +152,53 @@ def session_runner(session: object) -> GraphRunner:
     return run
 
 
-class RollingHistoryWindow:
-    """Per-segment speed history the foundation rung feeds the artifact.
+class _Bin:
+    """One 300 s bin of one segment: running mean speed + provenance."""
 
-    The plan puts the window builder in the adapter: the runtime cache only
-    serves the latest observation (``get_latest``), so the window grows one
-    sample per predict() call — real recorded history, never zero-padded.
-    A segment becomes *ready* once it holds >= MIN_CONTEXT_STEPS samples.
+    __slots__ = ("count", "mean", "real", "synthetic")
+
+    def __init__(self) -> None:
+        self.count = 0
+        self.mean = 0.0
+        self.real = 0
+        self.synthetic = 0
+
+    def add(self, speed: float, quality: str) -> None:
+        self.count += 1
+        self.mean += (speed - self.mean) / self.count
+        if quality == "synthetic":
+            self.synthetic += 1
+        else:
+            self.real += 1
+
+
+class RollingHistoryWindow:
+    """Per-segment speed history on the artifact's 5-minute grid.
+
+    Samples are keyed by OBSERVATION time (``timestamp_ms``), averaged into
+    300 s bins — never one sample per ``predict()`` call (that fed twelve
+    cache reads taken over 35 s to the artifact as an hour of context, so
+    its "T+30" was ~9 s ahead).  A new context step appears only when a new
+    bin opens; the same cached observation read twice is ignored.  The
+    production feed (predict/history_feed.py) upserts whole bins from the
+    ingested ``traffic.observations`` aggregates.
+
+    ``history()`` aligns a batch on one grid ending at its newest bin and
+    pads missing bins (gaps, ragged starts) with NaN — the artifact's
+    native missing marker — instead of failing the batch.  A segment is
+    READY with >= ``min_steps`` observed bins in the window and a newest
+    bin no more than ``max_lag_bins`` behind; not-ready segments are
+    dropped from the batch and labelled (their callers get the next rung).
+    ``anomalous`` samples never enter; ``synthetic`` samples do, with their
+    provenance kept per bin (:meth:`quality`).
     """
 
     def __init__(
         self,
         min_steps: int = MIN_CONTEXT_STEPS,
         max_steps: int = DEFAULT_WINDOW_STEPS,
+        bin_sec: int = BIN_SEC,
+        max_lag_bins: int = MAX_LAG_BINS,
     ) -> None:
         if min_steps > max_steps:
             raise ValueError(
@@ -156,63 +206,217 @@ class RollingHistoryWindow:
             )
         self._min = min_steps
         self._max = max_steps
-        self._series: dict[int, deque[float]] = {}
+        self._bin_ms = int(bin_sec) * 1000
+        self._max_lag = int(max_lag_bins)
+        self._series: dict[int, dict[int, _Bin]] = {}
+        # Timestamps already folded in, per segment (bounded): a re-read of
+        # the same cached observation is ignored, a late one still counts.
+        self._seen: dict[int, tuple[deque[int], set[int]]] = {}
+        #: Bumps on every change — forecast caches key on it.
+        self.version = 0
 
     @property
     def min_steps(self) -> int:
         return self._min
 
-    def push(self, segment_id: int, speed_kmh: float) -> None:
-        """Record the latest observed speed for a segment (5-min grid)."""
-        series = self._series.setdefault(
-            segment_id, deque(maxlen=self._max)
-        )
-        series.append(float(speed_kmh))
+    @property
+    def bin_ms(self) -> int:
+        return self._bin_ms
 
-    def ready(self, segment_id: int) -> bool:
-        series = self._series.get(segment_id)
-        return series is not None and len(series) >= self._min
+    def bin_of(self, timestamp_ms: int) -> int:
+        return int(timestamp_ms) // self._bin_ms
+
+    def _prune(self, segment_id: int) -> None:
+        bins = self._series.get(segment_id)
+        if not bins:
+            return
+        floor = max(bins) - self._max + 1
+        for b in [b for b in bins if b < floor]:
+            del bins[b]
+
+    def record(
+        self,
+        segment_id: int,
+        timestamp_ms: int,
+        speed_kmh: float,
+        data_quality: str = "real",
+    ) -> bool:
+        """Fold one observation into its 300 s bin.
+
+        Returns True when the sample opened a NEW bin (a new context step).
+        Anomalous, non-finite, already-recorded (the same observation
+        timestamp) and older-than-the-window samples are refused; a late
+        sample for an earlier bin still lands in that bin.
+        """
+        if data_quality == "anomalous":
+            return False
+        speed = float(speed_kmh)
+        if not np.isfinite(speed) or speed < 0.0:
+            return False
+        ts = int(timestamp_ms)
+        order, seen = self._seen.setdefault(segment_id, (deque(), set()))
+        if ts in seen:
+            return False
+        bins = self._series.setdefault(segment_id, {})
+        b = self.bin_of(ts)
+        if bins and b <= max(bins) - self._max:
+            return False
+        seen.add(ts)
+        order.append(ts)
+        while len(order) > _SEEN_PER_SEGMENT:
+            seen.discard(order.popleft())
+        opened = b not in bins
+        if opened:
+            bins[b] = _Bin()
+        bins[b].add(speed, data_quality)
+        if opened:
+            self._prune(segment_id)
+        self.version += 1
+        return opened
+
+    def set_bin(
+        self,
+        segment_id: int,
+        bin_index: int,
+        mean_speed_kmh: float,
+        count: int,
+        real: int = 0,
+        synthetic: int = 0,
+    ) -> None:
+        """Upsert a whole bin from an authoritative aggregate (the DB feed)."""
+        speed = float(mean_speed_kmh)
+        if not np.isfinite(speed) or count <= 0:
+            return
+        bins = self._series.setdefault(segment_id, {})
+        entry = _Bin()
+        entry.count = int(count)
+        entry.mean = speed
+        entry.real = int(real)
+        entry.synthetic = int(synthetic)
+        bins[int(bin_index)] = entry
+        self._prune(segment_id)
+        self.version += 1
+
+    def segments(self) -> list[int]:
+        return sorted(self._series)
+
+    def latest_bin(self, segment_id: int) -> int | None:
+        bins = self._series.get(segment_id)
+        return max(bins) if bins else None
+
+    def observed_steps(self, segment_id: int, end_bin: int | None = None) -> int:
+        bins = self._series.get(segment_id)
+        if not bins:
+            return 0
+        end = max(bins) if end_bin is None else end_bin
+        return sum(1 for b in bins if end - self._max < b <= end)
+
+    def ready(self, segment_id: int, now_ms: int | None = None) -> bool:
+        latest = self.latest_bin(segment_id)
+        if latest is None:
+            return False
+        if now_ms is not None and self.bin_of(now_ms) - latest > self._max_lag:
+            return False
+        return self.observed_steps(segment_id, latest) >= self._min
+
+    def quality(self, segment_ids: Sequence[int]) -> dict[int, str]:
+        """Per segment: 'real' | 'synthetic' | 'mixed' over its window."""
+        out: dict[int, str] = {}
+        for sid in segment_ids:
+            bins = self._series.get(sid)
+            if not bins:
+                continue
+            real = sum(b.real for b in bins.values())
+            synth = sum(b.synthetic for b in bins.values())
+            out[sid] = (
+                "mixed" if real and synth else "synthetic" if synth else "real"
+            )
+        return out
 
     def history(
-        self, segment_ids: Sequence[int]
+        self, segment_ids: Sequence[int], now_ms: int | None = None
     ) -> dict[int, np.ndarray]:
-        """Build the per-segment history mapping for the adapter batch.
+        """Aligned, NaN-padded history for the ready segments of a batch.
 
-        Loud failures (whole-rung degrade), never silent zero-padding:
+        Every returned series spans the SAME bins, ending at the newest
+        bin among the batch's fresh segments, so one decode step means the
+        same 5 minutes for every row.  Loud failures (whole-rung degrade),
+        never silent zero-padding:
 
-        - any segment with 1..min_steps-1 recorded samples raises
-          ``history_too_short`` (warm-up phase);
-        - segments with NO recorded sample at all are dropped from the
-          batch and logged — they would be zero-padded otherwise, and the
-          heuristic rung produces no rows for them either;
-        - no segment with any history at all raises ``history_empty``.
+        - no requested segment has any recorded bin → ``history_empty``;
+        - none is ready (warm-up or stale) → ``history_too_short``.
+
+        Segments that are not ready are dropped from the batch and logged.
         """
-        never_seen = [sid for sid in segment_ids if sid not in self._series]
-        short = [
-            sid for sid in segment_ids
-            if sid in self._series and not self.ready(sid)
-        ]
-        if short:
-            first = short[0]
-            raise FoundationInputError(
-                f"history_too_short: {len(short)}/{len(segment_ids)} segments "
-                f"below {self._min} steps (first: {first} with "
-                f"{len(self._series[first])})"
-            )
-        history = {
-            sid: np.asarray(self._series[sid], dtype=np.float32)
-            for sid in segment_ids
-            if sid in self._series
-        }
-        if not history:
+        recorded = [sid for sid in segment_ids if self._series.get(sid)]
+        if not recorded:
             raise FoundationInputError("history_empty: no recorded history")
-        if never_seen:
+        fresh_latest = [
+            self.latest_bin(sid)
+            for sid in recorded
+            if now_ms is None or self.bin_of(now_ms) - self.latest_bin(sid) <= self._max_lag
+        ]
+        if not fresh_latest:
+            raise FoundationInputError(
+                f"history_too_short: 0/{len(segment_ids)} segments fresh "
+                f"(newest bin older than {self._max_lag} x {self._bin_ms // 1000}s)"
+            )
+        end = max(fresh_latest)
+        ready = [
+            sid for sid in recorded
+            if end - self.latest_bin(sid) <= self._max_lag
+            and self.observed_steps(sid, end) >= self._min
+        ]
+        not_ready = [sid for sid in segment_ids if sid not in ready]
+        if not ready:
+            first = recorded[0]
+            raise FoundationInputError(
+                f"history_too_short: 0/{len(segment_ids)} segments have "
+                f"{self._min} observed {self._bin_ms // 60000}-min steps "
+                f"(first: {first} with {self.observed_steps(first, end)})"
+            )
+        start = min(
+            max(min(b for b in self._series[sid] if b > end - self._max), end - self._max + 1)
+            for sid in ready
+        )
+        start = min(start, end - self._min + 1)
+        length = end - start + 1
+        history: dict[int, np.ndarray] = {}
+        for sid in ready:
+            bins = self._series[sid]
+            arr = np.full(length, np.nan, dtype=np.float32)
+            for b, entry in bins.items():
+                if start <= b <= end:
+                    arr[b - start] = entry.mean
+            history[sid] = arr
+        if not_ready:
             logger.info(
-                "foundation_adapter.history_unobserved_dropped",
-                segments=never_seen,
+                "foundation_adapter.history_segments_not_ready",
+                segments=not_ready,
                 kept=len(history),
+                end_bin=end,
             )
         return history
+
+    def health(self, now_ms: int | None = None) -> dict:
+        segments = self.segments()
+        latest = [self.latest_bin(s) for s in segments]
+        newest = max((b for b in latest if b is not None), default=None)
+        return {
+            "segments": len(segments),
+            "segments_ready": sum(1 for s in segments if self.ready(s, now_ms)),
+            "min_steps": self._min,
+            "max_steps": self._max,
+            "bin_sec": self._bin_ms // 1000,
+            # seconds since the newest bin OPENED (0..300 while it is the
+            # current, still-filling bin; larger when the feed went quiet)
+            "newest_bin_opened_sec_ago": (
+                round((now_ms - newest * self._bin_ms) / 1000.0, 1)
+                if newest is not None and now_ms is not None
+                else None
+            ),
+            "version": self.version,
+        }
 
 
 class T0FoundationAdapter:
@@ -308,18 +512,29 @@ class T0FoundationAdapter:
 
     # ── output side ───────────────────────────────────────────────────────
 
+    def _free_flow_for(
+        self, segment_id: int, free_flow: Mapping[int, float] | None
+    ) -> float:
+        if free_flow:
+            value = free_flow.get(segment_id)
+            if value is not None and np.isfinite(value) and value > 0:
+                return float(value)
+        return self._free_flow
+
     def reshape(
         self,
         quantiles: np.ndarray,
         segment_ids: Sequence[int],
+        free_flow: Mapping[int, float] | None = None,
     ) -> dict[int, dict[int, dict[str, object]]]:
         """Map the artifact's quantile tensor onto the forecast rows.
 
         Row shape per horizon: point fields from the p50 column, plus the
         contract ``quantiles`` object built from p10/p50/p90 (congestion
-        bands derived through the decreasing transform). Horizon mapping:
-        decode step ``HORIZON_TO_STEP[h]`` (5-min grid), i.e. columns
-        1/2/3/6 of a 32-step decode — no interpolation needed.
+        bands derived through the decreasing transform against the
+        segment's OWN free flow when ``free_flow`` names it). Horizon
+        mapping: decode step ``HORIZON_TO_STEP[h]`` (5-min grid), i.e.
+        columns 1/2/3/6 of a 32-step decode — no interpolation needed.
         """
         q = np.asarray(quantiles, dtype=np.float32)
         if q.ndim != 3:
@@ -345,6 +560,7 @@ class T0FoundationAdapter:
         payload: dict[int, dict[int, dict[str, object]]] = {}
         for i, sid in enumerate(segment_ids):
             payload[sid] = {}
+            free_flow_kmh = self._free_flow_for(sid, free_flow)
             for h in self._horizons:
                 col = HORIZON_TO_STEP[h] - 1
                 # Finiteness FIRST, on the RAW tensor values: NaN passes a
@@ -376,10 +592,10 @@ class T0FoundationAdapter:
                 payload[sid][h] = {
                     "speed_kmh": speed,
                     "congestion_idx": derive_congestion_idx(
-                        speed, self._free_flow
+                        speed, free_flow_kmh
                     ),
                     "quantiles": make_quantiles(
-                        p10, p50, p90, self._free_flow
+                        p10, p50, p90, free_flow_kmh
                     ),
                 }
         return payload
@@ -387,10 +603,14 @@ class T0FoundationAdapter:
     # ── composition ───────────────────────────────────────────────────────
 
     def forecast(
-        self, history: Mapping[int, np.ndarray]
+        self,
+        history: Mapping[int, np.ndarray],
+        free_flow: Mapping[int, float] | None = None,
     ) -> dict[int, dict[int, dict[str, object]]]:
         """End-to-end: history -> graph inputs -> runner -> forecast rows.
 
+        ``free_flow`` optionally maps segment_id -> free-flow km/h (the
+        segment's speed limit) for the derived congestion fields.
         Raises :class:`FoundationInputError` on any contract failure — the
         caller degrades to the next rung with a labelled reason; this
         method never returns a silently-empty mapping.
@@ -398,7 +618,7 @@ class T0FoundationAdapter:
         segment_ids = list(history.keys())
         feeds = self.build_inputs(history)
         quantiles = self._runner(feeds)
-        payload = self.reshape(quantiles, segment_ids)
+        payload = self.reshape(quantiles, segment_ids, free_flow)
         logger.info(
             "foundation_adapter.forecast",
             segments=len(segment_ids),

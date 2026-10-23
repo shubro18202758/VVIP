@@ -1,52 +1,61 @@
 {
-  "generated_at_utc": "2026-10-10T23:40:28+00:00",
+  "generated_at_utc": "2026-10-23T14:39:29+00:00",
   "network": {
-    "segments": 40,
-    "junctions": 14,
-    "total_km": 90.1,
-    "mean_lanes": 5.8,
-    "arrival_rate_veh_per_min_per_junction": 87.0
+    "segments": 49,
+    "junctions": 34,
+    "total_km": 192.0,
+    "mean_lanes": 4.7,
+    "arrival_rate_veh_per_min_per_junction": 71.0,
+    "source": {
+      "mode": "offline",
+      "file": "scripts/data/osm_network.json"
+    },
+    "attribution": "(c) OpenStreetMap contributors, ODbL 1.0 — https://www.openstreetmap.org/copyright"
   },
   "scenarios": {
     "central": {
       "baseline_hold_min": 25.0,
       "platform_hold_min": 2.5,
-      "commuter_minutes_baseline": 570937.5,
-      "commuter_minutes_platform": 5709.4,
+      "commuter_minutes_baseline": 1131887.8,
+      "commuter_minutes_platform": 11318.9,
       "reduction_factor": 100.0,
-      "vehicles_delayed_baseline": 30450,
-      "vehicles_delayed_platform": 3045,
-      "idle_liters_baseline": 5138.4,
-      "idle_liters_platform": 51.4,
-      "co2_kg_baseline": 12846.1,
-      "co2_kg_platform": 128.5
+      "vehicles_delayed_baseline": 60367,
+      "vehicles_delayed_platform": 6037,
+      "idle_liters_baseline": 10187.0,
+      "idle_liters_platform": 101.9,
+      "co2_kg_baseline": 25467.5,
+      "co2_kg_platform": 254.7
     },
     "conservative": {
       "baseline_hold_min": 15.0,
       "platform_hold_min": 3.0,
-      "commuter_minutes_baseline": 123322.5,
-      "commuter_minutes_platform": 4932.9,
+      "commuter_minutes_baseline": 244487.8,
+      "commuter_minutes_platform": 9779.5,
       "reduction_factor": 25.0,
-      "vehicles_delayed_baseline": 10962,
-      "vehicles_delayed_platform": 2192,
-      "idle_liters_baseline": 1109.9,
-      "idle_liters_platform": 44.4,
-      "co2_kg_baseline": 2774.8,
-      "co2_kg_platform": 111.0
+      "vehicles_delayed_baseline": 21732,
+      "vehicles_delayed_platform": 4346,
+      "idle_liters_baseline": 2200.4,
+      "idle_liters_platform": 88.0,
+      "co2_kg_baseline": 5501.0,
+      "co2_kg_platform": 220.0
     },
     "optimistic": {
       "baseline_hold_min": 45.0,
       "platform_hold_min": 2.0,
-      "commuter_minutes_baseline": 1849837.5,
-      "commuter_minutes_platform": 3654.0,
+      "commuter_minutes_baseline": 3667316.3,
+      "commuter_minutes_platform": 7244.1,
       "reduction_factor": 506.2,
-      "vehicles_delayed_baseline": 54810,
-      "vehicles_delayed_platform": 2436,
-      "idle_liters_baseline": 16648.5,
-      "idle_liters_platform": 32.9,
-      "co2_kg_baseline": 41621.3,
-      "co2_kg_platform": 82.2
+      "vehicles_delayed_baseline": 108661,
+      "vehicles_delayed_platform": 4829,
+      "idle_liters_baseline": 33005.8,
+      "idle_liters_platform": 65.2,
+      "co2_kg_baseline": 82514.6,
+      "co2_kg_platform": 163.0
     }
+  },
+  "per_junction_central": {
+    "commuter_minutes_baseline": 33290.8,
+    "commuter_minutes_platform": 332.9
   },
   "ambulance": {
     "trips_crossing_per_movement_day": 12.0,
@@ -55,6 +64,6 @@
   },
   "annualization": {
     "movement_days_per_year": 250,
-    "commuter_hours_returned_per_year_central": 2355117
+    "commuter_hours_returned_per_year_central": 4669037
   }
 }

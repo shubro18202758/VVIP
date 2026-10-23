@@ -1,100 +1,118 @@
-# VVIP compose override — ARGUS CLONE (parallel live instance).
+# VVIP compose override — ARGUS STACK (project vvip-argus, the live system).
 #
-# Runs the cloned Veer stack at ~/argus/veer ALONGSIDE the original fleet
-# (project `vvip`) with ZERO port collisions. The two stacks SHARE the host
-# model services (:8083 decider, :8084 llama-server, :8085 embeddings —
-# loopback-only, never duplicated) and the shared model weights via the
-# VVIP/models symlink; everything else (postgis, valkey, nats, oracle, brain,
-# deck) is the clone's own.
+# The argus stack at ~/argus/veer is THE system (the original `vvip` fleet was
+# retired 2026-10-19). One command brings it up and keeps it up across host
+# reboots: scripts/veer_up.sh (idempotent; `--status` is read-only) together
+# with the systemd --user units in infra/systemd/ (veer.target → the three
+# model hosts + veer-up.service). Every container here is
+# `restart: unless-stopped`.
 #
-# IMAGE OWNERSHIP (Wave-1/2/3 redeploy, 2026-10-18). The clone's tree code
-# for traffic-oracle and convoy-brain has DIVERGED from the original stack
-# (out-of-support hatch + novelty latch, T0 foundation rung + quantile
-# contract, P90 robust routing, banded ETAs), so those services now BUILD
-# THEIR OWN images from this tree under -argus names:
+# NETWORK EXPOSURE. Only the command deck is reachable from the LAN
+# (0.0.0.0:5273). Everything that can write city state — oracle (:8091),
+# brain (:8092), emulator (:8090), PostGIS (:56434), Valkey (:6380) and NATS
+# (:4223, monitoring :8223) — is bound to 127.0.0.1; the deck reaches them
+# through its loopback proxy (services/command-deck/src/hooks.server.ts).
+# The host model services (:8083 decider, :8084 llama-server, :8085
+# embeddings) bind loopback themselves (infra/scripts/serve_models.sh).
+#
+# IMAGE OWNERSHIP. Every image this project runs is built from this tree
+# under an -argus tag, so a cleanup of the retired project's images can never
+# strand it:
+#   postgis        → vvip-argus-postgis:arm64        (Dockerfile.postgis.arm64;
+#                    veer_up.sh tags the existing veer-vvip-postgis:arm64 build
+#                    instead of rebuilding when the argus tag is missing)
+#   signal-ingress → vvip-argus-signal-ingress:latest (Dockerfile.signal-ingress)
 #   traffic-oracle → vvip-argus-traffic-oracle:latest
 #   convoy-brain   → vvip-argus-convoy-brain:latest
-#   command-deck   → vvip-argus-command-deck:latest (explicit; Wave-2 ETA
-#                    band touches the deck — rebuild on every redeploy)
-# The shared original-stack tags (vvip-traffic-oracle:latest,
-# vvip-convoy-brain:latest, vvip-command-deck:latest) are therefore NEVER
-# written by this project. Conversely the clone's postgis and signal-ingress
-# code are byte-identical to the original, so they REUSE the shared images
-# — their inherited build stanzas are stripped (`build: !reset null`) so a
-# project-wide `docker compose build` here can never retag
-# veer-vvip-postgis:arm64 or vvip-signal-ingress:latest either.
-# scripts/argus_full_smoke.sh snapshots those shared tags/containers
-# read-only and fails the gate if any of them moved.
+#   command-deck   → vvip-argus-command-deck:latest
+#   event-emulator → vvip-argus-event-emulator:latest (Dockerfile.event-emulator)
 #
-# Port map (original → clone):
+# Port map (original → argus):
 #   postgis  55434 → 56434      valkey  6379 → 6380
-#   nats     4222/8222 → 4223/8223
+#   nats     4222/8222 → 4223/8223 (8223 = NATS HTTP monitoring, /varz /connz)
 #   traffic-oracle 8081 → 8091 (host-net, PORT env)
 #   convoy-brain   8080 → 8092 (host-net, PORT env)
 #   command-deck   5173 → 5273 (host-net, PORT env + ORACLE_PORT/BRAIN_PORT/
 #                               EMULATOR_PORT proxy targets — see
-#                               src/hooks.server.ts in this clone)
+#                               src/hooks.server.ts in this tree)
+#   event-emulator 8090        (host-net, loopback)
 #
-# Usage (from this clone's VVIP/):
-#   docker compose -p vvip-argus -f infra/compose.yml \
-#     -f infra/compose.gb10-override.yml -f infra/compose.argus-override.yml \
-#     build traffic-oracle convoy-brain command-deck
+# Usage (from VVIP/):
+#   scripts/veer_up.sh                 # bring-up, migrate, seed, converge
+#   scripts/veer_up.sh --status        # read-only readiness table
+#   scripts/veer_up.sh --demo          # + city signal writer and living city
+# or by hand:
 #   docker compose -p vvip-argus -f infra/compose.yml \
 #     -f infra/compose.gb10-override.yml -f infra/compose.argus-override.yml up -d
-#   python3 scripts/migrate.py   # applies 001..011 to the fresh volume
-#   bash scripts/argus_full_smoke.sh  # full-system live gate (also proves
-#                                      # the original stack stayed untouched)
+#
+# Demo switches (compose interpolation; veer_up.sh --demo sets both to 1 and
+# persists the choice in ~/.config/veer/veer.env so reboots keep it):
+#   VVIP_SIGNAL_POLICY_WRITER   city signal-plan writer (traffic-oracle)
+#   EMULATOR_LIVING_CITY        ambient living-city emulation (event-emulator)
+# Precondition for EMULATOR_LIVING_CITY=1: the deck's public feed must label
+# emulated corridors — GET :5273/api/public/events answers
+# "emulated_labelling": true, so every living-city event reaches /citizen and
+# /driver as SIMULATED FEED · EMULATED, never as a live restriction.
+# veer_up.sh --demo refuses without it (VEER_DEMO_ALLOW_UNLABELLED=1 overrides).
+# With the living city on, EMULATOR_LIVING_VIOLATORS (default 1; 0 = none)
+# lets it drive its deliberate violators — each only a PENDING e-challan
+# recommendation for a named officer's review, never a fine on its own — and
+# EMULATOR_CITY_SEED (default 1411) picks its deterministic day program.
 
 services:
   postgis:
     container_name: vvip-argus-postgis
-    # 5273 is THE system now (original retired 2026-10-19): survive host reboots
     restart: unless-stopped
-    # Infra-only image (Dockerfile.postgis.arm64, untouched by the waves):
-    # reuse the ORIGINAL stack's built tag. `build: !reset null` strips the
-    # inherited build stanza so `docker compose build` on this project can
-    # never retag the shared veer-vvip-postgis:arm64.
-    build: !reset null
-    image: veer-vvip-postgis:arm64
+    build:
+      context: ..
+      dockerfile: infra/docker/Dockerfile.postgis.arm64
+    image: vvip-argus-postgis:arm64
     ports: !override
-      - "56434:5432"
+      - "127.0.0.1:56434:5432"
 
   valkey:
     container_name: vvip-argus-valkey
-    # 5273 is THE system now (original retired 2026-10-19): survive host reboots
     restart: unless-stopped
     ports: !override
-      - "6380:6379"
+      - "127.0.0.1:6380:6379"
 
   nats:
     container_name: vvip-argus-nats
-    # 5273 is THE system now (original retired 2026-10-19): survive host reboots
     restart: unless-stopped
+    # JetStream on the data volume plus HTTP monitoring on :8222 (published
+    # loopback-only as :8223) — /varz, /connz and /healthz make the data plane
+    # observable (veer_up.sh --status reads the ingress publisher's counters).
+    command: ["-js", "-sd", "/data", "-m", "8222"]
     ports: !override
-      - "4223:4222"
-      - "8223:8222"
+      - "127.0.0.1:4223:4222"
+      - "127.0.0.1:8223:8222"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8222/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 6
 
   signal-ingress:
     container_name: vvip-argus-signal-ingress
-    # 5273 is THE system now (original retired 2026-10-19): survive host reboots
     restart: unless-stopped
-    # Clone tree code is byte-identical for this service; reuse the original
-    # image. `build: !reset null` (same guard as postgis) keeps a project-
-    # wide `docker compose build` from retagging the shared
-    # vvip-signal-ingress:latest.
-    build: !reset null
-    image: vvip-signal-ingress:latest
-    # NATS_URL stays nats://nats:4222 — service DNS resolves inside this
-    # project's own network, i.e. the clone's nats.
+    # Ahmedabad edge-synthetic feed (all 49 segments of the real-road network,
+    # IST demand, rows labelled data_quality=synthetic). Built from this tree.
+    build:
+      context: ../services/signal-ingress
+      dockerfile: ../../infra/docker/Dockerfile.signal-ingress
+    image: vvip-argus-signal-ingress:latest
+    # NATS_URL stays nats://nats:4222 — service DNS on this project's own
+    # bridge network, i.e. the argus nats.
+    depends_on:
+      nats:
+        condition: service_healthy
 
   traffic-oracle:
     container_name: vvip-argus-traffic-oracle
-    # 5273 is THE system now (original retired 2026-10-19): survive host reboots
     restart: unless-stopped
-    # Wave-1/2/3 code lives in this tree (hatch/latch, foundation rung,
-    # quantile routing): build the CLONE's own image — build stanza mirrors
-    # compose.gb10-override.yml (repo-tree context, gb10 Dockerfile) — so
-    # the shared vvip-traffic-oracle:latest is never overwritten.
+    # Repo-tree context + gb10 Dockerfile (mirrors compose.gb10-override.yml).
+    # The image bakes models-local/t0 — run scripts/fetch_t0.sh on a fresh
+    # clone before building (veer_up.sh --build does it).
     build:
       context: ..
       dockerfile: infra/docker/Dockerfile.traffic-oracle.gb10
@@ -107,16 +125,14 @@ services:
       VVIP_VALKEY_URL: redis://127.0.0.1:6380
       VVIP_NATS_URL: nats://127.0.0.1:4223
       EMBEDDING_SERVICE_URL: http://127.0.0.1:8085
+      HOST: 127.0.0.1
       PORT: "8091"
+      # C7 city signal-plan writer: empty = OFF; veer_up.sh --demo sets 1.
+      VVIP_SIGNAL_POLICY_WRITER: ${VVIP_SIGNAL_POLICY_WRITER:-}
 
   convoy-brain:
     container_name: vvip-argus-convoy-brain
-    # 5273 is THE system now (original retired 2026-10-19): survive host reboots
     restart: unless-stopped
-    # Wave code diverged here too (routing consumers, banded-ETA clients):
-    # build the CLONE's own image — build stanza mirrors
-    # compose.gb10-override.yml — so the shared vvip-convoy-brain:latest is
-    # never overwritten.
     build:
       context: ..
       dockerfile: infra/docker/Dockerfile.convoy-brain.gb10
@@ -132,30 +148,96 @@ services:
       LLAMA_BASE_URL: http://127.0.0.1:8084
       EMBEDDING_SERVICE_URL: http://127.0.0.1:8085
       TRAFFIC_ORACLE_URL: http://127.0.0.1:8091
+      HOST: 127.0.0.1
       PORT: "8092"
+      # No GPS hardware feeds this deployment: a launched escort walks its
+      # approved primary route with positions labelled emulated_gps (C-B),
+      # and stops the moment real fixes arrive on POST /movements/{id}/position.
+      # 0 = wait for real GPS (fails after VVIP_ESCORT_GPS_TIMEOUT_SEC).
+      VVIP_ESCORT_SIM_GPS: ${VVIP_ESCORT_SIM_GPS:-1}
+      # Escort start / stop / clear must name the duty officer (422 otherwise;
+      # a route-switch approval always must). With the operator gate on, the
+      # deck forwards the signed-in officer as x-veer-officer on every proxied
+      # call, which the brain records ahead of any officer claimed in the body.
+      # 0 = the officer is optional (an unnamed stop / clear is attributed to
+      # the brain's system actor).
+      VVIP_REQUIRE_OFFICER: ${VVIP_REQUIRE_OFFICER:-1}
 
   command-deck:
     container_name: vvip-argus-command-deck
-    # 5273 is THE system now (original retired 2026-10-19): survive host reboots
     restart: unless-stopped
     # Keeps the inherited build (compose.gb10-override.yml: SvelteKit deck
     # built from services/command-deck); the explicit image name pins the
-    # clone's own tag (identical to the compose auto-name for this project)
-    # so Wave-2 deck touches (ETA bands) rebuild without ever writing the
-    # shared vvip-command-deck:latest.
+    # argus tag.
     image: vvip-argus-command-deck:latest
     network_mode: host
     ports: !override []
     extra_hosts: !override []
     environment:
       PORT: "5273"
+      # The deck is the ONLY LAN-facing surface of the stack.
       HOST: "0.0.0.0"
       ORACLE_PORT: "8091"
       BRAIN_PORT: "8092"
-      # The emulator is a SHARED host service on :8090 (loopback-only,
-      # like the model hosts) — the clone does not duplicate it. An earlier
-      # draft pointed at a containerised 8095 that never existed, which
-      # 502'd the deck's /api/emulator proxy (red EMULATOR dot + degraded
-      # emulator panel). Verified: 8090 answers /health.
+      # event-emulator service below (host-net, loopback :8090)
       EMULATOR_PORT: "8090"
       VEER_CESIUM_ION_TOKEN: ${VEER_CESIUM_ION_TOKEN:-}
+      # Opt-in duty-officer gate (hooks.server.ts): OFF while empty. A stable
+      # VEER_SESSION_SECRET keeps sign-ins across restarts; VEER_SESSION_SECURE=1
+      # only behind TLS.
+      VEER_OPERATOR_PIN: ${VEER_OPERATOR_PIN:-}
+      VEER_SESSION_SECRET: ${VEER_SESSION_SECRET:-}
+      VEER_SESSION_SECURE: ${VEER_SESSION_SECURE:-}
+
+  event-emulator:
+    container_name: vvip-argus-event-emulator
+    restart: unless-stopped
+    # Replaces the hand-launched `nohup python -m event_emulator` from the
+    # retired tree's venv: built from this tree, supervised by Docker, back
+    # after every reboot. Host-networked like its peers so the fixed loopback
+    # endpoints resolve (bridge → host-gateway traffic is dropped on GB10).
+    build:
+      context: ../services/event-emulator
+      dockerfile: ../../infra/docker/Dockerfile.event-emulator
+    image: vvip-argus-event-emulator:latest
+    network_mode: host
+    environment:
+      VVIP_DATABASE_URL: postgresql://corridor_admin:${POSTGIS_PASSWORD:-dev_changeme}@127.0.0.1:56434/corridor_db
+      VVIP_VALKEY_URL: redis://127.0.0.1:6380
+      VVIP_NATS_URL: nats://127.0.0.1:4223
+      # fixed internal endpoint (config constant, loopback-allowlisted)
+      EMULATOR_TRAFFIC_ORACLE_URL: http://localhost:8091
+      EMULATOR_DECK_ORIGINS: http://127.0.0.1:5273,http://localhost:5273
+      HOST: 127.0.0.1
+      # ambient living-city emulation (event-emulator, WP-13); 0 = off
+      EMULATOR_LIVING_CITY: ${EMULATOR_LIVING_CITY:-0}
+      # the living city's deliberate violators (PENDING recommendations for a
+      # named officer's review; 0 = none) and its day-program seed (header)
+      EMULATOR_LIVING_VIOLATORS: ${EMULATOR_LIVING_VIOLATORS:-1}
+      EMULATOR_CITY_SEED: ${EMULATOR_CITY_SEED:-1411}
+    depends_on:
+      postgis:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    healthcheck:
+      # healthy = HTTP up AND the store and Valkey seams actually connected
+      test:
+        - CMD
+        - python
+        - -c
+        # Connectivity only: /health also reports 'degraded' for upstream or
+        # historical conditions (a failed last run, NATS/oracle down) that a
+        # container restart cannot fix — those stay visible in /health and in
+        # veer_up.sh --status instead of flapping the container's health.
+        - "import json,sys,urllib.request as u; d=json.load(u.urlopen('http://127.0.0.1:8090/health', timeout=3)); s=d.get('stack', {}); sys.exit(0 if s.get('store') and s.get('valkey') else 1)"
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          memory: 512M

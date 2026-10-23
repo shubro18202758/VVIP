@@ -16,44 +16,42 @@
         { "type": "null" },
         {
           "type": "object",
-          "additionalProperties": true,
-          "required": ["route_id", "segment_ids"],
+          "additionalProperties": false,
+          "required": ["route_id", "reason"],
           "properties": {
-            "route_id": { "type": ["string", "integer"] },
-            "segment_ids": { "type": "array", "items": { "type": "integer" } },
-            "score": { "type": ["number", "null"] },
-            "reason": { "type": "string" }
+            "route_id": { "type": ["string", "integer"], "maxLength": 32 },
+            "reason": { "type": "string", "maxLength": 160 }
           }
         }
       ]
     },
     "alternate_routes": {
       "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": true,
-        "required": ["route_id", "segment_ids"],
-        "properties": {
-          "route_id": { "type": ["string", "integer"] },
-          "segment_ids": { "type": "array", "items": { "type": "integer" } },
-          "score": { "type": ["number", "null"] },
-          "reason": { "type": "string" }
-        }
-      }
-    },
-    "rejected_routes": {
-      "type": "array",
+      "maxItems": 3,
       "items": {
         "type": "object",
         "additionalProperties": false,
         "required": ["route_id", "reason"],
         "properties": {
-          "route_id": { "type": ["string", "integer"] },
-          "reason": { "type": "string" }
+          "route_id": { "type": ["string", "integer"], "maxLength": 32 },
+          "reason": { "type": "string", "maxLength": 160 }
         }
       }
     },
-    "overall_reasoning": { "type": "string" },
+    "rejected_routes": {
+      "type": "array",
+      "maxItems": 4,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["route_id", "reason"],
+        "properties": {
+          "route_id": { "type": ["string", "integer"], "maxLength": 32 },
+          "reason": { "type": "string", "maxLength": 160 }
+        }
+      }
+    },
+    "overall_reasoning": { "type": "string", "maxLength": 600 },
     "confidence": { "type": "string", "enum": ["high", "medium", "low"] }
   }
 }

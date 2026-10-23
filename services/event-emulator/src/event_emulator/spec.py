@@ -26,7 +26,7 @@ class EmulationSpec(BaseModel):
     seed: int | None = Field(default=None, ge=0, le=2**63 - 1)
     t0_anchor: datetime | None = None     # None → resolve to now at run start
     clock_scale: float = Field(default=1.0, gt=0.0, le=3600.0)
-    tick_sec: float = Field(default=5.0, gt=0.0, le=60.0)
+    tick_sec: float = Field(default=5.0, ge=1.0, le=60.0)   # ≥ 1 s: bounded tapes
     deliver_nats: bool = True
     deliver_twin: bool = True
 

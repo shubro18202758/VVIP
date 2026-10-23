@@ -9,15 +9,22 @@ overridden here).
 ## Run
 
 ```bash
-./infra/scripts/serve_models.sh start     # supervises :8083 (restart-on-exit)
-# or directly:
+# deployed: the systemd --user unit (Restart=always, under veer-models.target)
+systemctl --user status veer-decider.service   # runs serve_models.sh --foreground decider
+# by hand: the legacy bash supervisor, or the host directly
+./infra/scripts/serve_models.sh start
 PYTHONPATH=services/model-host/src \
-  models/.venvs/model-host/bin/python -m model_host.app
+  "$VEER_VENV_DIR"/model-host/bin/python -m model_host.app
 ```
+
+`VEER_VENV_DIR` comes from `~/.config/veer/veer.env` (`scripts/veer_env.sh`);
+on this box it is still the retired tree's `models/.venvs` (the
+`VVIP/models` symlink) — `scripts/veer_env.sh` warns and names the
+rebuild under `VVIP/.venvs`.
 
 Cold load ≈5 min (48.58 GiB of BF16 weights into the GB10 unified pool).
 Bind: `127.0.0.1:8083` (fixed internal endpoint; env `MODEL_HOST_BIND` /
-`MODEL_HOST_PORT` for tests). Config: `models/configs/veer_models.yaml`
+`MODEL_HOST_PORT` for tests). Config: `models-config/configs/veer_models.yaml`
 (decider section) — the snapshot path is authoritative.
 
 **Load-path rule (C1):** the model is loaded via the HF snapshot *directory

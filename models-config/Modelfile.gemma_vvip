@@ -1,0 +1,59 @@
+# Ollama Modelfile for VVIP — aditi-ps18-v7h (Gemma 4 12B, tuned)
+# ====================================================================
+# Replaces models/Modelfile.qwen_vvip (deleted). The qwen3.5:9b-q4_K_M
+# pulls/references were removed from infra/scripts/bootstrap.sh and
+# infra/scripts/deploy.sh; the externally-active ollama daemon itself is
+# untouched.
+#
+# TARGET HARDWARE: NVIDIA GB10 unified memory (121.63 GiB pool) — the 8 GB
+# VRAM serialization regime is retired. See VVIP/models-config/MEMORY_BUDGET.md.
+#
+# SERVING TOPOLOGY NOTE: the architecture's tactical serving path is
+# llama-server on :8084 (2 slots × 8192 ctx, OpenAI-compatible, with
+# response_format json_schema for constrained outputs). This ollama model
+# (gemma-vvip:12b) is the operator/debug side-load of the SAME GGUF.
+#
+# CHAT TEMPLATE — DO NOT OVERRIDE (verified empirically, ollama 0.34.4):
+#   The GGUF embeds the "Google Gemma 4 Canonical Chat Template"
+#   (chat_template.jinja, Google Gemma Engineering Team, 2026-07-09; verified
+#   byte-identical to the aditi safetensors tokenizer export and to every
+#   12B-family tree on disk). Gemma 4 uses <|turn>/<|channel>/<|tool_call>
+#   framing — NOT the legacy <start_of_turn> format and NOT ChatML/Qwen
+#   <|im_start|>. ollama 0.34.4 ships a NATIVE gemma4 renderer/parser:
+#   `ollama show --modelfile gemma-vvip:12b` reports "RENDERER gemma4 /
+#   PARSER gemma4" with capabilities completion+tools+thinking, and the stored
+#   TEMPLATE "{{ .Prompt }}" is just the passthrough consumed by that renderer.
+#   This Modelfile therefore sets NO TEMPLATE directive — overriding it with a
+#   Go-template simplification would LOSE tool-calling/thinking framing.
+#   Verified: /api/chat returns coherent, cleanly-terminated answers
+#   (done=true, JSON answer style preserved by the aditi tuning).
+#
+# MEMORY BUDGET (unified pool, per VVIP/models-config/MEMORY_BUDGET.md):
+#   Gemma 4 12B Q4_K_M weights:        ~6.87 GiB (7,208,382 KiB GGUF)
+#   KV cache 8192 ctx:                 ~0.5 GiB
+#   compute/activations:               ~0.6 GiB
+#   process budget:                    9.5 GiB of the 121.63 GiB pool
+#
+# KEEP-ALIVE: ollama must never evict this model — set OLLAMA_KEEP_ALIVE=-1
+# in the serving environment (see infra/scripts/serve_models.sh; also
+# recorded in VVIP/models-config/configs/veer_models.yaml → ollama.keep_alive).
+
+FROM /home/sandy050405/models/q4-stack/v7h-merged-Q4_K_M.gguf
+
+# -- Inference Parameters -------------------------------------------
+# Context: 8192 matches the tactical tier contract (per-slot ctx on the
+# llama-server path). 262144-ctx training window is intentionally NOT used —
+# KV growth on a shared unified pool serving a 27B decider is the constraint.
+PARAMETER num_ctx 8192
+PARAMETER num_predict 2048
+
+# Sampling: carried over from the tuned VVIP stack (see deleted qwen
+# Modelfile rationale) — balanced determinism for JSON tool-arg drafting.
+PARAMETER temperature 0.6
+PARAMETER top_p 0.85
+PARAMETER top_k 35
+PARAMETER repeat_penalty 1.15
+
+# Gemma 4 turn terminator (NOT ChatML <|im_end|> / <|endoftext|>).
+PARAMETER stop "<turn|>"
+PARAMETER stop "<end_of_turn>"

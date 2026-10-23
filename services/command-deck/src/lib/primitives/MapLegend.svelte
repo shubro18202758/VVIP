@@ -154,10 +154,10 @@
 
 	.state-word {
 		font-family: var(--v-font-mono);
-		font-size: 10px;
+		font-size: var(--v-text-2xs);
 		letter-spacing: var(--v-tracking-status);
 		text-transform: uppercase;
-		color: var(--v-ink-4);
+		color: var(--v-ink-3);
 	}
 
 	.s-not-deployed + .row-text .row-label {

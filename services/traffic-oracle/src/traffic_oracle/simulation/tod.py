@@ -12,13 +12,29 @@ Empirical shape (labelled assumptions, Ahmedabad urban-corridor flavoured):
     - Friday evening extends later (market / social night traffic).
     - Monsoon (Jun 15 – Sep 15): free-flow speed damped, waterlogging-prone.
     - Winter fog (mid-Dec – mid-Jan, 06:30–09:00): visibility speed cap.
+
+Time zone: every curve here is an Ahmedabad LOCAL-time shape, so every
+instant is normalised with :func:`to_ist` (``astimezone(Asia/Kolkata)``;
+naive datetimes are taken as IST) before its hour, weekday or date is
+read.  The same instant written as ``…T03:30Z`` or ``…T09:00+05:30``
+therefore yields identical demand, weather and twin metrics.
 """
 
 from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
+
+#: Asia/Kolkata — a fixed +05:30 offset (no DST), so no tz database needed.
+IST = timezone(timedelta(hours=5, minutes=30), name="IST")
+
+
+def to_ist(dt: datetime) -> datetime:
+    """The same instant in Asia/Kolkata local time (naive = already IST)."""
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=IST)
+    return dt.astimezone(IST)
 
 # Monday == 0 ... Sunday == 6 (Python convention).
 
@@ -71,12 +87,19 @@ def is_fog_day(d: date) -> bool:
 
 
 def infer_weather(d: date, hour: int) -> WeatherState:
-    """Default weather for a date/hour when the scenario forces nothing.
+    """Default weather for an IST date/hour when the scenario forces nothing.
 
     Fog only applies in the early-morning window; monsoon is all-day.
+    Callers holding an instant use :func:`infer_weather_at`.
     """
     fog = is_fog_day(d) and 6 <= hour <= 9
     return WeatherState(monsoon=is_monsoon_day(d), fog=fog)
+
+
+def infer_weather_at(dt: datetime) -> WeatherState:
+    """Default weather at an instant (normalised to IST first)."""
+    local = to_ist(dt)
+    return infer_weather(local.date(), local.hour)
 
 
 def hour_demand_multiplier(hour: int, dow: int) -> float:
@@ -108,7 +131,11 @@ def hour_demand_multiplier(hour: int, dow: int) -> float:
 
 
 def time_of_day_demand(dt: datetime) -> float:
-    """Demand multiplier at an instant, linearly interpolated between hours."""
+    """Demand multiplier at an instant, linearly interpolated between hours.
+
+    The instant is read in IST (:func:`to_ist`) — the curve is local time.
+    """
+    dt = to_ist(dt)
     h0 = dt.hour
     frac = dt.minute / 60.0 + dt.second / 3600.0
     m0 = hour_demand_multiplier(h0, dt.weekday())
@@ -149,5 +176,5 @@ def waterlogging_rate_multiplier(weather: WeatherState) -> float:
 
 def daylight_speed_relief(dt: datetime) -> float:
     """Minor free-flow relief in the dead of night (less friction, no parked
-    cars in the curb lane): +8% between 00:00 and 05:00."""
-    return 1.08 if dt.hour < 5 else 1.0
+    cars in the curb lane): +8% between 00:00 and 05:00 IST."""
+    return 1.08 if to_ist(dt).hour < 5 else 1.0

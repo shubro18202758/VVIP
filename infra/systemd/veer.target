@@ -1,0 +1,14 @@
+# Veer city operations stack (Corridor-OS + God's-eye): compose services via
+# veer-up.service, host model services via veer-models.target.
+#   enable once:  scripts/veer_up.sh --install-units   (links units, enables this)
+#   reboot test:  systemctl --user stop veer.target veer-models.target;
+#                 docker compose ... stop; systemctl --user start veer.target
+#                 (after a manual cutover only veer-models.target is active)
+# Lingering is required for it to start at boot without a login session
+# (loginctl enable-linger $USER).
+[Unit]
+Description=Veer city operations stack (compose services, model hosts, bring-up)
+Wants=veer-models.target veer-up.service
+
+[Install]
+WantedBy=default.target

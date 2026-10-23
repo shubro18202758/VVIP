@@ -1,7 +1,7 @@
 /**
  * Ops WRITE-smoke — the city-writer safety gate (contract R8).
  *
- *   node tests/ops-write-smoke.mjs [oracleBase]     # default http://localhost:8081
+ *   node tests/ops-write-smoke.mjs [oracleBase]     # default http://127.0.0.1:8091
  *
  * Three layers, NONE of which fires a city-writer against the fleet:
  *
@@ -27,7 +27,7 @@ import { fileURLToPath } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const DECK = path.resolve(HERE, '..');
-const ORACLE = process.argv[2] ?? 'http://localhost:8081';
+const ORACLE = process.argv[2] ?? 'http://127.0.0.1:8091';
 
 const require2 = createRequire(path.join(DECK, 'package.json'));
 
@@ -95,6 +95,9 @@ async function getJson(url, timeoutMs = 8000) {
 		'earmarkVehicle',
 		'clearEarmark',
 		'openPursuitEvent',
+		'transitionEventStatus',
+		'approveEscort',
+		'clearMovement',
 	];
 	let allGated = true;
 	const missing = [];
@@ -113,9 +116,16 @@ async function getJson(url, timeoutMs = 8000) {
 
 	ok(
 		'safePathId validates every writer path param',
-		['decideEnforcementRecommendation', 'decideDispatch', 'advanceDispatch', 'clearEarmark', 'openPursuitEvent'].every(
-			(fn) => client.split(`export async function ${fn}`)[1]?.includes('safePathId('),
-		),
+		[
+			'decideEnforcementRecommendation',
+			'decideDispatch',
+			'advanceDispatch',
+			'clearEarmark',
+			'openPursuitEvent',
+			'transitionEventStatus',
+			'approveEscort',
+			'clearMovement',
+		].every((fn) => client.split(`export async function ${fn}`)[1]?.split('\nexport ')[0]?.includes('safePathId(')),
 	);
 
 	const declared = endpoints.includes('CITY_WRITER_POST_PATHS');
@@ -124,7 +134,15 @@ async function getJson(url, timeoutMs = 8000) {
 	// Smokes must never fire a writer: scan this tree's smoke files for POSTs
 	// aimed at writer path segments (sanctioned POSTs per R8 are twin + chat +
 	// emulator only).
-	const smokeFiles = ['ops-write-smoke.mjs', 'ops-live-smoke.mjs', 'gods-eye-smoke.mjs', 'ops-write.entry.ts'];
+	const smokeFiles = [
+		'ops-write-smoke.mjs',
+		'ops-live-smoke.mjs',
+		'gods-eye-smoke.mjs',
+		'ops-write.entry.ts',
+		'ops-wall-smoke.mjs',
+		'city-command-smoke.mjs',
+		'canvas-ux-smoke.mjs',
+	];
 	let fired = [];
 	for (const f of smokeFiles) {
 		let src = '';
@@ -140,7 +158,10 @@ async function getJson(url, timeoutMs = 8000) {
 				chunk.includes('/plans/apply') ||
 				chunk.includes('/signals/restore') ||
 				chunk.includes('/decision') ||
-				chunk.includes('/earmark')
+				chunk.includes('/earmark') ||
+				chunk.includes('/status') ||
+				chunk.includes('/escort/approve') ||
+				chunk.includes('/clear')
 			) {
 				fired.push(`${f}: ${chunk.slice(0, 80).replace(/\s+/g, ' ')}`);
 			}

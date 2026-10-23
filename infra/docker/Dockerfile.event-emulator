@@ -1,4 +1,5 @@
 # Build event-emulator Python service (emulator stream).
+# Build context: services/event-emulator (compose: context ../services/event-emulator).
 # Dependencies come entirely from services/event-emulator/pyproject.toml.
 FROM python:3.12-slim AS base
 
@@ -9,9 +10,18 @@ COPY pyproject.toml ./
 
 RUN uv pip install --system --no-cache -r pyproject.toml
 
+# Flat /app/src layout is safe: library.py resolves use_case_library.json via
+# Path(__file__).with_name(...) and nothing walks up to a repo root.
 COPY src/ src/
+
+# COPY keeps the checkout's mode bits and POSIX ACLs (0640/2750 on this
+# host); make the sources world-readable for the non-root runtime user.
+RUN chmod -R a+rX /app \
+ && useradd --system --uid 10002 --no-create-home emulator
+USER emulator
 
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONPATH=/app/src
+# Binds 127.0.0.1:8090 by default (config.py; HOST/PORT env override).
 EXPOSE 8090
 CMD ["python", "-m", "event_emulator"]

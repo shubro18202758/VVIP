@@ -1,0 +1,139 @@
+# =============================================================================
+# veer_models.yaml — VVIP model stack configuration (models stream, C0)
+# =============================================================================
+# Owner: models stream. Read by model-host (VEER_MODELS_CONFIG, exported by
+# infra/scripts/serve_models.sh), smoke_models.sh, and (documented fields) by
+# brain/adaptive/embeddings streams. Tracked home: VVIP/models-config/configs/
+# (moved out of the untracked VVIP/models symlink into the retired tree).
+#
+# HOST PATHS below (snapshot, llama-server binary, GGUF, bge-m3) document this
+# GB10's layout. The weights are NOT in the repo: serve_models.sh takes them
+# from explicit env paths (DECIDER_SNAPSHOT_PATH, LLAMA_SERVER_BIN, GEMMA_GGUF,
+# BGE_M3_PATH — written to ~/.config/veer/veer.env by scripts/veer_env.sh)
+# and env always wins over this file.
+#
+# SECURITY / SSRF:
+#   - `services` URLs below are PLATFORM CONFIG CONSTANTS (fixed internal
+#     endpoints), not user-supplied URLs. They may be overridden only via the
+#     operator env vars shown on each line. Outbound HTTP client code in this
+#     stack must (a) accept http/https schemes only and (b) never fetch any
+#     URL that originates from external/user input.
+#   - No credentials live in this file; DB/service creds stay env-only.
+#
+# HARDWARE TARGET: NVIDIA GB10 (Grace-Blackwell DGX-Spark class) unified
+# memory. /proc/meminfo MemTotal = 127,533,976 kB ≈ 121.63 GiB; the planned pool below keeps 121.44 GiB (source of
+# truth on GB10 — nvidia-smi reports memory.total as N/A). See
+# VVIP/models-config/MEMORY_BUDGET.md for the full resident budget and measured RSS.
+
+# ─── Service endpoints (fixed; env-overridable) ────────────────────────────
+services:
+  # Decider host (T5, pplx-decider-v1-27b). Owned by models stream.
+  model_host: http://127.0.0.1:8083        # env: MODEL_HOST_URL
+  # Tactical Gemma host (T4, llama.cpp OpenAI-compatible server).
+  llama: http://127.0.0.1:8084             # env: LLAMA_BASE_URL
+  # Embedding host (T1: pplx-embed-v2-late-0.6b multivector + bge-m3 dense).
+  embedding: http://127.0.0.1:8085         # env: EMBEDDING_SERVICE_URL
+
+# ─── T5 · pplx-decider-v1-27b (model-host :8083) ────────────────────────────
+decider:
+  # Snapshot directory path — HF resolves the double symlinks into blobs.
+  # NEVER `cp -r` the snapshot tree: every file is a symlink -> ../../blobs/<sha>
+  # and a naive copy produces dangling 380 KiB stubs.
+  snapshot_path: /home/sandy050405/.cache/huggingface/hub/models--perplexity-ai--pplx-decider-v1-27b/snapshots/b01a5cbaca5391f73bd55103d4f27e8982cd5e60
+  weights_bytes: 52170802640        # 48.58 GiB, 11 shards + 2.6 MB readout head
+  device: cuda                      # GB10 unified memory
+  offline: true                     # HF_HUB_OFFLINE=1 — serve from disk only
+  max_questions_per_request: 6      # C1: ≤6 typed questions per checkpoint
+  max_state_tokens: 8192            # hard cap (bidirectional attention; the
+                                    # model raises if the encoded branch exceeds)
+  state_tokens_pre_movement: 1500   # brain-side doc budget
+  state_tokens_per_event: 400       # brain-side doc budget
+  queue_depth: 8                    # serialized computes; 429 + Retry-After past this
+  min_checkpoint_interval_sec: 5    # per-movement rate limit (brain-enforced)
+  # temperature 2.2076 is baked into decision_config.json — never overridden.
+  health_degradation_p95_ms: 3000   # p95 above this → Gemma-only fallback (brain)
+
+# ─── T4 · aditi-ps18-v7h Gemma 4 12B (llama-server :8084) ───────────────────
+llama:
+  server_bin: /home/sandy050405/llama.cpp/build/bin/llama-server   # build 69bf643
+  gguf: /home/sandy050405/models/q4-stack/v7h-merged-Q4_K_M.gguf  # 7,208,382 KiB
+  alias: aditi-ps18-v7h-12b
+  host: 127.0.0.1
+  port: 8084
+  ctx_per_slot: 8192     # 8192-token context per slot
+  parallel_slots: 2      # 2 concurrent agent streams (compute-only serialization
+                         # replaces the retired asyncio.Lock VRAM regime)
+  ctx_total: 16384       # = slots × ctx_per_slot passed as llama-server -c
+  keep_alive: forever    # llama-server never evicts the model (no TTL concept);
+                         # process is supervised with restart-on-exit instead.
+  metrics: true          # Prometheus endpoint /metrics on :8084
+  jinja: true            # use the GGUF-embedded Gemma 4 canonical chat template
+                         # (verified identical to aditi tokenizer chat_template.jinja)
+  # Sampling defaults carried over from the tuned qwen stack (schema-constrained
+  # decoding via response_format json_schema is layered on top by brain; see C2).
+  temperature: 0.6
+  top_p: 0.85
+  top_k: 35
+  repeat_penalty: 1.15
+  num_predict: 2048
+
+# ─── Ollama side-load (aux/standby, NOT the tactical serving path) ─────────
+# The architecture serves Gemma via llama-server :8084. The ollama import of
+# the same GGUF (Modelfile: VVIP/models-config/Modelfile.gemma_vvip → gemma-vvip:12b)
+# exists for operator/debug tooling against the already-running ollama daemon
+# (:11434, externally active — do not restart or unload qwen3.5 there).
+ollama:
+  base_url: http://127.0.0.1:11434   # env: OLLAMA_BASE_URL (legacy; brain no longer calls)
+  model: gemma-vvip:12b
+  num_ctx: 8192
+  keep_alive: -1            # OLLAMA_KEEP_ALIVE=-1 → never evict (unified pool)
+  parallel: 1               # ollama stays a debugging path; the parallel serving
+                            # tier is llama-server (2 slots above)
+
+# ─── T1 · Embeddings (embedding-service :8085 — embeddings stream owns app) ─
+embeddings:
+  multivector:
+    model_id: perplexity-ai/pplx-embed-v2-late-0.6b
+    snapshot: /home/sandy050405/.cache/huggingface/hub/models--perplexity-ai--pplx-embed-v2-late-0.6b
+    dim: 128                  # per-token vector; MaxSim rerank
+    weights_gib: 1.11
+    batch: 32
+    flush_interval_ms: 50
+  dense:
+    model_id: BAAI/bge-m3
+    path: /home/sandy050405/models/bge-m3
+    dim: 1024                 # unit-norm dense ANN (pgvector HNSW)
+    weights_gib: 1.06
+    recall_k: 100             # MaxSim rerank candidate cap
+    rerank_topk: 20
+  aux_9b:
+    enabled: false            # config slot, default off (+15.6 GiB; fits but idle)
+    model_id: perplexity-ai/pplx-embed-v2-late-9b
+  # shared venv pins (sentence-transformers >=6 MultiVectorEncoder stack):
+  venv_pins:
+    torch: 2.14.0
+    torchvision: 0.29.0
+    transformers: 5.17.0
+    sentence_transformers: 6.1.0
+    accelerate: 1.15.0
+    pillow: 12.3.0
+    safetensors: 0.8.0
+
+# ─── Persistent venvs (volatile /tmp venvs are forbidden) ───────────────────
+# Root: $VEER_VENV_DIR (default VVIP/.venvs; git-ignored). Built by
+# `infra/scripts/serve_models.sh build`.
+venvs:
+  model_host: $VEER_VENV_DIR/model-host      # requirements: VVIP/models-config/model-host-requirements.txt
+  embedding: $VEER_VENV_DIR/embedding        # services/embedding-service[models]
+  migrate: $VEER_VENV_DIR/migrate            # psycopg[binary] for VVIP/scripts/migrate.py
+
+# ─── GB10 unified-memory budget (planned; measured RSS in MEMORY_BUDGET.md) ─
+memory_budget_gib:
+  total_pool: 121.44
+  model_host_decider: 55.0        # 48.58 weights + activation estimate; re-budget from /decider/health RSS
+  llama_server_gemma: 9.5         # ~7.4 resident observed + KV/compute 2×8192
+  embedding_service: 5.0          # both embedders + torch CUDA context
+  traffic_oracle_onnx: 0.4
+  platform_services: 12.0         # PostGIS 2.0 + Valkey 0.5 + NATS 0.5 + oracle 3.5 + brain 1.5 + dev 4
+  planned_total: 81.9
+  headroom: 39.5

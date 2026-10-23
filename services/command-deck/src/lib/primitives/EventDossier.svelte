@@ -160,7 +160,7 @@
 		font-weight: var(--v-weight-status);
 		letter-spacing: var(--v-tracking-status);
 		text-transform: uppercase;
-		color: var(--v-ink-4);
+		color: var(--v-ink-3);
 	}
 
 	.foot {

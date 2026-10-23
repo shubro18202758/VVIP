@@ -1,0 +1,230 @@
+# gates.yml — the offline acceptance gates on every push and pull request.
+#
+# The hermetic half of scripts/verify_all.sh, one job per gate, on GitHub's
+# arm64 runner (the GB10 box Veer runs on is arm64 too). Nothing here needs
+# the running stack, a model, a database, a browser or a secret. The tiers
+# that do run on the box itself through `bash scripts/verify_all.sh` and
+# `bash scripts/verify_all.sh --live`: the canvas / design / ops-wall browser
+# smokes (puppeteer's Chrome for Testing has no linux-arm64 build), the
+# ingress-vs-store check, the signed-in live tier and the model panels.
+#
+# The repository is checked out into VVIP/ so the consistency oracle sees the
+# layout it expects (VVIP/ beside the workspace's submission/); the workspace
+# documents are not in this repository, so the oracle runs --vvip-only.
+
+name: gates
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gates-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # the jobs do not write pytest cache dirs into the checkout
+  PYTEST_ADDOPTS: -p no:cacheprovider
+
+defaults:
+  run:
+    shell: bash
+    working-directory: VVIP
+
+jobs:
+  scripts-syntax:
+    name: every script parses (incl. the stack-bound journeys / demo_reset)
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: VVIP
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: the stack-bound tools (they need the running stack, so CI parses them)
+        run: |
+          node --check scripts/journeys.mjs
+          bash -n scripts/demo_reset.sh
+          python3 -c "import json; json.load(open('scripts/data/journeys/reboot_evidence.json'))"
+      - name: every shell / node / python script and JSON data file under scripts/
+        run: |
+          for f in scripts/*.sh; do bash -n "$f" || exit 1; done
+          for f in scripts/*.mjs scripts/lib/*.mjs; do node --check "$f" || exit 1; done
+          for f in scripts/*.py; do python3 -c 'import ast, sys; ast.parse(open(sys.argv[1], encoding="utf-8").read(), sys.argv[1])' "$f" || exit 1; done
+          find scripts -name '*.json' -print0 | xargs -0 -n1 python3 -c 'import json, sys; json.load(open(sys.argv[1], encoding="utf-8"))'
+
+  pytest:
+    name: pytest (every suite, offline)
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: VVIP
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: deck node deps (the proxy-guard suite bundles its TS entry with the deck's esbuild)
+        working-directory: VVIP/services/command-deck
+        run: npm install --no-package-lock --no-audit --no-fund
+      - name: gate venv (GATE_DEPS of scripts/verify_all.sh)
+        run: |
+          eval "$(sed -n '/^GATE_DEPS=(/,/)$/p' scripts/verify_all.sh)"
+          python3 -m venv .venvs/gate
+          .venvs/gate/bin/pip install -q --disable-pip-version-check "${GATE_DEPS[@]}"
+      - name: every pytest suite, each executed whole (tests needing torch/onnx/a database skip themselves)
+        run: |
+          mapfile -t suites < <(find "$PWD" -name 'test_*.py' -not -path '*/node_modules/*' \
+              -not -path '*/.venvs/*' -not -path '*/.venv/*' -not -path '*/build/*' -printf '%h\n' | sort -u)
+          [ "${#suites[@]}" -gt 0 ] || { echo "no pytest suites found"; exit 1; }
+          failed=0
+          for suite in "${suites[@]}"; do
+              echo "::group::pytest ${suite#"$PWD"/}"
+              py="$GITHUB_WORKSPACE/VVIP/.venvs/gate/bin/python"
+              if [ -d "$suite/../src" ]; then
+                  (cd "$suite" && PYTHONPATH="$(cd ../src && pwd)" "$py" -m pytest . -q) || failed=1
+              else
+                  (cd "$suite" && "$py" -m pytest . -q) || failed=1
+              fi
+              echo "::endgroup::"
+          done
+          exit "$failed"
+
+  svelte-check:
+    name: svelte-check (command-deck)
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: VVIP/services/command-deck
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: VVIP
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --no-package-lock --no-audit --no-fund
+      - run: ./node_modules/.bin/svelte-kit sync
+      - run: ./node_modules/.bin/svelte-check --tsconfig ./tsconfig.json --threshold error
+
+  deck-unit:
+    name: deck contract + unit tests (hermetic)
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: VVIP/services/command-deck
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: VVIP
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --no-package-lock --no-audit --no-fund
+      - name: contract replay (recorded oracle payloads, no network)
+        run: node tests/contract/run.mjs
+      - name: design tokens (parity, contrast, hex sweep, import boundaries)
+        run: node tests/design-tokens.mjs
+      - name: unit tests (canvas bus, basemap + photoreal 3D, canvas layers)
+        run: for unit in tests/*.unit.mjs; do echo "== $unit"; node "$unit" || exit 1; done
+      - name: edge-basemap entry (CSP, <html lang>, /gods-eye/mode; gate-off and keyless)
+        run: |
+          ./node_modules/.bin/esbuild tests/edge-basemap.entry.ts --bundle --platform=node --format=esm \
+              '--alias:$lib=./src/lib' --outfile=tests/artifacts/edge-basemap-bundle.mjs --log-level=warning
+          node tests/artifacts/edge-basemap-bundle.mjs
+
+  cargo:
+    name: cargo test (signal-ingress)
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: VVIP/services/signal-ingress
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: VVIP
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            VVIP/services/signal-ingress/target
+          key: cargo-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('VVIP/services/signal-ingress/Cargo.lock') }}
+      - run: cargo test --locked
+
+  consistency:
+    name: submission-consistency --selftest (VVIP-only)
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: VVIP
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: a gate venv for the selftest's real collection probe (pytest is all it needs)
+        run: |
+          python3 -m venv .venvs/gate
+          .venvs/gate/bin/pip install -q --disable-pip-version-check pytest
+      - run: node scripts/submission_consistency_check.mjs --vvip-only --selftest
+
+  repetition-fast:
+    name: repetition_gate --fast (offline selftest)
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: VVIP
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: bash scripts/repetition_gate.sh --fast
+
+  display-geometry:
+    name: road network --verify (OSM evidence, offline)
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: VVIP
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python3 scripts/gen_display_geometry.py --verify
+
+  secret-scan:
+    name: secret scan (tree + the pushed commits)
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: VVIP
+          fetch-depth: 0
+      - name: the rules fire on planted fakes (and stay silent on placeholders)
+        run: bash scripts/secret_scan.sh --selftest
+      - name: the tree, and the commits origin/main does not have yet
+        run: bash scripts/secret_scan.sh

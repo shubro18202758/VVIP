@@ -45,6 +45,21 @@ export const INK_3 = () => cssVar('--v-ink-3');
 export const CANVAS = () => cssVar('--v-canvas');
 
 /**
+ * A token colour at reduced alpha (CSS string). Token values that are not
+ * #rrggbb (rgba()/keywords) pass through unchanged — the caller's veil then
+ * runs at full token alpha instead of inventing a second palette.
+ */
+export function withAlpha(css: string, alpha: number): string {
+	if (/^#[0-9a-f]{6}$/i.test(css)) {
+		const r = parseInt(css.slice(1, 3), 16);
+		const g = parseInt(css.slice(3, 5), 16);
+		const b = parseInt(css.slice(5, 7), 16);
+		return `rgba(${r},${g},${b},${alpha})`;
+	}
+	return css;
+}
+
+/**
  * Resolve a token with a caller-supplied Cesium fallback colour object —
  * used only where Cesium requires a Color instance and null is impossible
  * (e.g. entity outlines). The fallback is a Cesium default, never a new

@@ -2,8 +2,8 @@
  {
   "label": "window_opening",
   "effective_class": "AMBER",
-  "transitioned": true,
-  "previous_class": "GREEN",
+  "transitioned": false,
+  "previous_class": "AMBER",
   "escalation": {
    "escalate": false,
    "level": "NONE",

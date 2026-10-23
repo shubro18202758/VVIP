@@ -1,6 +1,6 @@
 {
- "dispatch_id": "cfb821b9-ee89-4f1b-90a8-3d6ca9a71f39",
- "event_id": "3ef08290-66d8-511b-a25a-3d2967c79985",
+ "dispatch_id": "d8bd77fb-cc9e-4d20-b3d1-e3c820bb04de",
+ "event_id": "c7073ae6-56ae-5048-8bdc-d826d8da5ddc",
  "agency": "jan_rakshak",
  "agency_label": "Jan Rakshak",
  "unit_id": "JR-EM-01",
@@ -19,35 +19,40 @@
   [
    "requested",
    "approved",
-   "Duty Officer R. Mehta (God's Eye Morning)"
+   "Scripted demo officer (showcase script)"
   ],
   [
    "approved",
    "en_route",
-   "Duty Officer R. Mehta (God's Eye Morning)"
+   "Scripted demo officer (showcase script)"
   ],
   [
    "en_route",
    "on_scene",
-   "Duty Officer R. Mehta (God's Eye Morning)"
+   "Scripted demo officer (showcase script)"
   ]
  ],
  "projected_unit": {
   "unit_id": "JR-EM-01",
-  "dispatch_id": "cfb821b9-ee89-4f1b-90a8-3d6ca9a71f39",
+  "dispatch_id": "d8bd77fb-cc9e-4d20-b3d1-e3c820bb04de",
   "agency": "jan_rakshak",
+  "agency_label": "Jan Rakshak",
   "label": "Jan Rakshak \u00b7 JR-EM-01",
-  "assigned_event_id": "3ef08290-66d8-511b-a25a-3d2967c79985",
+  "assigned_event_id": "c7073ae6-56ae-5048-8bdc-d826d8da5ddc",
+  "waypoint_junction": 5,
+  "approved_at": "2026-10-23T18:28:47.353Z",
   "status": "on_scene",
   "emulated": true,
   "source": "emulated_dispatch_projection",
+  "double_booked": false,
+  "staged_at": "spine_start",
   "position": [
-   72.585,
-   23.02
+   72.590119,
+   23.028322
   ],
-  "progress": 1.0,
-  "eta_sec": 0.0,
-  "arrived": true,
-  "speed_kmh": 37.79
+  "progress": 6e-05,
+  "eta_sec": 227.8,
+  "arrived": false,
+  "speed_kmh": 35.34
  }
 }

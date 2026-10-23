@@ -36,10 +36,6 @@ import json
 
 import httpx
 from prometheus_client import REGISTRY
-
-from convoy_brain.decider import DeciderBrain, _questions_signature
-from convoy_brain.memory.memory_client import MemoryClient, MemorySearchResult
-
 from test_novelty_latch import (
     FakeMemoryClient,
     ScriptedDecider,
@@ -47,6 +43,9 @@ from test_novelty_latch import (
     memory_ok,
     questions,
 )
+
+from convoy_brain.decider import DeciderBrain, _questions_signature
+from convoy_brain.memory.memory_client import MemoryClient, MemorySearchResult
 
 TRIGGER = "pre_movement"  # tier-0 eligible, the trigger the plan flow uses
 
@@ -206,14 +205,56 @@ class TestFeederWiring:
         )
         assert memory.recorded[0]["ref_id"] != memory.recorded[1]["ref_id"]
 
-    async def test_withheld_novelty_latched_checkpoint_never_records(self):
+    async def test_withheld_checkpoint_records_its_situation(self):
+        # The self-lock fix: a confidently-answered NOVEL situation is withheld
+        # but its SITUATION is recorded (withheld=true) — before, it was never
+        # recorded and therefore latched forever.
         memory = FakeMemoryClient(results=[memory_ok(best_score=0.10)])
         brain = DeciderBrain(
             ScriptedDecider(confidence=0.95), memory_client=memory, min_interval_sec=0
         )
         result = await brain.checkpoint("mv-1", TRIGGER, "state", questions())
         assert result.tier == "novelty_latched"
-        assert memory.recorded == []  # a withheld answer is not a decision
+        assert len(memory.recorded) == 1
+        row = memory.recorded[0]
+        assert row["state_doc"] == "state"
+        assert row["metadata"]["withheld"] is True
+        assert row["metadata"]["tier"] == "novelty_latched"
+        assert "withheld" in row["title"]
+        assert not brain._tier0_cache  # withheld answers never enter the cache
+
+    async def test_repeat_of_a_recorded_situation_stops_latching(self):
+        class LearningMemory(FakeMemoryClient):
+            """Corpus double: a recorded state doc becomes a covered hit."""
+
+            async def search(self, state_doc, *, movement_id=None, top_k=5):
+                self.calls += 1
+                if any(r["state_doc"] == state_doc for r in self.recorded):
+                    return memory_ok(best_score=0.95, kind="decision")
+                return memory_ok(best_score=None, hits=0)
+
+        memory = LearningMemory()
+        brain = DeciderBrain(
+            ScriptedDecider(confidence=0.95), memory_client=memory, min_interval_sec=0
+        )
+        first = await brain.checkpoint("mv-1", "operator_chat", "same question", questions())
+        second = await brain.checkpoint(
+            "mv-1", "operator_chat", "same question", questions(), force=True
+        )
+        assert first.tier == "novelty_latched"
+        assert second.tier == "decider"  # on record now — the 27B is trusted
+        assert memory.calls == 2  # the latch memo was dropped after the record
+        assert [r["metadata"]["withheld"] for r in memory.recorded] == [True, False]
+
+    async def test_failed_withheld_record_keeps_the_memo(self):
+        memory = FakeMemoryClient(results=[memory_ok(best_score=0.10)])
+        memory.record_returns = False
+        brain = DeciderBrain(
+            ScriptedDecider(confidence=0.95), memory_client=memory, min_interval_sec=0
+        )
+        await brain.checkpoint("mv-1", TRIGGER, "state", questions())
+        await brain.checkpoint("mv-1", TRIGGER, "state", questions(), force=True)
+        assert memory.calls == 1  # nothing landed, so no reason to re-search
 
     async def test_rate_limited_and_degraded_never_record(self):
         memory = FakeMemoryClient(results=[memory_ok(best_score=0.88)])
@@ -351,3 +392,62 @@ class TestFeederOrdering:
             )
             - before
         ) == 1
+
+
+# ─── (D) VVIP_MEMORY_RECORD — the feeder's off switch (WP-14 T14) ─────────────
+
+
+class TestFeederOffSwitch:
+    """Sandbox brains must never add rows to the corpus the embedding service
+    writes (a previous wave leaked sandbox decisions into the LIVE
+    traffic.memory_docs). VVIP_MEMORY_RECORD=0 turns the write side off:
+    checkpoints still SEARCH (latch and gate unchanged), nothing is recorded,
+    and every skip counts as outcome 'skipped_disabled'."""
+
+    def test_env_switch_parsing(self):
+        from convoy_brain.config import decision_memory_record_enabled
+
+        assert decision_memory_record_enabled({}) is True
+        for off in ("0", "false", "No", " off "):
+            assert decision_memory_record_enabled({"VVIP_MEMORY_RECORD": off}) is False
+        for on in ("1", "true", "yes", ""):
+            assert decision_memory_record_enabled({"VVIP_MEMORY_RECORD": on}) is True
+
+    async def test_disabled_feeder_searches_but_never_records(self):
+        memory = FakeMemoryClient(results=[memory_ok(best_score=0.88)])
+        brain = brain_with(memory, memory_record_enabled=False)
+        assert brain.memory_record_enabled is False
+        before = _metric(
+            "vvip_decider_memory_record_events_total", {"outcome": "skipped_disabled"})
+        result = await brain.checkpoint("mv-1", TRIGGER, "state", questions())
+        assert result.tier == "decider"
+        assert memory.calls == 1  # the novelty search still ran
+        assert memory.recorded == []
+        assert _metric(
+            "vvip_decider_memory_record_events_total", {"outcome": "skipped_disabled"}
+        ) == before + 1
+
+    async def test_disabled_feeder_also_skips_withheld_records(self):
+        memory = FakeMemoryClient(results=[memory_ok(best_score=0.05)])  # novel → latched
+        brain = brain_with(memory, memory_record_enabled=False)
+        result = await brain.checkpoint("mv-1", TRIGGER, "novel state", questions())
+        assert result.tier == "novelty_latched"
+        assert memory.recorded == []
+
+    def test_env_off_reaches_the_brain_and_health(self, monkeypatch):
+        from conftest import FakeContextStore
+        from starlette.testclient import TestClient
+
+        from convoy_brain import __main__ as brain_main
+
+        for name in ("MODEL_HOST_URL", "LLAMA_BASE_URL", "TRAFFIC_ORACLE_URL",
+                     "EMBEDDING_SERVICE_URL"):
+            monkeypatch.setenv(name, "http://127.0.0.1:1")
+        monkeypatch.setenv("VVIP_MEMORY_RECORD", "0")
+        monkeypatch.setattr(brain_main, "ConvoyContextStore",
+                            lambda valkey_url: FakeContextStore())
+        app = brain_main.create_app()
+        with TestClient(app) as client:
+            assert app.state.decider_brain.memory_record_enabled is False
+            body = client.get("/health").json()
+        assert body["strategic_tier"]["memory_record"] == "disabled"

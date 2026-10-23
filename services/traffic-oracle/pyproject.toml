@@ -101,3 +101,5 @@ strict = true
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+# `cd services/traffic-oracle && pytest -q` works without PYTHONPATH=src.
+pythonpath = ["src"]

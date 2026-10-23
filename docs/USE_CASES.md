@@ -44,11 +44,13 @@ pursuit with a ranked interception plan. Each entry has three parts:
   this corridor class occurs and why a national traffic platform must be able
   to express it.
 - **In the engine** — how the case is expressed *today* as a runnable
-  scenario: `scenario_id`, `event_kind`, `protection_class`, route (seed
-  segment IDs), crowd class and closure policy, from
-  `scripts/scenario_library.json` (verified against this file) and the
-  emulator's own copy at
-  `services/event-emulator/src/event_emulator/use_case_library.json`.
+  scenario: `scenario_id`, `event_kind`, `protection_class`, route
+  (segment IDs of the city network — 49 segments on **real OpenStreetMap
+  roads**, every route below a legal chain of real streets), crowd class
+  and closure policy, from the emulator's library
+  `services/event-emulator/src/event_emulator/use_case_library.json` and
+  the twin's exported `scripts/scenario_library.json` (both verified for
+  this revision).
 
 All the corridor entries are **not mockups**: each is a scenario the event
 emulator injects through the real stack's real APIs, and the digital twin
@@ -103,11 +105,14 @@ day (`PROBLEM_STATEMENT_GUJARAT.md:56-60`) — every blanket hold is a lottery
 ticket against one of those trips.
 
 **In the engine** — `scenario_id: vvip_convoy_base` (category `baseline`):
-Z+ movement, Monday 10:10, down the Gandhinagar Highway spine
-(1026→1025→1024) through Kalupur (1014) onto Naroda Road (1030); maximum
-protocol — full closure, 180 s advance (the Z+ floor); default event rates,
-no weather. This is the reference movement every other use case is a
-generalization of.
+Z+ movement from Gandhinagar into the city core, Monday 10:10, down the
+Gandhinagar Highway (1026→1025→1024) through Koba and Bhat Circles, over
+the Indira Bridge (1048), along Airport Road (1028→1027) to Shahibaug and
+in on Dr. Ambedkar Road (1043) to Lal Darwaja; maximum protocol — full
+closure, 180 s advance (the Z+ floor); default event rates, no weather.
+This is the reference movement every other use case is a generalization
+of. During its escort the AI may *propose* a re-route or a hold, but only
+a named officer's approval changes the plan (`TECHNICAL_DOCS.md` §16.2).
 
 ## 1. Jagannath Rath Yatra — Old-City Procession, Ahmedabad
 
@@ -134,10 +139,12 @@ above).
 a public procession at **8 km/h — the engine's speed floor** — classified
 `procession`, `protection_class` X, crowd **EXTREME**, full closure rolling
 ahead of it (120 s advance), seeded to the real 148th edition's date
-(2025-06-27T07:00, seed 20250627). Route: Gandhi Road (1012) → Nehru Bridge
-(1015) → Relief Road (1005) → Tilak Road (1013); forced causes: rally
-spillover on the yatra segments (950 + 850 veh/h) and a bazaar crowd pinned
-behind Tilak Road barricades.
+(2025-06-27T07:00, seed 20250627). Route, on the walled city's real
+streets: east along one-way Gandhi Road to Kalupur (1012), south past
+Sarangpur Darwaja (1049) and west along one-way Swami Vivekananda Road
+toward Jamalpur (1013), with Relief Road (1005) shut alongside; forced
+causes: rally spillover on Gandhi Road and Relief Road (950 + 850 veh/h)
+and a bazaar crowd pinned behind Swami Vivekananda Road barricades.
 
 ## 2. Kumbh-Class Mass Gathering — Perimeter Zone Management
 
@@ -163,10 +170,11 @@ platform must be able to express.
 `mass_gathering`, X-class **supply/medical shuttle** entering the zone
 pre-dawn (04:30, seeded to the 2025 Mauni Amavasya class, seed 20250129)
 under **signal hold** — signals keep cycling: staged ingress, not a blanket
-freeze. Route on the seed network's riverfront cluster: Ashram Road south
-(1001) → Riverfront West (1006) → Usmanpura (1010); forced causes:
-bathing-day ingress surges on the zone core, east-bank queueing corridors
-at capacity, and a saturated Ashram Road approach.
+freeze. Route on the network's riverfront cluster: Ashram Road south
+(1001) → Riverfront Road (West) (1006) → up Ashram Road through Usmanpura
+(1009); forced causes: bathing-day ingress surges on the riverfront zone
+core (1006), east-bank queueing corridors at capacity (1007), and a
+saturated Ashram Road approach (1001).
 
 ## 3. City Marathon — Sabarmati Riverfront Race Corridor, Ahmedabad
 
@@ -191,9 +199,9 @@ every Smart City must stage.
 **In the engine** — `scenario_id: riverfront_marathon` (category `event`):
 `race`, X-class pace/sweep convoy at **12 km/h**, full closure converting to
 staged reopen (60 s advance), 05:45 gun start, seeded to the real 2024
-edition (seed 20241124). Route: Riverfront East (1007) → Ashram South
-(1001) → Riverfront West (1006) → Usmanpura (1010); forced causes:
-spectator spillover on both approach segments.
+edition (seed 20241124). Route: Riverfront Road (East) (1007) → Nehru
+Bridge (1015) → Ashram Road (South) (1001) → Riverfront Road (West)
+(1006); forced causes: spectator spillover on both approach segments.
 
 ## 4. Republic Day / Independence Day — Ceremonial Parade Corridor
 
@@ -216,11 +224,12 @@ Governor took the salute with the CM present (Gujarat CMO) on the same
 capital-region corridor the engine seeds.
 
 **In the engine** — `scenario_id: national_day_parade` (category `event`):
-`ceremonial`, **Z-class** dignitary run from the airport (1028→1027) onto
-the GN Highway parade strip (1024→1025) at 08:35, arriving before the 09:00
-flag hoisting (seed 20270126); full closure at 150 s advance; forced
-causes: grandstand spectators and parking saturating the strip itself plus
-spectator approach traffic. Independence Day is the calendar mirror.
+`ceremonial`, **Z-class** dignitary run from SVPI airport (1029→1028)
+over the Indira Bridge (1048) onto the GN Highway parade strip at Bhat
+(1024→1025) at 08:35, arriving before the 09:00 flag hoisting (seed
+20270126); full closure at 150 s advance; forced causes: grandstand
+spectators and parking saturating the strip itself plus spectator
+approach traffic. Independence Day is the calendar mirror.
 
 ## 5. Stadium Egress — Narendra Modi Stadium Match Night, Ahmedabad
 
@@ -241,12 +250,13 @@ advisories (sources above) — a near-monthly, citable-at-scale egress event.
 
 **In the engine** — `scenario_id: motera_stadium_egress` (category `event`):
 `egress_surge` at 20:05, just after a final ball (seed 20260308), crowd
-**EXTREME**. The seed network carries the venue precisely: **segment 1032
+**EXTREME**. The network carries the venue precisely: **segment 1032
 "Motera Stadium Road" with `stadium_adjacent: true`**
 (`scripts/scenario_library.json`, network section). An X-class ambulance
-with a green-corridor request fights the dispersal wave from 1032 down the
-Ashram spine (1002→1001) under **signal hold** (60 s); forced causes: the
-~130k dispersal, the egress wave onto Ashram Road north, one stalled car
+with a green-corridor request fights the dispersal wave from 1032 over
+the Chimanbhai Patel Flyover (1041) and down the Ashram Road spine
+(1009→1002→1001) under **signal hold** (60 s); forced causes: the ~130k
+dispersal, the egress wave onto Ashram Road north, one stalled car
 blocking a dispersal lane, and the `emergency_vehicle` window itself.
 
 ## 6. Monsoon Flood — Evacuation and Relief Corridor (Gujarat 2024 class)
@@ -270,14 +280,19 @@ than delay.
 
 **In the engine** — `scenario_id: flood_evacuation_corridor` (category
 `weather`): `emergency_evacuation`, 11:20 in 22 mm/h rain (seed 20240827,
-the real flood week). The seed network marks the flood surface explicitly:
-**7 low-lying segments — 1001, 1002, 1006, 1007, 1015, 1024, 1039**
-(`low_lying: true` in `scripts/scenario_library.json`) — and the scenario
+the real flood week). The twin marks the flood surface explicitly —
+**7 low-lying segments: 1001, 1002, 1006, 1007, 1014, 1015, 1039**
+(`_LOW_LYING_SEGMENTS` in `traffic_oracle/simulation/network.py`;
+`low_lying: true` in `scripts/scenario_library.json`) — a labelled
+assumption: the river-crossing corridor (Ashram Road South and North,
+Riverfront Road West and East, Nehru Bridge Road, Swami Vivekananda Bridge
+(Ellis Bridge)) plus the Kalupur station approach, Station Road (Kalupur)
+(1014). The scenario
 waterlogs the low-lying river spine (1001/1006/1015) while an X-class
-relief column runs the reverse-flow, high-ground detour: Sarkhej (1040) onto
-SP Ring Road (1021→1022→1008), under signal hold, with evacuee traffic
-surging onto the ring road behind it and an abandoned vehicle on the
-flooded shoulder.
+relief column runs the reverse-flow, high-ground detour: SG Highway
+(Sarkhej) (1040) onto SP Ring Road (1021→1022→1008), under signal hold,
+with evacuee traffic surging onto the ring road behind it and an
+abandoned vehicle on the flooded shoulder.
 
 ## 7. Planned Infrastructure Work Zone — Metro / Bullet-Train Works, Ahmedabad
 
@@ -303,12 +318,13 @@ making planned work zones the highest-certainty ROI for corridor tooling
 (PIB: 77.63 km approved network).
 
 **In the engine** — `scenario_id: metro_work_zone` (category `ops`):
-`work_zone`, an X-class inspection convoy at 09:15 running CTM Road (1031)
-through the Kalupur pinch (1014) onto GN Highway south (1024) (seed
-20250814) under partial closure, while both work zones hold two barricaded
-lanes as **standing, long-duration forced lane-loss** (Kankaria Road 1038 —
-a `market_adjacent` segment — and Kalupur Bridge 1014) and diverted bazaar
-traffic squeezes Kankaria Road.
+`work_zone`, an X-class inspection convoy at 09:15 running Kasturba
+Gandhi Road (1031) through the Kalupur pinch (1014), south past Sarangpur
+Darwaja (1049) and onto Kankaria Road (1038) (seed 20250814) under partial
+closure, while both work zones hold two barricaded lanes as **standing,
+long-duration forced lane-loss** (Kankaria Road 1038 — a
+`market_adjacent` segment — and Kalupur Bridge on Station Road 1014) and
+diverted bazaar traffic squeezes Kankaria Road.
 
 ---
 
@@ -337,41 +353,69 @@ does not need one to make its case.)*
 enforcement workload — and it is the cleanest demonstration of the
 platform's governance posture: lawful basis recorded per watchlist entry,
 every camera read labelled emulated or live, penalties proposed by
-deterministic rules and consummated **only** by a named duty officer, and
-pursuits opened by operators, never by the system.
+deterministic rules and consummated **only** by a named duty officer, **no
+fine ever on a reported-stolen car's owner** (the owner is the victim),
+and pursuits opened by operators, never by the system.
 
 **In the engine** — `scenario_id: watchlist_anpr_sweep` (category
 **`enforcement`**, the emulator library's tenth entry,
 `services/event-emulator/src/event_emulator/use_case_library.json`):
-a stolen-vehicle FIR drives an emulated ANPR camera sweep along the
-old-city belt — Jamalpur (1012) up Gandhi Road (1015) to Relief Road
-(1005) and Tilak Road (1013) — with the stolen plate (`matched_plate_hit:
-stolen_vehicle`) and an earmarked plate among background traffic. Two new
-event kinds extend the axis (migration `010_vehicles_watchlist.sql`:
+a stolen-vehicle FIR drives an emulated ANPR camera sweep around the
+walled city — over Nehru Bridge (1015) to Lal Darwaja, east along one-way
+Gandhi Road (1012) to Kalupur, south past Sarangpur Darwaja (1049) and
+west along one-way Swami Vivekananda Road (1013) — with the FIR-named
+stolen plate GJ27EM9001 among background traffic (its `stolen_vehicle_fir`
+earmark stated at t0 as a labelled EMULATED scenario precondition, so its
+reads hit `matched_plate_hit: stolen_vehicle` and file evidence-only
+`R_STOLEN_SIGHTING`, never a fine) and the earmark-exercise plate
+GJ27EM4321 — an operator exercise: its reads hit `earmarked_plate` only
+after a duty officer earmarks it; the emulator never does, so on a fresh
+install they are ordinary sightings. Every synthetic plate carries the EM
+series marker. The stored use-case profile says the same: the network
+step corrects the seeded `watchlist_anpr_sweep` description and template
+(`earmarked_plate_hit` false, `operator_earmark_exercise` true) wherever
+they are still migration 010's values, keeping an operator's edit.
+Two event kinds extend the axis (migration `010_vehicles_watchlist.sql`:
 `crime_incident`, `vehicle_pursuit`). The full chain, every step a real
 API on the running stack:
 
 1. **Earmark** — `POST /api/v1/vehicles/{plate}/earmark` flags the plate
    with an enumerated `lawful_basis` (`stolen_vehicle_fir`), a reason
    naming the FIR, and a server-computed retention horizon (30 days in
-   the flagship; hard cap 90).
-2. **ANPR sightings** — emulated camera reads land through the
-   `AnprSource` port as `corridor.vehicle_sightings` rows, every one
-   born `source='emulated_anpr'` (`traffic_oracle/vehicles/sources.py`;
-   the `live_anpr` label is reserved for a real vendor feed — nothing
-   writes it in this build).
-3. **e-challan recommendation** — `POST /api/v1/enforcement/evaluate`
-   runs deterministic rules (`R_SPD_SEGMENT`, `R_SIGNAL_VIOLATION`)
-   over each persisted sighting and files **PENDING** recommendations
-   only; there is no code path that creates an approved row.
+   the flagship; hard cap 90). The emulated sweep makes this premise
+   explicit itself — a labelled scenario precondition — before its first
+   read.
+2. **ANPR sightings** — emulated camera reads arrive through the ANPR
+   ingest seam (`POST /api/v1/vehicles/sightings`) as
+   `corridor.vehicle_sightings` rows, every one born
+   `source='emulated_anpr'` (the `live_anpr` label is reserved for a real
+   vendor feed — nothing writes it in this build); the ORACLE, not the
+   emulator, computes the hit from its active earmarks.
+3. **Evidence, never a fine** — the deterministic rules run over each
+   read and file **PENDING** rows only (there is no code path that
+   creates an approved row). Because the car is reported stolen, each
+   read becomes ONE evidence-only `R_STOLEN_SIGHTING` — the penal rules
+   it would have fired (`R_SPD_SEGMENT`, `R_SIGNAL_VIOLATION`,
+   `R_CLOSED_CORRIDOR_ENTRY`) are recorded as withheld — and approving
+   any e-challan on that plate is refused: **409 "e-challan withheld —
+   vehicle reported stolen"** (migration `017`, contract C-N).
 4. **Human approval** — `POST /api/v1/enforcement/recommendations/{id}/decision`
-   with a mandatory officer identity flips pending→approved and appends
-   to the append-only audit tail. This is the **only** such transition
-   in the system.
+   with a mandatory officer identity (the signed-in officer, forwarded by
+   the deck) approves the sighting and appends to the append-only audit
+   tail — the authorised basis for a pursuit. Every pending→approved
+   transition carries the officer who made it: a signed-in human in the
+   judged demo; an unattended script's approval is recorded under the
+   label `Scripted demo officer (showcase script)`, never as a person.
 5. **Pursuit (operator-initiated, C6)** — `POST /api/v1/events` opens a
    `vehicle_pursuit` corridor event whose metadata carries `vehicle_id`
-   + `recommendation_id` + the FIR reference; the system never opens a
-   pursuit itself.
+   + `recommendation_id` (the approved sighting) + the FIR reference; it
+   is accepted only with an active earmark and a human-approved
+   recommendation for that vehicle — for a reported-stolen car, its
+   approved `R_STOLEN_SIGHTING`, never an e-challan (a pursuit opened from
+   an approved e-challan of a stolen car is refused, 422) — and one
+   approval authorises ONE pursuit (a second pursuit from the same
+   approval is refused, 422; a newer sighting needs its own approval).
+   The system never opens a pursuit itself.
 6. **Interception plan** — `GET /api/v1/events/{id}/interception-plan`
    ranks choke junctions ahead of the vehicle's **latest sighting**:
    one-to-many pgRouting `pgr_drivingDistance` over the live
@@ -381,14 +425,19 @@ API on the running stack:
 7. **Live trace** — `GET /api/v1/vehicles/{id}/trace` feeds the
    God's-eye canvas vehicle-traces layer (the pursuit view of the
    flagship screenshots).
+8. **Units to the chokes** — a duty officer approves a dispatch to
+   interception choke #1; the unit travels to that junction (it is never
+   "arrived" at t=0) and is released when the pursuit closes.
 
-**Ethics rails (contract C6), enforced in schema and validators — not
-convention:** vehicles only (no person-directed field exists on any
-path); every earmark carries a lawful basis and a capped retention
-horizon, with sightings reaped past retention **in the read path**; the
-emulated badge is carried on every row and rendered on the canvas; and
-agencies are dispatchable actors through the same audited, human-approved
-channel (migration `011_city_coordination.sql`; Jan Rakshak is
+**Ethics rails (contracts C6 + C-N), enforced in schema and validators —
+not convention:** vehicles only, via ANPR plates — no face, no person, no
+person-directed field on any path; no fine on a reported-stolen
+vehicle's owner; every earmark carries a lawful basis and a capped
+retention horizon, with sightings reaped past retention **in the read
+path**; plates are masked on every surface until a named officer is
+signed in; the emulated badge is carried on every row and rendered on
+the canvas; and agencies are dispatchable actors through the same
+audited, human-approved channel (migration `011_city_coordination.sql`; Jan Rakshak is
 first-class — `traffic_oracle/units/agencies.py`). The full rails are
 written up in **[`docs/GODS_EYE_INTEGRATION.md`](GODS_EYE_INTEGRATION.md)**.
 
@@ -399,58 +448,77 @@ written up in **[`docs/GODS_EYE_INTEGRATION.md`](GODS_EYE_INTEGRATION.md)**.
 The mentor's paradigm shift, rendered: if the city's traffic police,
 police control, 108 dispatch, fire and Jan Rakshak all act on the same
 live picture, the picture itself becomes the platform. The God's-eye
-canvas (`services/command-deck/src/lib/gods-eye/`) is a keyless CesiumJS
-3D city — OSM raster basemap plus Veer's own 3D entities — embedded as
-the centerpiece of the `/ops` board and as a fullscreen `/gods-eye`
-cinematic route with sensor modes (FLIR White-Hot / Black-Hot / raw) and
-a share link that restores the exact view. Five layer providers are
-registered under a ported, integrity-validated registry
-(`layers/index.ts`): corridor events, **vehicle traces** (earmarked
-vehicles, watch/flagged colours, EMULATED badges), the signal network,
-agency units and cameras. Every layer fetches through fixed same-origin
-endpoints; an undeployed backend (the cameras API today) renders an
-honest "not deployed" chip, never a silent blank. The AMA band chip
-surfaces the Active Movement Adaptation module's live city band.
-Architecture, the emulated/real split extended to ANPR and dispatch
-projection, and the ethics rails: **[`docs/GODS_EYE_INTEGRATION.md`](GODS_EYE_INTEGRATION.md)**.
+canvas (`services/command-deck/src/lib/gods-eye/`) is a CesiumJS city —
+**photorealistic 3D Ahmedabad for signed-in operators** (Google
+Photorealistic 3D Tiles over Cesium World Terrain), the keyless OSM globe
+for everyone else — embedded as the centerpiece of `/` and `/ops` and as a
+fullscreen `/gods-eye` cinematic route with sensor modes (FLIR White-Hot /
+Black-Hot / raw) and a share link that restores the exact view. Eleven
+layers are registered under a ported, integrity-validated registry
+(`layers/index.ts`) — corridor events, the live congestion network on the
+49 real roads, **vehicle traces** (earmarked vehicles, EMULATED badges),
+enforcement, the signal network, agency units, dispatches, the convoy,
+cameras, anomalies and the photoreal 3D tiles — the overlays draped on the
+3D city. Every layer fetches through fixed same-origin endpoints; an
+undeployed backend renders an honest "not deployed" chip, never a silent
+blank. The AMA band chip surfaces the Active Movement Adaptation module's
+live city band. Architecture, the measured layer table, the emulated/real
+split extended to ANPR and dispatch projection, and the ethics rails:
+**[`docs/GODS_EYE_INTEGRATION.md`](GODS_EYE_INTEGRATION.md)**.
 
 ---
 
 ## The flagship: "God's Eye Morning" — the whole platform on one morning
 
 The submission's flagship demonstration (`scripts/showcase_run.sh`, no
-arguments) is a **composite of the library** that now spans both mission
+arguments) is a **composite of the library** that spans both mission
 families: 09:20 on the real 148th Rath Yatra morning of 27 June 2025 —
 three chariots crawling Gandhi Road and Relief Road with lakhs on the
 street, a monsoon burst at 18 mm/h waterlogging the Nehru Bridge
-approach, bazaar crowds behind Tilak Road barricades — and a 108
-ambulance carrying a cardiac patient requesting a green corridor across
-the river (Relief Road → Nehru Bridge → Riverfront West → Ashram South,
-1005→1015→1006→1001). Into that morning, a **stolen vehicle is reported**
-(FIR 4401/2026, Kalupur PS, plate GJ27EM9001) and the full enforcement
-chain of entry 8 runs through the same live stack. The engine's answer
-for the **public** procession (`protection_class: none`): **signal hold
-at 45 s advance — "regulated, not stopped"** — threading a medical
-convoy between a festival and the weather, while the watchlist chain
-runs alongside.
+approach, bazaar crowds behind Swami Vivekananda Road barricades — and a
+108 ambulance carrying a cardiac patient requesting a green corridor
+across the river (Relief Road → Nehru Bridge → Ashram Road south →
+Riverfront West, 1005→1015→1001→1006, a legal chain on the real network).
+Into that morning, a **stolen vehicle is reported** (FIR 4401/2026,
+Kalupur PS, plate GJ27EM9001) and the chain of entry 8 runs through the
+same live stack: evidence-only sightings, an e-challan on the plate
+refused (409), the named officer's approval of a sighting opening the
+pursuit. The engine's answer for the **public** procession
+(`protection_class: none`): **signal hold at 45 s advance — "regulated,
+not stopped"** — threading a medical convoy between a festival and the
+weather, while the watchlist chain runs alongside. In the judged demo a
+signed-in human makes every approval live on `/ops`.
 
-Re-run end-to-end for this revision by the documentation pass itself
-(exit 0; artifacts regenerated 2026-10-13T05:00Z / 10:30 IST:
-`showcase/showcase_results.json`, `showcase/pursuit_chain.json`,
-`showcase/chain_earmark.json`, `showcase/twin_audit.json`):
+**Run live on the deployed stack on the night of 2026-10-23/24 — SHOWCASE
+PASS three times** (once alone at 23:51 IST, then twice under the
+repetition gate, whose two rounds left identical canonical end states).
+The artifacts on disk are the gate's last round, one run
+(`showcase/showcase_results.json` generated 2026-10-23T18:31Z — 00:01 IST
+on 2026-10-24 — `passed: true`, no failed assertion;
+`showcase/pursuit_chain.json` the same run). Every approval in it was made
+unattended by the script and is recorded as `Scripted demo officer
+(showcase script)`; in the judged demo a signed-in human approves.
 
-| Assertion | Measured (this run) |
+| Assertion | Measured (the live run, 2026-10-24 00:00 IST) |
 |---|---|
-| Emulator delivery | flagship 736/736 frames, 0 failed / 0 late (run 41) + ANPR sweep 600 frames (run 42) |
-| Decisions logged this run | **36 audit rows** — 30 situation + 6 parameter overrides |
-| Band transitions observed | 3 this run (38 total across the ledger; bands AMBER 52 / GREEN 28 / RED 402) |
-| Ambulance-delay escalations | 1 `AMBULANCE_DELAY` decision in the escalation channel |
-| Green-corridor windows | **4** `emergency_vehicle` windows in the audited twin schedule (Relief Road → Nehru Bridge → Riverfront West → Ashram South) |
-| Twin outcome (12-replication seeded model) | ambulance delay mean **7.63 s** — a model output, labelled as such |
-| Pursuit chain | earmark `lawful_basis=stolen_vehicle_fir`, retention 30 d → 4 emulated ANPR reads on EM-CAM-01..04 at 107/108/112/108 km/h, `R_SPD_SEGMENT` firing 4× (`matched_plate_hit=stolen_vehicle`) → e-challan "GJ27EM9001 read at 108 km/h in a 50 km/h segment" filed PENDING → **approved by Duty Officer R. Mehta** (append-only audit tail) → operator-opened `vehicle_pursuit` event (metadata carries vehicle_id + recommendation_id + FIR, merged into the artifact from `events.corridor_events` — the POST response echoes metadata as `{}`) → interception plan: **9 choke junctions ranked** off the latest sighting (top: junction 3, signal-controlled, score 0.9) → 56-position live trace, `source=emulated_anpr` |
-| Jan Rakshak dispatch | JR-EM-01 to the Tilak Road spillover: requested → approved → en_route → on_scene, every transition audited |
-| Signal-policy guard | city band plan proposed for 11 junctions; the C7 shadow-eval guard **refused the commit** (twin_not_calibrated, replay MAE 13.23 km/h vs the 5.0 gate) — fail-closed by design, `signal_plan_shifts_committed: 0`, the refusal itself audited in `GET /api/v1/signals/plans` |
-| Screenshots | God's-eye 3D city (mid-chaos, live layers), pursuit trace, citizen advisory — each proven non-blank at the pixel level (SwiftShader WebGL, ≥8 distinct colours) |
+| Emulator delivery | flagship 761/761 frames, 0 failed / 0 skipped / 0 late (run 27) + ANPR sweep 583/583 frames (run 28, seed pinned 20261105) |
+| Decisions logged this run | **31 audit rows** — 25 situation + 6 parameter overrides |
+| Band transitions observed | 1 this run — AMBER → RED (band ledger AMBER 7 / RED 18); when the event completed the engine released it and the city band read GREEN again |
+| Ambulance-delay escalations | the 108 escalation decided mid-chaos (`AMBULANCE_DELAY_SEVERE`, TAKEOVER, operator handoff); 2 `AMBULANCE_DELAY` parameter rows |
+| Green-corridor windows | **4** `emergency_vehicle` windows in the audited twin schedule (Relief Road stretch, Nehru Bridge crossing, Riverfront West, Ashram South handover) — the scenario's scripted 108 crossings (its forced events), i.e. causes the twin schedules and charges closure/queue delay, not windows the engine granted |
+| Twin outcome (12-replication seeded model) | ambulance delay mean **231.92 s** — a model output, labelled as such |
+| Pursuit chain | earmark `lawful_basis=stolen_vehicle_fir`, retention 30 d → 6 emulated ANPR reads this run (EM-CAM-01..04, EM-J01B, EM-J05 at 95–115 km/h, `source=emulated_anpr`) → 6 evidence-only `R_STOLEN_SIGHTING`, 0 penal recommendations ("… sighted at EM-CAM-03 — e-challan withheld, vehicle reported stolen") → an e-challan approval on the plate refused, **409** → the newest sighting approved by the scripted officer → operator-opened `vehicle_pursuit` event → interception plan: **10 choke junctions ranked** off the latest sighting (top: junction 15, Kalupur — Relief Road / Station Road, unsignalised, score 0.008683) → a 12-position live trace (its 24 h window held these 6 reads and the 23:51 run's 6) → the scripted pursuit closed at run end (its approval spent: one approval, one pursuit). No fine anywhere |
+| Jan Rakshak dispatch | JR-EM-01 to the segment-1013 spillover: requested → approved → en_route → on_scene, every transition audited |
+| Signal-policy guard | city band plan (AMBER) for 11 junctions; the C7 shadow-eval guard **refused the commit** (`twin_not_calibrated` — the calibration replay is `no_data`: 0 field hourly aggregates in the last 72 h, the feed being synthetic) — fail-closed by design, 0 committed; the refusal reported as the oracle's last plan (`showcase/signal_policy.json`), nothing written |
+| Screenshots | the hero shots, recaptured on 2026-10-24 01:25–01:26 IST on the live stack in its staged judging state — the operator views in photorealistic 3D: the God's-eye city at rest, the pursuit trace (pins `STOLEN · NO FINE · APPROVED` and the pre-rule e-challan's `SUPERSEDED · STOLEN`) and the `/ops` wall; plus the public citizen advisory on its keyless map (no pursuit, no plate) — each proven non-blank at the pixel level (SwiftShader WebGL, ≥ 8 distinct colours) |
+
+The artifacts before this run (2026-10-18) were recorded on the schematic
+network of the time and *before* the stolen-vehicle rule: that pursuit was
+opened from a penal e-challan the script had approved on the stolen plate
+under a cast officer name ("Duty Officer R. Mehta (God's Eye Morning)") —
+exactly what the platform now refuses. That approval stays in the store
+as superseded audit history (the canvas pin reads `SUPERSEDED · STOLEN`),
+and its pursuit was cancelled before judging.
 
 ---
 
@@ -459,11 +527,12 @@ Re-run end-to-end for this revision by the documentation pass itself
 1. **The engine's expression of each case is a model, not a reconstruction.**
    Routes, demand figures and forced causes are the scenario library's
    seeded, synthetic representation of the documented event class on the
-   repo's 40-segment synthetic Ahmedabad seed network
-   (`scripts/scenario_library.json`; seed SQL in
-   `services/corridor-store/seed/sample_corridor.sql`). No real traffic
-   records from any Rath Yatra, marathon, match night, flood — or any
-   real FIR, plate or ANPR read — are bundled. The flagship's stolen
+   platform's city network — 49 segments drawn on **real OpenStreetMap
+   roads** (34 junctions, ~192 km; © OpenStreetMap contributors, ODbL 1.0;
+   `scripts/data/osm_network.json`, `scripts/scenario_library.json`). The
+   roads are real; the traffic is not: no real traffic records from any
+   Rath Yatra, marathon, match night, flood — or any real FIR, plate or
+   ANPR read — are bundled. The flagship's stolen
    vehicle, its plate and its FIR number are synthetic cast members of
    the scripted morning.
 2. **The emulated/real split is plain — and now covers ANPR and dispatches.**
@@ -479,15 +548,21 @@ Re-run end-to-end for this revision by the documentation pass itself
    this build) and to agency units (positions are a deterministic
    `emulated_dispatch_projection`, `emulated: true` on every unit). The
    emulator never produces outcomes: no decisions, parameters, situation
-   classes — and no approved penalty. Every decision, band transition,
-   escalation, green-corridor window and **every pending→approved
-   transition** quoted above was produced by the real stack or by a
-   named human officer. Live injections are indistinguishable from a
-   real feed at the API boundary; replays carry a single
+   classes — and no approved penalty. Every decision, band transition and
+   escalation quoted above was produced by the real stack (the
+   green-corridor windows are causes too — the scenario's scripted 108
+   crossings as the twin schedules them); every **pending→approved
+   transition** in that run was the
+   showcase script's, recorded under the honest label `Scripted demo
+   officer (showcase script)`; in the judged demo a signed-in human
+   approves. Live injections ride the same APIs as a real
+   feed, and the provenance rides in the rows themselves — the showcase
+   plane's rows on their own subject, every one labelled `data_quality`
+   SYNTHETIC, never REAL; replays carry one more tell, the
    `X-Emulation-Replay` header (`services/event-emulator/README.md`,
    seams verified live 2026-10-12).
 3. **Twin outputs are simulation outputs and are labelled as such.** The
-   12-replication Monte-Carlo mean above (ambulance delay 7.63 s) is a
+   12-replication Monte-Carlo mean above (ambulance delay 231.92 s) is a
    property of the seeded model under its stated cause set — never
    presented as a field measurement.
 4. **External figures are only as good as their sources**, which are named
@@ -497,17 +572,20 @@ Re-run end-to-end for this revision by the documentation pass itself
    the entry says so instead of estimating.
 5. **The VVIP base case keeps its own honesty ledger.** The junction-freeze
    impact figures (25×–506×, central 100×) live in `IMPACT_REPORT.md` with
-   every assumption falsifiable; the neural forecaster ships as
-   architecture only (heuristic forecasts until trained weights are
-   exported); and the security veto stays human. See `README.md` and
+   every assumption falsifiable; our DSTGAT forecaster ships as
+   architecture only (no trained weights — today's forecasts come from
+   the third-party zero-shot t0-alpha rung or the heuristic rung); and
+   the security veto stays human. See `README.md` and
    `TECHNICAL_DOCS.md` §3/§6.1/§13.
 6. **The enforcement family's rails are stated where they are enforced.**
    Vehicles-only, lawful basis + capped retention, read-path reaping,
-   pending-only penalties, operator-initiated pursuits: the schema
-   CHECKs and validators are quoted in
-   [`GODS_EYE_INTEGRATION.md`](GODS_EYE_INTEGRATION.md) §4 — and the
-   one backend the canvas waits on (`GET /api/v1/cameras`) honestly
-   renders as "not deployed" rather than blank.
+   pending-only penalties, no fine on a reported-stolen vehicle's owner,
+   operator-initiated pursuits: the schema CHECKs and validators are
+   quoted in [`GODS_EYE_INTEGRATION.md`](GODS_EYE_INTEGRATION.md) §4.
+7. **Escort authority stays human.** During a live escort the AI decider
+   only proposes a route switch, Plan B, a hold or new closures; a named
+   officer approves every switch, and a proposal nobody answers within the
+   timeout (90 s by default) expires with the current plan held.
 
 ---
 

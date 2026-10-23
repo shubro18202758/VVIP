@@ -8,13 +8,14 @@ Exports metrics for:
 - Anomaly detection rates
 - Stream processor channel utilization
 - Memory profiling gauges
+- Live ingest (NATS messages per subject, rows dropped by reason)
 """
 
 from __future__ import annotations
 
 import time
 from contextlib import asynccontextmanager, contextmanager
-from typing import AsyncIterator, Iterator
+from typing import Any, AsyncIterator, Iterator, Mapping
 
 from prometheus_client import (
     Counter,
@@ -96,6 +97,25 @@ ANOMALY_DETECTIONS = Counter(
 OBSERVATIONS_PROCESSED = Counter(
     "vvip_observations_processed_total",
     "Total traffic observations processed",
+)
+
+# ─── Live Ingest Metrics (ingest/service.py) ─────────────────────
+
+INGEST_MESSAGES_TOTAL = Counter(
+    "vvip_ingest_messages_total",
+    "NATS messages consumed by the oracle ingest service",
+    ["subject"],
+)
+
+INGEST_ROWS_DROPPED_TOTAL = Counter(
+    "vvip_ingest_rows_dropped_total",
+    "Ingest rows/documents dropped instead of written, by stage and reason",
+    ["stage", "reason"],
+)
+
+INGEST_NATS_CONNECTED = Gauge(
+    "vvip_ingest_nats_connected",
+    "1 while the ingest service's NATS connection is up",
 )
 
 # ─── Stream Processor Channel Metrics ─────────────────────────────
@@ -186,6 +206,25 @@ def track_onnx_inference(model_name: str, provider: str) -> Iterator[None]:
         ONNX_INFERENCE_DURATION.labels(
             model_name=model_name, provider=provider
         ).observe(time.monotonic() - start)
+
+
+#: Endpoint label for requests that matched no route (404 probes, scans):
+#: one bounded series instead of one per probed path.
+UNMATCHED_ROUTE_LABEL = "<unmatched>"
+
+
+def route_template_label(scope: Mapping[str, Any]) -> str:
+    """Bounded ``endpoint`` label: the matched route TEMPLATE, never the path.
+
+    Starlette sets ``scope["route"]`` to the matched route, whose ``.path``
+    is the template (``/api/v1/events/{event_id}/audit``) — so ids never
+    become label values.  Unmatched requests share UNMATCHED_ROUTE_LABEL.
+    """
+    route = scope.get("route")
+    path = getattr(route, "path", None)
+    if isinstance(path, str) and path:
+        return path
+    return UNMATCHED_ROUTE_LABEL
 
 
 def record_api_request(

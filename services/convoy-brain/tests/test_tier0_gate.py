@@ -16,7 +16,11 @@ Coverage:
         all-dense results fail OPEN (decide called, never degraded, honest
         audit row); config.tier0_enabled env parsing + floor separation.
     (B) Write side: low-confidence, latched (novel), and unavailable-memory
-        checkpoints never store; max-entries FIFO eviction.
+        checkpoints never store; max-entries FIFO eviction; a stored
+        pre_movement answer is also filed for the movement's own decision
+        docs, so its first recurrence hits whichever own doc matches
+        (escort triggers keep their filing; movement scoping, the exact
+        question set, the TTL and the FIFO bound hold).
     (C) Metrics: REGISTRY.get_sample_value DELTAS across a hit (counters are
         process-global and never reset between tests — absolute values are
         meaningless; this convention is new to this file); below-routine
@@ -34,12 +38,14 @@ decides; FakeMemoryClient counts /search calls; ScriptedClock drives TTL).
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 
+import pytest
 from prometheus_client import REGISTRY
 
 from convoy_brain import config
 from convoy_brain.config import TIER0_ELIGIBLE_TRIGGERS, TIER0_ROUTINE_SIMILARITY_FLOOR
-from convoy_brain.decider import DeciderBrain
+from convoy_brain.decider import DeciderBrain, _is_own_decision_ref
 
 from conftest import FakeExecutor
 from test_novelty_latch import (
@@ -471,6 +477,218 @@ class TestWriteSide:
         assert scripted.decide_calls == 3
 
 
+class OwnDocMemory:
+    """Memory that knows which decision docs the feeder recorded.
+
+    Until ``movement_id`` has recorded one, the best match is a FOREIGN
+    decision doc (another movement's plan — live, 2026-10-24, movement
+    2c223e77 plan 1); afterwards it is one of the movement's own docs, with
+    the ref_id the feeder wrote. ``pick`` chooses which own doc (``"first"``
+    or ``"last"`` recorded) — two own docs can tie.
+    """
+
+    FOREIGN_REF = "decision:another-movement:pre_movement:0123456789abcdef"
+
+    def __init__(self, pick: str = "last") -> None:
+        self.pick = pick
+        self.recorded: list[dict] = []
+        self.calls = 0
+
+    async def search(self, state_doc, *, movement_id=None, top_k=5):
+        self.calls += 1
+        own = [r for r in self.recorded if r["movement_id"] == movement_id]
+        if not own:
+            return replace(memory_ok(best_score=0.82, doc_id="foreign-9", kind="decision"),
+                           best_ref_id=self.FOREIGN_REF)
+        doc = own[0] if self.pick == "first" else own[-1]
+        return replace(memory_ok(best_score=0.83, doc_id=doc["doc_id"], kind="decision"),
+                       best_ref_id=doc["ref_id"])
+
+    async def record_decision(self, state_doc, *, movement_id, ref_id, title, metadata=None,
+                              timeout_sec=5.0):
+        if not any(r["ref_id"] == ref_id for r in self.recorded):  # upsert on ref_id
+            self.recorded.append({"ref_id": ref_id, "movement_id": movement_id,
+                                  "doc_id": f"own-{len(self.recorded) + 1}"})
+        return True
+
+
+def choice_questions(*options: str) -> dict:
+    return {"next_tool": {"type": "choice", "instructions": "pick",
+                          "options": [*options, "final_answer"]}}
+
+
+class TestOwnDocFiling:
+    """A pre_movement answer is also filed for the movement's own decision docs.
+
+    Live (2026-10-24, movement 2c223e77): plan 1's search named a FOREIGN
+    decision doc; once the feeder upserted plan 1's own doc, plans 2 and 3
+    named an own doc, so the entry plan 1 stored under the foreign doc was
+    unreachable. For pre_movement the answer is also served when the best
+    memory is any decision doc this movement recorded for that trigger.
+    """
+
+    @staticmethod
+    def brain(memory, scripted=None, **kwargs) -> DeciderBrain:
+        return DeciderBrain(
+            scripted or ScriptedDecider(confidence=0.95), memory_client=memory,
+            min_interval_sec=0, clock=ScriptedClock(1000.0), memory_record_enabled=True,
+            **kwargs,
+        )
+
+    async def test_the_first_recurrence_hits_through_an_own_doc(self):
+        memory, scripted = OwnDocMemory(), ScriptedDecider(confidence=0.95)
+        brain = self.brain(memory, scripted)
+        stored = {"outcome": "stored"}
+        stored_before = _metric("vvip_decider_tier0_cache_events_total", stored)
+        first = await brain.checkpoint("mv-1", "pre_movement", "plan 1", questions())
+        assert first.tier == "decider"
+        assert first.audit["tier0_cache"]["best_doc_id"] == "foreign-9"
+        assert first.audit["novelty_latch"]["best_ref_id"] == OwnDocMemory.FOREIGN_REF
+        # One answer, two filings; the "stored" event counts the decide once.
+        assert len(brain._tier0_cache) == 2
+        assert _metric("vvip_decider_tier0_cache_events_total", stored) - stored_before == 1
+
+        # The live figures moved (another state doc): the search names own-1.
+        second = await brain.checkpoint("mv-1", "pre_movement", "plan 2", questions())
+        assert second.tier == "tier0_cache_hit"
+        assert second.audit["tier0_cache"]["best_doc_id"] == "own-1"
+        assert second.audit["novelty_latch"]["best_ref_id"] == memory.recorded[0]["ref_id"]
+        assert second.answers["next_tool"].value == first.answers["next_tool"].value
+        assert scripted.decide_calls == 1
+        assert len(memory.recorded) == 1  # a hit records nothing
+
+    @pytest.mark.parametrize("pick", ["first", "last"])
+    async def test_whichever_own_doc_matches_the_question_set_decides(self, pick):
+        memory, scripted = OwnDocMemory(pick=pick), ScriptedDecider(confidence=0.95)
+        brain = self.brain(memory, scripted)
+        three, five = choice_questions("a", "b", "c"), choice_questions("a", "b", "c", "d", "e")
+        await brain.checkpoint("mv-1", "pre_movement", "plan 1 (3)", three)
+        second = await brain.checkpoint("mv-1", "pre_movement", "plan 2 (5)", five)
+        assert second.tier == "decider"  # a different question set never hits
+        # Two own docs on record now; set 3 is served whichever one matches.
+        third = await brain.checkpoint("mv-1", "pre_movement", "plan 3 (3)", three)
+        assert third.tier == "tier0_cache_hit"
+        assert scripted.decide_calls == 2
+        # A question set never decided misses, own doc or not.
+        fresh = await brain.checkpoint("mv-1", "pre_movement", "plan 4", choice_questions("z"))
+        assert fresh.tier == "decider"
+        assert scripted.decide_calls == 3
+
+    async def test_without_the_filing_the_first_answer_is_unreachable(self):
+        # The filing every other trigger keeps: the second checkpoint names
+        # the own doc, finds nothing under it, and decides again.
+        memory, scripted = OwnDocMemory(), ScriptedDecider(confidence=0.95)
+        brain = self.brain(memory, scripted, tier0_own_doc_triggers=frozenset())
+        await brain.checkpoint("mv-1", "pre_movement", "plan 1", questions())
+        assert len(brain._tier0_cache) == 1
+        second = await brain.checkpoint("mv-1", "pre_movement", "plan 2", questions())
+        assert second.tier == "decider"
+        assert second.audit["tier0_cache"]["status"] == "miss_no_entry"
+        assert scripted.decide_calls == 2
+
+    async def test_escort_triggers_keep_their_filing(self):
+        memory, scripted = OwnDocMemory(), ScriptedDecider(confidence=0.95)
+        brain = self.brain(memory, scripted)
+        await brain.checkpoint("mv-1", TRIGGER, "incident 1", questions())
+        assert [key[3] for key in brain._tier0_cache] == ["foreign-9"]
+        second = await brain.checkpoint("mv-1", TRIGGER, "incident 2", questions())
+        assert second.tier == "decider"
+        assert scripted.decide_calls == 2
+
+    async def test_the_filing_stays_movement_scoped(self):
+        memory, scripted = OwnDocMemory(), ScriptedDecider(confidence=0.95)
+        brain = self.brain(memory, scripted)
+        await brain.checkpoint("mv-1", "pre_movement", "plan 1", questions())
+        # mv-2 matching mv-1's own doc: the ref names mv-1, the key mv-2.
+        memory.recorded[0]["movement_id"] = "mv-2"
+        other = await brain.checkpoint("mv-2", "pre_movement", "plan 1", questions())
+        assert other.audit["novelty_latch"]["best_ref_id"].startswith("decision:mv-1:")
+        assert other.tier == "decider"
+        assert other.audit["tier0_cache"]["status"] == "miss_no_entry"
+        assert scripted.decide_calls == 2
+
+    def test_only_this_movements_trigger_refs_count_as_own(self):
+        sig = "0123456789abcdef"
+        assert _is_own_decision_ref(f"decision:mv-1:pre_movement:{sig}", "mv-1", "pre_movement")
+        for ref in (
+            None, 42, "",
+            f"decision:mv-2:pre_movement:{sig}",            # another movement
+            f"decision:mv-1x:pre_movement:{sig}",           # a longer movement id
+            f"decision:mv-1:incident_detected:{sig}",       # another trigger
+            f"decision:mv-1:pre_movement:{sig[:-1]}",       # not a signature
+            f"decision:mv-1:pre_movement:{sig.upper()}",
+            # a movement id that itself holds ':' cannot pass for mv-1's
+            f"decision:mv-1:pre_movement:x:pre_movement:{sig}",
+            f"incident:mv-1:pre_movement:{sig}",
+        ):
+            assert not _is_own_decision_ref(ref, "mv-1", "pre_movement"), ref
+
+    async def test_another_movements_decision_doc_never_reads_the_filing(self):
+        memory, scripted = OwnDocMemory(), ScriptedDecider(confidence=0.95)
+        brain = self.brain(memory, scripted)
+        await brain.checkpoint("mv-1", "pre_movement", "plan 1", questions())
+
+        async def a_third_movements_plan(state_doc, *, movement_id=None, top_k=5):
+            return replace(
+                memory_ok(best_score=0.83, doc_id="foreign-7", kind="decision"),
+                best_ref_id="decision:mv-3:pre_movement:fedcba9876543210",
+            )
+
+        memory.search = a_third_movements_plan
+        second = await brain.checkpoint("mv-1", "pre_movement", "plan 2", questions())
+        assert second.tier == "decider"
+        assert second.audit["tier0_cache"]["status"] == "miss_no_entry"
+        assert scripted.decide_calls == 2
+
+    async def test_a_non_decision_best_doc_never_reads_the_filing(self):
+        memory, scripted = OwnDocMemory(), ScriptedDecider(confidence=0.95)
+        brain = self.brain(memory, scripted)
+        await brain.checkpoint("mv-1", "pre_movement", "plan 1", questions())
+        own_ref = memory.recorded[0]["ref_id"]
+
+        async def incident_with_an_own_looking_ref(state_doc, *, movement_id=None, top_k=5):
+            return replace(memory_ok(best_score=0.83, doc_id="inc-1", kind="incident"),
+                           best_ref_id=own_ref)
+
+        memory.search = incident_with_an_own_looking_ref
+        second = await brain.checkpoint("mv-1", "pre_movement", "plan 2", questions())
+        assert second.tier == "decider"
+        assert scripted.decide_calls == 2
+
+    async def test_nothing_is_filed_without_a_store(self):
+        # Low confidence: never cached, in neither filing.
+        memory = OwnDocMemory()
+        brain = self.brain(memory, ScriptedDecider(confidence=0.42))
+        result = await brain.checkpoint("mv-1", "pre_movement", "plan 1", questions())
+        assert result.tier == "decider" and len(memory.recorded) == 1
+        assert brain._tier0_cache == {}
+        # Latched (novel): recorded as withheld, never cached.
+        memory = FakeMemoryClient(results=[memory_ok(best_score=0.10, doc_id="far")])
+        brain = self.brain(memory)
+        result = await brain.checkpoint("mv-1", "pre_movement", "plan 1", questions())
+        assert result.tier == "novelty_latched"
+        assert brain._tier0_cache == {}
+
+    async def test_an_expired_answer_is_never_served_through_the_filing(self):
+        memory, scripted = OwnDocMemory(), ScriptedDecider(confidence=0.95)
+        clock = ScriptedClock(1000.0)
+        brain = DeciderBrain(scripted, memory_client=memory, min_interval_sec=0, clock=clock,
+                             memory_record_enabled=True, tier0_ttl_sec=300.0)
+        await brain.checkpoint("mv-1", "pre_movement", "plan 1", questions())
+        clock.now += 300.0
+        late = await brain.checkpoint("mv-1", "pre_movement", "plan 2", questions())
+        assert late.tier == "decider"
+        assert late.audit["tier0_cache"]["status"] == "miss_ttl_expired"
+        assert scripted.decide_calls == 2
+
+    async def test_the_filing_respects_the_fifo_bound(self):
+        memory = OwnDocMemory()
+        brain = self.brain(memory, tier0_max_entries=1)
+        await brain.checkpoint("mv-1", "pre_movement", "plan 1", questions())
+        # Bounded: the movement-level filing (inserted last) is the one kept.
+        assert [key[3] for key in brain._tier0_cache] == ["decision:mv-1:pre_movement:"]
+
+
 # ─── (C) Metrics (deltas only — counters are process-global across tests) ────
 
 
@@ -681,9 +899,16 @@ class TestLiveEscortTier0Persistence:
 
         bridge = StubBridge(fail=True)
         routes = dict(ROUTES)
-        routes["get_live_traffic"] = {
-            "segments": [{"segment_id": 1001, "congestion_idx": 0.95, "speed_kmh": 5}]
-        }
+        # One live call per tick (legacy route-less monitor): congested at
+        # ticks 1 and 3, clear at tick 2 — two separate crossings.
+        levels = iter([0.95, 0.2, 0.95])
+
+        def live(args):
+            return {"segments": [
+                {"segment_id": 1001, "congestion_idx": next(levels), "speed_kmh": 5}
+            ]}
+
+        routes["get_live_traffic"] = live
         executor = FakeExecutor(routes=routes)
 
         ctx = ConvoyContext(movement_id="es-t0", vvip_class="Z+", status="active")
@@ -704,7 +929,10 @@ class TestLiveEscortTier0Persistence:
             executor=executor,
             context_store=fake_store,
             decider_brain=brain,
-            max_iterations=2,  # incident checkpoint fires once per iteration
+            max_iterations=3,  # one incident checkpoint per crossing (rising edge)
+            poll_interval_sec=0,
+            incident_cooldown_sec=0,
+            clear_confirm_sec=0,  # the single clear reading at tick 2 is a falling edge
         )
         assert result["escort_complete"] is True
 
@@ -720,16 +948,12 @@ class TestLiveEscortTier0Persistence:
         assert checkpoints[1]["tier"] == "tier0_cache_hit"
         assert checkpoints[1]["tier0_cache"]["status"] == "hit"
         assert checkpoints[1]["tier0_cache"]["best_doc_id"] == "doc-7"
-        # TWO real decides in total — the iteration-1 congestion-crossing
-        # checkpoint (a different, also-eligible trigger) plus the iteration-1
-        # incident checkpoint — and the iteration-2 incident checkpoint was
-        # served entirely by the gate (no third decide).
-        assert scripted.decide_calls == 2
-        crossing = [
-            d for d in decisions
-            if d.get("phase") == "decider_checkpoint"
-            and d.get("trigger") == "congestion_threshold_crossed"
-        ]
-        assert len(crossing) == 1  # only iteration 1 (no re-crossing)
+        # ONE real decide: the first crossing; the second crossing's
+        # checkpoint was served entirely by the gate.
+        assert scripted.decide_calls == 1
+        # Each crossing is logged once as an observation row (no separate
+        # congestion_threshold_crossed checkpoint any more).
+        crossings = [d for d in decisions if d.get("action") == "congestion_crossing"]
+        assert [c["trigger"] for c in crossings] == ["congestion_threshold_crossed"] * 2
         for row in checkpoints:
             json.dumps(row)  # decisions_log rows must stay JSON-safe

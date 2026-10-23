@@ -13,7 +13,13 @@
  *
  * Format (hash, no leading '#'):
  *   v=2&lat=..&lon=..&alt=..&heading=..&pitch=..&roll=..
- *   &style=flir&whot=0|1&layers=events,traces,signals,units,cameras
+ *   &style=flir&bhot=0|1[&palette=iron]&layers=events,flow,traces,…
+ *   [&sel=<urn>]
+ *
+ * `palette=iron` rides only with style=flir (Ironbow); older receivers
+ * ignore the key and fall back to White-Hot. `sel` hands over the selected
+ * entity (a C-C URN — ids only, never a plate) so the receiver's City
+ * Command opens the same dossier.
  */
 
 export interface ShareCameraState {
@@ -32,9 +38,16 @@ export interface ShareViewState extends ShareCameraState {
 	style: 'flir' | 'raw';
 	/** White-Hot (false) / Black-Hot (true) when style is flir. */
 	bhot: boolean;
+	/** FLIR colour map: monochrome (White/Black-Hot) or Ironbow. Only meaningful with style flir. */
+	palette?: 'mono' | 'iron';
 	/** Layer ids to switch on (missing ids switch off). */
 	layers: string[];
+	/** Selected entity URN (`<kind>:<id>`), when the sender had one. */
+	selected?: string | null;
 }
+
+/** URN grammar a share link may carry (kind slug + the oracle's id alphabet). */
+const SEL_RE = /^[a-z]{3,16}:[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$/;
 
 /** Ranges a parsed camera value must land in — hostile hashes never fly. */
 const LAT_MAX = 90;
@@ -59,10 +72,14 @@ export function buildShareHash(state: ShareViewState, layerIds: readonly string[
 	params.set('pitch', fmt(state.pitch));
 	params.set('roll', fmt(state.roll));
 	params.set('style', state.style);
-	if (state.style === 'flir') params.set('bhot', state.bhot ? '1' : '0');
+	if (state.style === 'flir') {
+		params.set('bhot', state.bhot ? '1' : '0');
+		if (state.palette === 'iron') params.set('palette', 'iron');
+	}
 	const known = new Set(layerIds);
 	const on = state.layers.filter((l) => known.has(l));
 	params.set('layers', (on.length ? on : layerIds).join(','));
+	if (state.selected && SEL_RE.test(state.selected)) params.set('sel', state.selected);
 	return params.toString();
 }
 
@@ -107,6 +124,7 @@ export function parseShareHash(hash: string, layerIds: readonly string[]): Share
 		.filter((s) => s.length > 0 && known.has(s));
 	const fallbackLayers = layerIds.filter((id) => id !== '');
 
+	const sel = params.get('sel');
 	return {
 		lat,
 		lon,
@@ -116,6 +134,8 @@ export function parseShareHash(hash: string, layerIds: readonly string[]): Share
 		roll: parseOr(params.get('roll'), 0, ANGLE_MAX),
 		style,
 		bhot: params.get('bhot') === '1',
+		palette: style === 'flir' && params.get('palette') === 'iron' ? 'iron' : 'mono',
 		layers: layers.length ? layers : fallbackLayers,
+		selected: sel && SEL_RE.test(sel) ? sel : null,
 	};
 }

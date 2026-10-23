@@ -1,0 +1,25 @@
+{
+	"units": [
+		{
+			"unit_id": "JR-EM-01",
+			"dispatch_id": "cfb821b9-ee89-4f1b-90a8-3d6ca9a71f39",
+			"agency": "jan_rakshak",
+			"label": "Jan Rakshak · JR-EM-01",
+			"assigned_event_id": "3ef08290-66d8-511b-a25a-3d2967c79985",
+			"status": "on_scene",
+			"emulated": true,
+			"source": "emulated_dispatch_projection",
+			"position": [
+				72.585,
+				23.02
+			],
+			"progress": 1,
+			"eta_sec": 0,
+			"arrived": true,
+			"speed_kmh": 37.79
+		}
+	],
+	"count": 1,
+	"source": "emulated_dispatch_projection",
+	"note": "emulated units — deterministic from dispatch_id; live agency_unit frames will take precedence when the C2 ingest lands"
+}

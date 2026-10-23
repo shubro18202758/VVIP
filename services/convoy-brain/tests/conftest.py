@@ -100,3 +100,68 @@ def fake_executor() -> FakeExecutor:
 def json_transport(handler) -> httpx.AsyncClient:
     """Build an httpx client whose transport is handler(request) -> Response."""
     return httpx.AsyncClient(transport=httpx.MockTransport(handler))
+
+
+# ---------------------------------------------------------------------------
+# Synthetic road network (oracle doubles with real geometry)
+# ---------------------------------------------------------------------------
+
+
+def seg(sid, a, b, *, lanes=6, road_class="trunk", name=None, oneway=False,
+        speed=60.0, length_m=1000.0):
+    """One road segment row as the oracle's spatial endpoints return it."""
+    return {
+        "segment_id": sid,
+        "road_name": name or f"Road {sid}",
+        "road_class": road_class,
+        "lanes": lanes,
+        "speed_limit_kmh": speed,
+        "oneway": oneway,
+        "length_m": length_m,
+        "geometry": {"type": "LineString", "coordinates": [list(a), list(b)]},
+    }
+
+
+def bbox_handler(segments: dict, calls: list | None = None):
+    """query_segments_in_bbox double: rows whose geometry bbox overlaps the
+    query box, ORDER BY segment_id — exactly the oracle's ordering."""
+    def handler(args):
+        if calls is not None:
+            calls.append(dict(args))
+        rows = []
+        for sid in sorted(segments):
+            coords = segments[sid]["geometry"]["coordinates"]
+            lons = [c[0] for c in coords]
+            lats = [c[1] for c in coords]
+            if (min(lons) <= args["max_lon"] and max(lons) >= args["min_lon"]
+                    and min(lats) <= args["max_lat"] and max(lats) >= args["min_lat"]):
+                rows.append(segments[sid])
+        return {"segments": rows}
+    return handler
+
+
+def details_handler(segments: dict):
+    """query_segment_details double (geometry kept, like the oracle)."""
+    def handler(args):
+        sid = args["segment_id"]
+        if sid not in segments:
+            raise ToolExecutionError("oracle HTTP 404: Segment not found", status_code=404,
+                                     retryable=False)
+        return dict(segments[sid])
+    return handler
+
+
+#: A small corridor: origin O=(72.55, 23.02) -> destination D=(72.58, 23.02).
+#: 1001-1002-1003 run east along lat 23.02 (1003 has only 4 lanes); 1004 is
+#: a 6-lane bypass north of 1003 ending at D; 1005 touches O and leads away.
+NETWORK = {
+    1001: seg(1001, (72.550, 23.020), (72.560, 23.020), lanes=6, name="West Arterial"),
+    1002: seg(1002, (72.560, 23.020), (72.570, 23.020), lanes=6, name="Central Arterial"),
+    1003: seg(1003, (72.570, 23.020), (72.580, 23.020), lanes=4, road_class="primary",
+              name="East Narrows"),
+    1004: seg(1004, (72.570, 23.020), (72.580, 23.020 + 0.0001), lanes=6,
+              road_class="motorway", name="Bypass"),
+    1005: seg(1005, (72.550, 23.020), (72.540, 23.030), lanes=6, name="Old Road"),
+}
+ORIGIN = (72.550, 23.020)
+DESTINATION = (72.580, 23.020)

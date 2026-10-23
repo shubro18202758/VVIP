@@ -90,6 +90,10 @@ class MemorySearchResult:
     latency_ms: float
     error: str | None = None
     best_score_raw: float | None = None  # service-side raw MaxSim (audit/calibration)
+    # The best row's ref_id: for kind=decision it is the feeder's
+    # ``decision:{movement_id}:{trigger}:{signature}``, so the decider can tell
+    # a movement's OWN decision docs from another movement's.
+    best_ref_id: str | None = None
 
     def to_audit(self) -> dict:
         """JSON-safe audit view (round(…, 4) convention of decider.py)."""
@@ -146,6 +150,9 @@ def _ok_result(
         maxsim_present=maxsim_present,
         latency_ms=latency_ms,
         best_score_raw=raw,
+        best_ref_id=(
+            str(best["ref_id"]) if best and best.get("ref_id") is not None else None
+        ),
     )
 
 

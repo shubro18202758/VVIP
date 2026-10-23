@@ -1,24 +1,38 @@
-# Build signal-ingress from Rust source
+# Build signal-ingress from Rust source (static musl binary).
+# Build context: services/signal-ingress (compose: context ../services/signal-ingress).
+# TLS is rustls (Cargo.toml), so no OpenSSL headers or static libs are needed.
 FROM rust:alpine AS builder
 
-RUN apk add --no-cache musl-dev openssl-dev pkgconfig build-base
-
-ENV OPENSSL_DIR=/usr
-ENV OPENSSL_LIB_DIR=/usr/lib
-ENV OPENSSL_INCLUDE_DIR=/usr/include
+RUN apk add --no-cache musl-dev pkgconfig build-base
 
 WORKDIR /app
-COPY Cargo.toml Cargo.lock* ./
+COPY Cargo.toml Cargo.lock ./
 COPY src/ src/
+# config/anomaly_detector.yaml is compiled in (include_str!) as the default
+COPY config/ config/
 
-RUN cargo build --release
+# BuildKit caches keep the crates.io registry and build artefacts between
+# rebuilds; the binary is copied out of the cached target dir.
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/app/target \
+    cargo build --release --locked \
+ && cp target/release/signal-ingress /usr/local/bin/signal-ingress
 
 # --- Runtime ---
 FROM alpine:3.21
 
-RUN apk add --no-cache ca-certificates
+RUN apk add --no-cache ca-certificates \
+ && adduser -D -H -u 10001 ingress
 
-COPY --from=builder /app/target/release/signal-ingress /usr/local/bin/
+COPY --from=builder /usr/local/bin/signal-ingress /usr/local/bin/
+# Tier-1 anomaly thresholds at the path the service checks first after
+# $ANOMALY_CONFIG_PATH (src/anomaly/config.rs); mount over it to retune.
+# Modes are normalised explicitly: COPY keeps the checkout's mode bits and
+# POSIX ACLs (0640 on this host), which the non-root user could not read.
+COPY config/anomaly_detector.yaml /etc/signal-ingress/anomaly_detector.yaml
+RUN chmod 0755 /etc/signal-ingress \
+ && chmod 0644 /etc/signal-ingress/anomaly_detector.yaml
 
 ENV RUST_LOG=info
+USER ingress
 ENTRYPOINT ["signal-ingress"]

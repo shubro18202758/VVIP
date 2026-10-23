@@ -4,11 +4,18 @@ Reads historical traffic observations via DuckDB's postgres_scanner extension,
 builds sliding temporal windows and adjacency matrices, and produces
 PyTorch-ready TensorDatasets for DSTGAT training.
 
+Speed features are RELATIVE speeds — km/h over each segment's free flow
+(its speed limit; the 60 km/h convention when unknown), through
+flow_forecaster.speed_norm_matrix — the scale the out-of-support gate checks
+and the inference rung feeds, so a model is never trained on one scale and
+served on another.  Targets stay km/h (the rung reads its head as km/h).
+
 Peak memory ~800MB during load (subsample rate controls this).
 """
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 import duckdb
@@ -18,12 +25,22 @@ import torch
 from torch.utils.data import TensorDataset
 
 from traffic_oracle.anomaly.feature_builder import FeatureBuilder
+from traffic_oracle.predict.flow_forecaster import free_flow_or_default, speed_norm_matrix
 from traffic_oracle.predict.nn.dstgat import DSTGATConfig
 from traffic_oracle.runtime.memory_profiler import profile_memory
 
 logger = structlog.get_logger(__name__)
 
 HORIZON_STEPS = [1, 2, 3, 6]  # T+5, T+10, T+15, T+30 at 5-min resolution
+
+
+def _positive_kmh(value: object) -> float | None:
+    """A speed limit as read (NULL arrives as None or NaN): positive km/h or None."""
+    try:
+        kmh = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+    return kmh if math.isfinite(kmh) and kmh > 0 else None
 
 
 @dataclass
@@ -82,6 +99,12 @@ class TrafficDataLoader:
             FROM pg.corridor.segment_adjacency
         """).fetchdf()
 
+        # Free flow per segment (its speed limit): the speed-feature scale
+        ff_rows = con.execute("""
+            SELECT segment_id, speed_limit_kmh
+            FROM pg.corridor.road_segments
+        """).fetchdf()
+
         con.close()
 
         if obs_df.empty:
@@ -122,9 +145,17 @@ class TrafficDataLoader:
                 speed_matrix[bin_idx, seg_idx] = row["speed_kmh"]
                 cong_matrix[bin_idx, seg_idx] = row["congestion_idx"]
 
-        # Forward-fill NaN gaps per segment
+        free_flow = {
+            int(r["segment_id"]): limit
+            for _, r in ff_rows.iterrows()
+            if (limit := _positive_kmh(r["speed_limit_kmh"])) is not None
+        }
+
+        # Forward-fill NaN gaps per segment (a leading gap reads free flow,
+        # like the zero congestion beside it)
         for j in range(N):
-            last_speed, last_cong = 60.0, 0.0
+            last_speed = free_flow_or_default(free_flow.get(segment_ids[j]))
+            last_cong = 0.0
             for i in range(len(time_bins)):
                 if np.isnan(speed_matrix[i, j]):
                     speed_matrix[i, j] = last_speed
@@ -132,6 +163,9 @@ class TrafficDataLoader:
                 else:
                     last_speed = speed_matrix[i, j]
                     last_cong = cong_matrix[i, j]
+
+        # The model's speed scale: relative to each segment's free flow
+        rel_matrix = speed_norm_matrix(speed_matrix, segment_ids, free_flow)
 
         # Build sliding windows
         rng = np.random.default_rng(42)
@@ -143,7 +177,7 @@ class TrafficDataLoader:
             for t_off in range(T):
                 ti = t_start + t_off
                 for j in range(N):
-                    input_features[j, t_off, 0] = speed_matrix[ti, j] / 60.0
+                    input_features[j, t_off, 0] = rel_matrix[ti, j]
                     input_features[j, t_off, 1] = cong_matrix[ti, j]
                     # Simplified cyclic features from time bin index
                     hour = (ti * 5 / 60) % 24
@@ -152,17 +186,18 @@ class TrafficDataLoader:
                     input_features[j, t_off, 3] = np.cos(2 * np.pi * hour / 24)
                     input_features[j, t_off, 4] = np.sin(2 * np.pi * dow / 7)
                     input_features[j, t_off, 5] = np.cos(2 * np.pi * dow / 7)
-                    # Speed delta
+                    # Speed delta (relative scale)
                     if t_off > 0:
                         input_features[j, t_off, 6] = (
-                            speed_matrix[ti, j] - speed_matrix[ti - 1, j]
+                            rel_matrix[ti, j] - rel_matrix[ti - 1, j]
                         )
-                    # Neighbor speed ratio
+                    # Neighbor speed ratio (relative speeds: free flow
+                    # everywhere reads 1.0, the inference default)
                     nbr_mask = adjacency[j] > 0
                     if nbr_mask.any():
                         input_features[j, t_off, 7] = (
-                            speed_matrix[ti, j]
-                            / max(speed_matrix[ti, nbr_mask].mean(), 1e-6)
+                            rel_matrix[ti, j]
+                            / max(rel_matrix[ti, nbr_mask].mean(), 1e-6)
                         )
                     else:
                         input_features[j, t_off, 7] = 1.0

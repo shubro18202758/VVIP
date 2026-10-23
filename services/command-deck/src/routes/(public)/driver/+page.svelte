@@ -2,35 +2,38 @@
 	/**
 	 * /driver — "The Window" (Daylight, Gujarati-first).
 	 *
-	 * The 108 driver green-corridor flow: golden-hour counter always on
-	 * screen, one large corridor request with the urgency pick, the fixed
-	 * verb rail, the honest SCRIPTED FALLBACK badge (no live request
-	 * endpoint is deployed — numbers are demo-scale), the granted map with
-	 * the Jan Rakshak unit en_route→on_scene, the control-room line and
-	 * the after-action minutes saved. Gujarati is the default language;
-	 * the shell switch flips EN/HI/GU.
+	 * The 108 driver green-corridor flow on the real dispatch lifecycle:
+	 * request → a named duty officer approves on /ops → the window counts
+	 * down from the approval (GreenCorridorDriver). Fed by the public
+	 * projection only (no operator store). The labelled scripted fallback
+	 * appears only while no live public event exists.
+	 *
+	 * Language: Gujarati by default, held PAGE-LOCALLY — the page's default
+	 * never rewrites the shared preference, so /ops does not reopen in
+	 * Gujarati after a visit here. An explicit choice persisted in the
+	 * veer_lang cookie (the switch on any page) wins, exactly as the server
+	 * render's <html lang> does.
 	 */
-	import { onMount, onDestroy } from 'svelte';
-	import { ops } from '$lib/ops/store.svelte';
+	import { onMount } from 'svelte';
 	import { commandBar } from '$lib/shell/command-bar.svelte';
+	import { publicFeed } from '$lib/citizen/public-feed.svelte';
 	import GreenCorridorDriver from '$lib/citizen/GreenCorridorDriver.svelte';
+	import { readLangCookie } from '$lib/i18n/lang-cookie';
 	import '$lib/i18n/strings.citizen';
 
+	let lang = $state('gu');
+
 	onMount(() => {
-		ops.lang = 'gu';
-		ops.start();
+		lang = readLangCookie() ?? lang;
+		publicFeed.start();
+		return () => publicFeed.stop();
 	});
 
-	onDestroy(() => {
-		ops.stop();
-	});
-
-	// R3 wiring: Gujarati-first public surface; band from the shared store.
+	// R3 wiring: Gujarati-first public surface; plain-language tier only.
 	$effect(() => {
-		commandBar.lang = ops.lang;
-		commandBar.band = ops.band;
-		commandBar.bandSource = ops.bandSource;
-		commandBar.onLangChange = (l: string) => (ops.lang = l);
+		commandBar.lang = lang;
+		commandBar.tier = publicFeed.tier;
+		commandBar.onLangChange = (l: string) => (lang = l);
 	});
 </script>
 
@@ -39,7 +42,7 @@
 </svelte:head>
 
 <div class="driver-page">
-	<GreenCorridorDriver />
+	<GreenCorridorDriver {lang} />
 </div>
 
 <style>

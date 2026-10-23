@@ -16,7 +16,7 @@ shadow-evaluation** — failing closed to baseline. Every observation and
 every published parameter set is persisted to an audit trail.
 
 Code home: `services/traffic-oracle/src/traffic_oracle/adaptive/`
-(18 modules; map in `adaptive/__init__.py`).
+(16 modules beside `__init__.py`, whose docstring maps the core).
 
 ## The six stages
 
@@ -69,14 +69,15 @@ Stage 6 extends the application points to **city scope**:
 
 | Endpoint | Purpose |
 |----------|---------|
-| `GET /api/v1/adaptive/params` | C4 parameter response (per movement) |
-| `GET /api/v1/adaptive/status` | degradation + per-subject situations |
-| `POST /api/v1/adaptive/observe` | feed one observation |
-| `GET /api/v1/adaptive/situation_log?event_id=&limit=` | band audit history (board primary rung) |
+| `GET /api/v1/adaptive/params` | C4 parameter response (per movement) — **read-only**: the subject's last published decision, or the floor-clamped baseline (`evidence.read_only: true`); a reader never creates an audit row, a mirror write or subject state |
+| `GET /api/v1/adaptive/status` | degradation + per-subject situations + the city band and `city_band_since` + engine-loop health (`last_tick_age_sec`, `consecutive_errors`, per-subject input ages) + twin calibration state |
+| `POST /api/v1/adaptive/observe` | feed one observation (tests / explicit feeds); persisted only when the decision changed |
+| `GET /api/v1/adaptive/situation_log?event_id=&limit=` | band audit history (board primary rung), each row carrying `simulated_feed` / `inputs_data_quality` (C-Q) |
+| `GET /api/v1/adaptive/overrides` | the `adaptive.param_overrides` audit rows, each with `evidence.publish_reason` |
 | `GET /api/v1/adaptive/module` | this module card, as data (R9) |
-| `GET /api/v1/signals/state` | per-junction active phase / green ratio (C1) |
-| `GET /api/v1/signals/plans` | writer posture + last plan + band→plan table |
-| `POST /api/v1/signals/plans/apply` | operator-triggered gated apply |
+| `GET /api/v1/signals/state` | per-junction active phase / green ratio (C1) + city-band provenance (`city_band_since`, `_stale`, `_stale_since`, `_simulated_feed`) |
+| `GET /api/v1/signals/plans` | writer posture + last plan + band→plan table + the same city-band provenance |
+| `POST /api/v1/signals/plans/apply` | operator-triggered gated apply; with no explicit band while the city band is unknown (engine poll failing) → **409** `city band unknown — pass band explicitly`, never a silent GREEN |
 | `POST /api/v1/signals/restore` | rebuild `osm_assumed` from snapshots |
 | `GET /api/v1/signals/history` | snapshot/restore ledger |
 
@@ -85,4 +86,45 @@ Stage 6 extends the application points to **city scope**:
 * `/ops` board — `AMAModuleCard.svelte` (module card: stages, floors,
   live city band, fail-closed chip, writer posture) and
   `SituationBandPanel.svelte` (band history sparkline).
-* God's-eye canvas — the AMA band chip (city-canvas stream).
+* God's-eye canvas — the AMA band chip, and the City Vitals HUD's city
+  posture line (the band, how long it has held and since when in IST;
+  `UNKNOWN` with the reason while the engine poll is failing).
+* `/` Convoy Command — the same band on the cockpit's threat ladder.
+
+## Behaviours that keep the module honest (waves 1–3)
+
+* **Publish only on change, with a reason.** A decision writes ONE
+  `adaptive.param_overrides` row when it changed, labelled
+  `evidence.publish_reason` — `first_publish`, `class_change`,
+  `param_change`, `verdict_change`, `escalation_change` or
+  `degradation_change` (`service.py`). Between changes the loop re-sets the
+  same 30 s mirror payload every 10 s, so the mirror lapses only when the
+  loop dies; a failed audit write is retried, and one subject's decisions
+  never interleave.
+* **The twin must be field-calibrated before anything deviates from
+  baseline.** Calibration needs ≥ **24 distinct field hours** of REAL hourly
+  aggregates and a replay MAE ≤ **5.0 km/h** (`simulation/calibration.py`);
+  synthetic rows never count (they live in their own rollup table,
+  migration 019). At startup the oracle awaits a bounded calibration
+  **prime** before the engine's first decision, so the first publish
+  already quotes the true refusal reason. On a fresh install there are no
+  field hours, so every non-baseline plan — and the city signal writer —
+  fails closed with `twin_not_calibrated: no field observations — simulated
+  feed only` (`/health` → `twin_calibration.status:
+  waiting_for_field_data`). That refusal is the designed posture, shown on
+  the module card, never hidden.
+* **A hung tick is abandoned and the band goes stale, not quiet.** A tick
+  that hangs is abandoned after **30 s** and counts as a failed poll; while
+  polls fail the city band is marked **stale** (unknown, not at rest —
+  `city_band.stale`, `city_band_stale_since`), and a subject whose inputs
+  are missing for 300 s is evicted. A completed or cancelled event is
+  evicted on the next tick, so it can never hold the city band.
+* **Same-provenance inputs.** The event emulator's traffic lives in its own
+  key space (`traffic:emulated:latest:{segment}`): a LIVE event's band reads
+  only the live plane, an EMULATED event prefers its scenario's rows, and
+  every audit row says which (`inputs_origin`, `simulated_feed`) — emulated
+  traffic can never drive a real event's band.
+* **Real roads under it.** The bands, the twin's shadow runs and the signal
+  plans all run on the city network traced on real OpenStreetMap roads
+  (49 segments, 34 junctions, 11 signal-programmed junctions;
+  `TECHNICAL_DOCS.md` §16.1).

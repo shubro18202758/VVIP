@@ -63,20 +63,26 @@ from convoy_brain.memory.memory_client import (  # noqa: E402
     MemoryClient,
 )
 
-#: The gate's movement body (finding evidence, 2026-10-19): Ahmedabad
-#: centroid → destination, class Z, far-future departure.
+#: The gate's movement body: Lal Darwaja → SVPI Airport, class Z,
+#: far-future departure — the POIs re-anchored onto the real-road network
+#: (WP-20; Lal Darwaja snaps to Relief Road 1005, SVPI to the airport spur
+#: 1029). MUST equal check_tier0_live.sh BODY: --verify-corpus rebuilds this
+#: state doc to recall the decision doc the gate's plans fed.
 GATE_BODY = {
-    "origin": (72.5798, 23.0254),
-    "destination": (72.6266, 23.0733),
+    "origin": (72.5813, 23.0264),
+    "destination": (72.6221, 23.072),
     "vvip_class": "Z",
     "planned_departure": "2030-01-01T00:00:00Z",
 }
 
-#: The composite gate's (b) leg: a genuinely different corridor (Surat
-#: pair, ~200 km from Ahmedabad) — its plan must be a MISS, never a hit.
+#: The composite gate's (b) leg: a genuinely different corridor ON the
+#: network (Drive-In Road → Prahlad Nagar, west Ahmedabad; =
+#: check_tier0_live.sh BODY_DIFFERENT) — its plan must be a MISS, never a
+#: hit. (The former Surat pair no longer snaps to any segment, so its plan
+#: never reached the decider checkpoint at all.)
 DIFFERENT_POI_BODY = {
-    "origin": (72.8355, 21.1702),
-    "destination": (72.9581, 21.0045),
+    "origin": (72.5293, 23.0464),
+    "destination": (72.512, 23.0065),
     "vvip_class": "Z",
     "planned_departure": "2030-01-01T00:00:00Z",
 }
@@ -235,8 +241,8 @@ def main() -> int:
     parser.add_argument("--plans", type=int, default=4)
     parser.add_argument(
         "--variant", choices=sorted(BODIES), default="gate",
-        help="gate = the audit finding's Ahmedabad body; different_poi = the "
-             "composite gate's (b) leg body (Surat pair)",
+        help="gate = the gate's Lal Darwaja → SVPI Airport body; different_poi = "
+             "the composite gate's (b) leg body (Drive-In Road → Prahlad Nagar)",
     )
     parser.add_argument(
         "--gap-sec", type=float, default=0.0,

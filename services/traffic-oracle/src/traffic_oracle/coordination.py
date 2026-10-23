@@ -21,6 +21,14 @@ Routes registered here (contract C1):
     /api/v1/signals/state        signalling stream (stub until landed)
     /api/v1/units                signalling/canvas stream (stub until landed)
     /api/v1/adaptive/situation_log  adaptive stream (stub until landed)
+
+City fusion spine (contract C-C, WP-02 — real router, 503 stub only if
+its package fails to import):
+    /api/v1/cameras              camera layer (locations + read counters)
+    /api/v1/city/entities        fused snapshot of the city
+    /api/v1/city/entity/{kind}/{id}  dossier
+    /api/v1/city/feed            city narrative
+    /api/v1/events/{id}/audit    the narrative scoped to one event
 """
 
 from __future__ import annotations
@@ -33,9 +41,19 @@ from fastapi.responses import JSONResponse
 
 logger = structlog.get_logger(__name__)
 
-__all__ = ["register_coordination_routers"]
+__all__ = ["CITY_PATHS", "register_coordination_routers"]
 
 _STUB_DETAIL = "not deployed"
+
+#: Every documented city fusion path (C-C): if the city package fails to
+#: import, ALL of them answer 503 not-deployed — none silently 404s.
+CITY_PATHS: tuple[str, ...] = (
+    "/api/v1/cameras",
+    "/api/v1/city/entities",
+    "/api/v1/city/entity/{kind}/{entity_id}",
+    "/api/v1/city/feed",
+    "/api/v1/events/{event_id}/audit",
+)
 
 
 def _stub_router(paths: tuple[str, ...]) -> APIRouter:
@@ -56,13 +74,18 @@ def _route_exists(app: FastAPI, path: str) -> bool:
 
     FastAPI >= 0.143 wraps included routers in a lazy ``_IncludedRouter``
     carrying the original router — walk both layers so a stream's real
-    route is found no matter which representation it sits in.
+    route is found no matter which representation it sits in.  The
+    include-time prefix (``include_router(..., prefix="/api/v1")``) lives
+    on the wrapper's ``include_context``, not on the inner routes.
     """
     for route in app.router.routes:
         inner = getattr(route, "original_router", None)
         if inner is not None:
+            context = getattr(route, "include_context", None)
+            prefix = getattr(context, "prefix", "") or ""
             for sub in inner.routes:
-                if getattr(sub, "path", None) == path:
+                sub_path = getattr(sub, "path", None)
+                if sub_path is not None and path in (sub_path, prefix + sub_path):
                     return True
         if getattr(route, "path", None) == path:
             return True
@@ -105,6 +128,15 @@ def register_coordination_routers(app: FastAPI) -> None:
         _mount(app, "pursuit", pursuit_router)
     except ImportError as exc:  # pragma: no cover
         logger.warning("coordination.import_failed", stream="pursuit", error=str(exc))
+
+    # ── city fusion spine (C-C) — cameras, entities, dossier, feed, audit ──
+    try:
+        from traffic_oracle.city.router import router as city_router
+
+        _mount(app, "city", city_router)
+    except ImportError as exc:  # pragma: no cover - tree-safety stub
+        logger.warning("coordination.import_failed", stream="city", error=str(exc))
+        app.include_router(_stub_router(CITY_PATHS))
 
     # ── signalling / canvas / adaptive streams — 503 stubs until landed ──
     stubbed: tuple[tuple[str, tuple[str, ...]], ...] = (

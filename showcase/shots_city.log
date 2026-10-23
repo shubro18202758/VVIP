@@ -1,0 +1,42 @@
+{
+  "chrome": "/home/sandy050405/.cache/puppeteer/chrome/linux_arm-153.0.8010.36/chrome-linux-arm64/chrome",
+  "origin": "http://127.0.0.1:5273",
+  "pursuitTitle": "pending",
+  "shots": {
+    "city3d": {
+      "checks": {
+        "phase-ready": {
+          "ok": true,
+          "detail": "phase=ready"
+        },
+        "imagery": {
+          "ok": true,
+          "detail": "imagery=photoreal attempt=1"
+        },
+        "entities-rendered": {
+          "ok": true,
+          "detail": "entities=110 layers=[events,flow,traces,enforcement,signals,units,cameras,photoreal-3d]"
+        },
+        "live-layer-on": {
+          "ok": true,
+          "detail": "layer=events liveVehicles=1"
+        },
+        "vehicles-feed-live": {
+          "ok": true,
+          "detail": "vehicles=1"
+        },
+        "live-canvas-nonblank": {
+          "ok": true,
+          "detail": "distinct colours=5373"
+        },
+        "png-nonblank": {
+          "ok": true,
+          "detail": "png colours=10515 opaque=100.0%"
+        }
+      },
+      "file": "showcase_gods_eye_city.png"
+    }
+  },
+  "operatorGate": "on (signed in)"
+}
+CANVAS SHOTS: OK

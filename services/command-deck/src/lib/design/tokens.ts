@@ -29,7 +29,7 @@ export const TOKENS: Record<ThemeName, Record<string, string>> = {
 		'--v-line-select': 'rgba(86, 180, 245, 0.35)',
 		'--v-ink-1': '#e8eef8',
 		'--v-ink-2': '#9aa7bd',
-		'--v-ink-3': '#5f6c85',
+		'--v-ink-3': '#7d8aa5',
 		'--v-ink-4': '#39455c',
 		'--v-act': '#ea580c',
 		'--v-act-2': '#f97316',
@@ -53,11 +53,11 @@ export const TOKENS: Record<ThemeName, Record<string, string>> = {
 		'--v-font-ui':
 			"Inter, 'Noto Sans', 'Noto Sans Devanagari', 'Noto Sans Gujarati', system-ui, sans-serif",
 		'--v-font-display':
-			"Outfit, Inter, 'Noto Sans', 'Noto Sans Devanagari', system-ui, sans-serif",
+			"Outfit, Inter, 'Noto Sans', 'Noto Sans Devanagari', 'Noto Sans Gujarati', system-ui, sans-serif",
 		'--v-font-mono': "'JetBrains Mono', 'Noto Sans Mono', ui-monospace, monospace",
-		'--v-text-2xs': '10px',
-		'--v-text-xs': '11px',
-		'--v-text-sm': '12px',
+		'--v-text-2xs': '12px',
+		'--v-text-xs': '12px',
+		'--v-text-sm': '13px',
 		'--v-text-base': '13px',
 		'--v-text-md': '16px',
 		'--v-text-lg': '20px',
@@ -107,7 +107,7 @@ export const TOKENS: Record<ThemeName, Record<string, string>> = {
 		'--v-line-select': 'rgba(194, 65, 12, 0.35)',
 		'--v-ink-1': '#1a1f2e',
 		'--v-ink-2': '#4a5468',
-		'--v-ink-3': '#7a8399',
+		'--v-ink-3': '#5b6478',
 		'--v-ink-4': '#98a0b3',
 		'--v-act': '#ea580c',
 		'--v-act-2': '#c2410c',
@@ -131,11 +131,11 @@ export const TOKENS: Record<ThemeName, Record<string, string>> = {
 		'--v-font-ui':
 			"Inter, 'Noto Sans', 'Noto Sans Devanagari', 'Noto Sans Gujarati', system-ui, sans-serif",
 		'--v-font-display':
-			"Outfit, Inter, 'Noto Sans', 'Noto Sans Devanagari', system-ui, sans-serif",
+			"Outfit, Inter, 'Noto Sans', 'Noto Sans Devanagari', 'Noto Sans Gujarati', system-ui, sans-serif",
 		'--v-font-mono': "'JetBrains Mono', 'Noto Sans Mono', ui-monospace, monospace",
-		'--v-text-2xs': '10px',
-		'--v-text-xs': '11px',
-		'--v-text-sm': '12px',
+		'--v-text-2xs': '13px',
+		'--v-text-xs': '13px',
+		'--v-text-sm': '14px',
 		'--v-text-base': '16px',
 		'--v-text-md': '16px',
 		'--v-text-lg': '20px',
@@ -216,7 +216,7 @@ export function auditLevelColor(level: AuditColorLevel, theme: ThemeName = 'comm
 			return t['--v-band-red'] ?? '#e5484d';
 		case 'info':
 		default:
-			return t['--v-ink-3'] ?? '#5f6c85';
+			return t['--v-ink-3'] ?? '#7d8aa5';
 	}
 }
 

@@ -1,0 +1,200 @@
+{
+	"junctions": [
+		{
+			"junction_id": 1,
+			"lon": 72.578,
+			"lat": 23.035,
+			"cycle_sec": 100,
+			"offset_sec": 17,
+			"active_phase": {
+				"index": 0,
+				"movements": [
+					"through"
+				],
+				"green_sec": 47,
+				"lost": false
+			},
+			"green_ratio": 0.85,
+			"source": "osm_assumed"
+		},
+		{
+			"junction_id": 3,
+			"lon": 72.5798,
+			"lat": 23.0254,
+			"cycle_sec": 100,
+			"offset_sec": 51,
+			"active_phase": {
+				"index": 1,
+				"movements": [
+					"cross"
+				],
+				"green_sec": 38,
+				"lost": true
+			},
+			"green_ratio": 0.85,
+			"source": "osm_assumed"
+		},
+		{
+			"junction_id": 5,
+			"lon": 72.59,
+			"lat": 23.018,
+			"cycle_sec": 110,
+			"offset_sec": 85,
+			"active_phase": {
+				"index": 1,
+				"movements": [
+					"cross"
+				],
+				"green_sec": 42,
+				"lost": true
+			},
+			"green_ratio": 0.8364,
+			"source": "osm_assumed"
+		},
+		{
+			"junction_id": 6,
+			"lon": 72.565,
+			"lat": 23.035,
+			"cycle_sec": 100,
+			"offset_sec": 2,
+			"active_phase": {
+				"index": 0,
+				"movements": [
+					"through"
+				],
+				"green_sec": 47,
+				"lost": false
+			},
+			"green_ratio": 0.85,
+			"source": "osm_assumed"
+		},
+		{
+			"junction_id": 7,
+			"lon": 72.5802,
+			"lat": 23.0607,
+			"cycle_sec": 100,
+			"offset_sec": 19,
+			"active_phase": {
+				"index": 0,
+				"movements": [
+					"through"
+				],
+				"green_sec": 47,
+				"lost": false
+			},
+			"green_ratio": 0.85,
+			"source": "osm_assumed"
+		},
+		{
+			"junction_id": 8,
+			"lon": 72.61,
+			"lat": 23.03,
+			"cycle_sec": 90,
+			"offset_sec": 46,
+			"active_phase": {
+				"index": 1,
+				"movements": [
+					"ramp",
+					"cross"
+				],
+				"green_sec": 34,
+				"lost": true
+			},
+			"green_ratio": 0.8667,
+			"source": "osm_assumed"
+		},
+		{
+			"junction_id": 9,
+			"lon": 72.5293,
+			"lat": 23.0327,
+			"cycle_sec": 90,
+			"offset_sec": 63,
+			"active_phase": {
+				"index": 1,
+				"movements": [
+					"ramp",
+					"cross"
+				],
+				"green_sec": 34,
+				"lost": true
+			},
+			"green_ratio": 0.8667,
+			"source": "osm_assumed"
+		},
+		{
+			"junction_id": 10,
+			"lon": 72.51,
+			"lat": 22.99,
+			"cycle_sec": 90,
+			"offset_sec": 80,
+			"active_phase": {
+				"index": 1,
+				"movements": [
+					"ramp",
+					"cross"
+				],
+				"green_sec": 34,
+				"lost": true
+			},
+			"green_ratio": 0.8667,
+			"source": "osm_assumed"
+		},
+		{
+			"junction_id": 11,
+			"lon": 72.63,
+			"lat": 23,
+			"cycle_sec": 90,
+			"offset_sec": 7,
+			"active_phase": {
+				"index": 0,
+				"movements": [
+					"through"
+				],
+				"green_sec": 44,
+				"lost": false
+			},
+			"green_ratio": 0.8667,
+			"source": "osm_assumed"
+		},
+		{
+			"junction_id": 13,
+			"lon": 72.62,
+			"lat": 23.05,
+			"cycle_sec": 90,
+			"offset_sec": 41,
+			"active_phase": {
+				"index": 0,
+				"movements": [
+					"through"
+				],
+				"green_sec": 44,
+				"lost": false
+			},
+			"green_ratio": 0.8667,
+			"source": "osm_assumed"
+		},
+		{
+			"junction_id": 14,
+			"lon": 72.63,
+			"lat": 23.07,
+			"cycle_sec": 90,
+			"offset_sec": 58,
+			"active_phase": {
+				"index": 1,
+				"movements": [
+					"ramp",
+					"cross"
+				],
+				"green_sec": 34,
+				"lost": true
+			},
+			"green_ratio": 0.8667,
+			"source": "osm_assumed"
+		}
+	],
+	"count": 11,
+	"city_band": "GREEN",
+	"band_subjects": 6,
+	"writer_enabled": false,
+	"epoch_sec": 1792675843.886374
+}

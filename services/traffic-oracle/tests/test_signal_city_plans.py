@@ -245,6 +245,80 @@ def test_active_phase_is_deterministic_function_of_epoch():
     assert lost["lost"] is True and lost["movements"] == ["cross"]
 
 
+def test_phase_at_wraps_modulo_cycle_for_every_offset():
+    """The old timeline started at the offset and never wrapped, so a
+    junction with offset 85 of 110 showed 'lost' for 85 s of every cycle.
+    The shared clock shows lost time for exactly cycle - sum(greens)."""
+    phases = [{"green_sec": 50, "movements": ["through"]},
+              {"green_sec": 42, "movements": ["cross"]}]
+    for offset in (0, 17, 51, 85, 109):
+        program = {"cycle_sec": 110, "offset_sec": offset, "phases": phases}
+        lost = sum(
+            1 for k in range(110)
+            if P.phase_at(program, 1_000_000_000 + k).lost
+        )
+        assert lost == 110 - 92, (offset, lost)
+        # and the green windows are exactly as long as programmed
+        through = sum(
+            1 for k in range(110)
+            if P.phase_at(program, 1_000_000_000 + k).state_of("through") == "green"
+        )
+        assert through == 50
+
+
+def test_phase_at_position_is_epoch_minus_offset_mod_cycle():
+    phases = [{"green_sec": 47, "movements": ["through"]},
+              {"green_sec": 38, "movements": ["cross"]}]
+    program = {"cycle_sec": 100, "offset_sec": 51, "phases": phases}
+    epoch = 1_793_854_800 + 51  # a 100 s boundary + the offset -> position 0
+    st = P.phase_at(program, epoch)
+    assert st.sec_into_cycle == 0 and st.index == 0 and not st.lost
+    assert st.remaining_sec == 47
+    st = P.phase_at(program, epoch + 48)
+    assert st.index == 1 and st.movement_states == {"through": "amber", "cross": "green"}
+    st = P.phase_at(program, epoch + 86)  # lost time after cross
+    assert st.lost and st.movements == ("cross",)
+    assert st.movement_states == {"through": "red", "cross": "amber"}
+    assert st.remaining_sec == 100 - 86
+    # sub-second precision floors, never rounds into the next second
+    assert P.phase_at(program, epoch + 46.999).index == 0
+
+
+def test_phase_at_accepts_every_program_shape():
+    tuples = ((40, ("NS",)), (40, ("EW",)))
+    dicts = [{"green_sec": 40, "movements": ["NS"]},
+             {"green_sec": 40, "movements": ["EW"]}]
+    jp = P.JunctionProgram(junction_id=1, cycle_sec=100, phases=dicts,
+                           offset_sec=5, source="osm_assumed")
+    for epoch in (1_000_000_000, 1_000_000_047, 1_000_000_093):
+        a = P.phase_at({"cycle_sec": 100, "offset_sec": 5, "phases": tuples}, epoch)
+        b = P.phase_at(jp, epoch)
+        c = P.phase_at({"cycle_sec": 100, "offset_sec": 5,
+                        "phases": json.dumps(dicts)}, epoch)
+        assert a == b == c
+
+
+def test_phase_at_degenerate_program_defines_no_state():
+    for program in (
+        {"cycle_sec": 0, "phases": [{"green_sec": 40, "movements": ["through"]}]},
+        {"cycle_sec": 100, "phases": [{"green_sec": 0, "movements": ["through"]}]},
+        {"cycle_sec": 100, "phases": []},
+    ):
+        st = P.phase_at(program, 1_000_000_000)
+        assert st.lost and st.index is None
+        assert st.state_of("through") == "none"  # no decision, never red
+
+
+def test_active_phase_keeps_the_c1_keys():
+    phases = [{"green_sec": 50, "movements": ["through"]},
+              {"green_sec": 42, "movements": ["cross"]}]
+    out = P.active_phase(phases, 110, 85, 1_000_000_000)
+    for key in ("index", "movements", "green_sec", "lost"):
+        assert key in out
+    assert isinstance(out["movements"], list)
+    assert set(out["movement_states"]) == {"through", "cross"}
+
+
 # ─── plans: city band aggregation ────────────────────────────────────────────
 
 

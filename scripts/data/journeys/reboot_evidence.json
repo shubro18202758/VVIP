@@ -1,0 +1,37 @@
+{
+  "what": "J7 reboot evidence: the GB10 was power-cycled and the stack came back on its own (veer-up.service, WantedBy veer.target, user lingering) with no manual command",
+  "source": "journalctl --user -u veer-up -o short-iso-precise (read-only); scripts/journeys.mjs J7 re-reads it when the journal is on this host",
+  "reboots": [
+    {
+      "boot_id": "a590bdbdf82f4b40885c327fa1d64968",
+      "system_boot": "2026-10-23T17:54:13+05:30",
+      "service_start": "2026-10-23T17:54:19.139712+05:30",
+      "ready": "2026-10-23T17:58:44.462551+05:30",
+      "seconds_to_ready": 265.3,
+      "readiness": "READY 11/11",
+      "manual_command": false,
+      "table": [
+        "postgis         READY     127.0.0.1:56434                    healthy · 49 segments · 19 migrations ledgered",
+        "valkey          READY     127.0.0.1:6380                     PONG · 107 keys · 49 traffic:latest:*",
+        "nats            READY     127.0.0.1:4223 (mon :8223)         v2.15.0 · 3 conns · 262 msgs in",
+        "signal-ingress  READY     nats corridor.traffic.live         publishing 1 msg/s",
+        "oracle          READY     127.0.0.1:8091                     ingest connected · last msg 0.7s ago · 63 msg/min",
+        "brain           READY     127.0.0.1:8092                     strategic connected · tactical connected",
+        "deck            READY     0.0.0.0:5273                       / 200 · /api/emulator/health 200 · gate on",
+        "emulator        READY     127.0.0.1:8090                     stack all true · library 10",
+        "decider         READY     127.0.0.1:8083                     loaded · systemd veer-decider.service",
+        "gemma           READY     127.0.0.1:8084                     llama-server ok · systemd veer-llama.service",
+        "embeddings      READY     127.0.0.1:8085                     pplx-embed-v2-late + bge-m3 · systemd veer-embed.service"
+      ]
+    },
+    {
+      "boot_id": "0bd1ca6045a14ad38c721674c06d5854",
+      "system_boot": "2026-10-23T18:06:42+05:30",
+      "service_start": "2026-10-23T18:06:48.203571+05:30",
+      "ready": "2026-10-23T18:11:15.412052+05:30",
+      "seconds_to_ready": 267.2,
+      "readiness": "READY 11/11",
+      "manual_command": false
+    }
+  ]
+}

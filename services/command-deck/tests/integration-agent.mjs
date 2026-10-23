@@ -1,312 +1,200 @@
 /**
- * Integration Test Agent — simulates frontend user interactions and verifies
- * that the UI correctly triggers backend optimization algorithms.
+ * Integration Test Agent — walks the deck's same-origin proxy the way the UI
+ * does and verifies that every surface it calls answers the shape the UI
+ * expects, within a latency budget, on the argus stack (Ahmedabad's
+ * real-road network).
  *
- * Runs headlessly using native Node.js fetch (no browser dependency).
- * Tests the API endpoints that the frontend calls, measuring latency
- * and verifying response shapes match what the UI expects.
+ * Runs headlessly using native Node.js fetch (no browser dependency). The
+ * deck's operator gate is honoured: one sign-in through tests/lib/
+ * operator-session.mjs (one attempt, PIN read at run time from
+ * VEER_OPERATOR_PIN, else VEER_OPERATOR_PIN_FILE, else veer.env — never
+ * logged), the session cookie rides on every gated call, and the session is
+ * revoked at the end. With the gate on, an anonymous gated read must be
+ * refused (403).
+ *
+ * Read-only (R8): GETs plus the pure compute POSTs the UI makes
+ * (predict/flow, optimize/routes). It creates no movement, plans nothing,
+ * decides nothing; nothing is skipped on an unreachable backend — a dark
+ * surface is a FAIL.
  *
  * Usage:
- *   node tests/integration-agent.mjs [--base-url http://localhost:5173]
+ *   node tests/integration-agent.mjs [--base-url http://127.0.0.1:5273]
+ *   (default: DECK_URL, else http://127.0.0.1:${DECK_PORT:-5273})
  */
 
-const BASE_URL = process.argv.includes('--base-url')
-	? process.argv[process.argv.indexOf('--base-url') + 1]
-	: 'http://localhost:5173';
+import { deckFetch, signIn, signOut } from './lib/operator-session.mjs';
 
-// Delhi NCR corridor bounding box (Kartavya Path / Rajpath area)
-const DELHI_BBOX = {
-	min_lon: '77.18',
-	min_lat: '28.58',
-	max_lon: '77.24',
-	max_lat: '28.64',
-};
+const BASE_URL = (
+	process.argv.includes('--base-url')
+		? process.argv[process.argv.indexOf('--base-url') + 1]
+		: process.env.DECK_URL ?? `http://127.0.0.1:${process.env.DECK_PORT ?? '5273'}`
+).replace(/\/+$/, '');
 
-// Segment IDs for prediction testing (typical Delhi corridor segments)
-const TEST_SEGMENT_IDS = [1001, 1002, 1003, 1004, 1005];
+// Ahmedabad: the road network's extent (WP-20) and the segments it carries.
+const CITY_BBOX = { min_lon: '72.3', min_lat: '22.8', max_lon: '72.9', max_lat: '23.3' };
+const EXPECT_SEGMENTS = Number(process.env.EXPECT_SEGMENTS ?? 49);
 
 // ─── Test Utilities ──────────────────────────────────────────────────────────
 
 let passCount = 0;
 let failCount = 0;
-let skipCount = 0;
+let session = { base: BASE_URL, gate: false, cookie: null };
 
 function log(icon, msg) {
 	const ts = new Date().toISOString().slice(11, 23);
 	console.log(`  ${icon} [${ts}] ${msg}`);
 }
 
-async function measure(label, fn) {
+async function testEndpoint(name, path, options = {}) {
+	const { method = 'GET', body, expectStatus = [200], expectShape, latencyBudgetMs = 5000, anonymous = false } = options;
+	const init = { method, signal: AbortSignal.timeout(Math.max(latencyBudgetMs * 4, 15000)) };
+	if (body) {
+		init.headers = { 'Content-Type': 'application/json' };
+		init.body = JSON.stringify(body);
+	}
 	const start = performance.now();
+	let status = 0;
+	let data = null;
 	try {
-		const result = await fn();
-		const elapsed = (performance.now() - start).toFixed(1);
-		return { ok: true, result, elapsed };
+		const res = anonymous ? await fetch(BASE_URL + path, init) : await deckFetch(session, path, init);
+		status = res.status;
+		data = await res.json().catch(() => null);
 	} catch (err) {
 		const elapsed = (performance.now() - start).toFixed(1);
-		return { ok: false, error: err, elapsed };
-	}
-}
-
-async function testEndpoint(name, url, options = {}) {
-	const { method = 'GET', body, expectStatus = [200], expectShape, latencyBudgetMs = 5000, isBackendProxy = false } = options;
-
-	const fetchOpts = { method };
-	if (body) {
-		fetchOpts.headers = { 'Content-Type': 'application/json' };
-		fetchOpts.body = JSON.stringify(body);
-	}
-
-	const { ok, result, error, elapsed } = await measure(name, async () => {
-		const res = await fetch(url, fetchOpts);
-		const data = await res.json().catch(() => null);
-		return { status: res.status, data };
-	});
-
-	if (!ok) {
-		if (isBackendProxy) {
-			log('SKIP', `${name} — backend unreachable (${elapsed}ms)`);
-			skipCount++;
-			return null;
-		}
-		log('FAIL', `${name} — ${error.message} (${elapsed}ms)`);
+		log('FAIL', `${name} — ${err instanceof Error ? err.message : String(err)} (${elapsed}ms)`);
 		failCount++;
 		return null;
 	}
-
-	const { status, data } = result;
-
-	// Backend proxy returns 500/502/503 when backend is offline — not a frontend failure
-	if (isBackendProxy && (status === 500 || status === 502 || status === 503)) {
-		log('SKIP', `${name} — backend offline (${status}) — proxy working (${elapsed}ms)`);
-		skipCount++;
-		return data;
-	}
-
-	// Status check
+	const elapsed = (performance.now() - start).toFixed(1);
 	if (!expectStatus.includes(status)) {
 		log('FAIL', `${name} — expected ${expectStatus.join('|')}, got ${status} (${elapsed}ms)`);
 		failCount++;
 		return data;
 	}
-
-	// Latency budget check
 	if (parseFloat(elapsed) > latencyBudgetMs) {
 		log('WARN', `${name} — ${elapsed}ms exceeds ${latencyBudgetMs}ms budget`);
 	}
-
-	// Shape validation
-	if (expectShape && data) {
-		const shapeOk = expectShape(data);
-		if (!shapeOk) {
-			log('FAIL', `${name} — response shape mismatch (${elapsed}ms)`);
+	if (expectShape) {
+		const verdict = expectShape(data);
+		if (verdict !== true) {
+			log('FAIL', `${name} — response shape mismatch${typeof verdict === 'string' ? `: ${verdict}` : ''} (${elapsed}ms)`);
 			failCount++;
 			return data;
 		}
 	}
-
 	log('PASS', `${name} — ${status} (${elapsed}ms)`);
 	passCount++;
 	return data;
 }
 
-function skip(name, reason) {
-	log('SKIP', `${name} — ${reason}`);
-	skipCount++;
-}
-
 // ─── Test Scenarios ──────────────────────────────────────────────────────────
 
-async function testFrontendServing() {
-	console.log('\n[1/6] Frontend Serving');
-	await testEndpoint('GET /', `${BASE_URL}/`, {
-		expectStatus: [200],
-		latencyBudgetMs: 3000,
+async function testDeckAndGate() {
+	console.log('\n[1/6] Deck serving + operator gate');
+	await testEndpoint('GET / (the cockpit)', '/', { anonymous: true, latencyBudgetMs: 3000 });
+	await testEndpoint('GET /api/session', '/api/session', {
+		anonymous: true,
+		expectShape: (d) => (d && typeof d.gate === 'boolean') || 'no {gate}',
 	});
+	if (session.gate) {
+		await testEndpoint('anonymous GET /api/v1/movements/active is refused (gate on)', '/api/v1/movements/active', {
+			anonymous: true,
+			expectStatus: [403],
+		});
+	} else {
+		log('NOTE', 'operator gate OFF on this deck — every proxied read is anonymous');
+	}
 }
 
 async function testHealthEndpoints() {
-	console.log('\n[2/6] Health Endpoints (convoy-brain → Ollama → GPU)');
-
-	await testEndpoint('GET /api/convoy/health', `${BASE_URL}/api/convoy/health`, {
-		expectStatus: [200],
-		expectShape: (d) => d && typeof d === 'object',
-		latencyBudgetMs: 2000,
-		isBackendProxy: true,
+	// (the oracle's liveness is /health, outside the /api/v1 proxy prefix; its
+	// proxied reads below stand for it)
+	console.log('\n[2/6] Health through the proxy (convoy-brain → models, emulator)');
+	await testEndpoint('GET /api/convoy/health', '/api/convoy/health', {
+		latencyBudgetMs: 3000,
+		expectShape: (d) =>
+			(d?.status === 'ok' && d?.strategic_tier?.model_host === 'connected' && d?.tactical_tier?.llama_server === 'connected')
+			|| `status=${d?.status} decider=${d?.strategic_tier?.model_host} gemma=${d?.tactical_tier?.llama_server}`,
 	});
-
-	await testEndpoint('GET /api/convoy/health/services', `${BASE_URL}/api/convoy/health/services`, {
-		expectStatus: [200],
-		latencyBudgetMs: 2000,
-		isBackendProxy: true,
-	});
-
-	await testEndpoint('GET /api/convoy/health/gpu', `${BASE_URL}/api/convoy/health/gpu`, {
-		expectStatus: [200],
-		latencyBudgetMs: 2000,
-		isBackendProxy: true,
+	await testEndpoint('GET /api/emulator/health', '/api/emulator/health', {
+		latencyBudgetMs: 3000,
+		expectShape: (d) => (d?.stack?.store && d?.stack?.valkey) || 'store/valkey not connected',
 	});
 }
 
 async function testTrafficDataPipeline() {
-	console.log('\n[3/6] Traffic Data Pipeline (traffic-oracle)');
-
-	const params = new URLSearchParams(DELHI_BBOX);
-
-	await testEndpoint(
-		'GET /api/traffic/snapshot (Delhi bbox)',
-		`${BASE_URL}/api/traffic/snapshot?${params}`,
-		{
-			expectStatus: [200],
-			expectShape: (d) => Array.isArray(d),
-			latencyBudgetMs: 3000,
-			isBackendProxy: true,
-		},
-	);
-
-	await testEndpoint(
-		'GET /api/traffic/segments (road network)',
-		`${BASE_URL}/api/traffic/segments?${params}`,
-		{
-			expectStatus: [200],
-			expectShape: (d) => Array.isArray(d),
-			latencyBudgetMs: 3000,
-			isBackendProxy: true,
-		},
-	);
+	console.log('\n[3/6] Traffic data (traffic-oracle, the real-road network)');
+	const params = new URLSearchParams(CITY_BBOX);
+	await testEndpoint('GET /api/traffic/segments (city bbox)', `/api/traffic/segments?${params}`, {
+		latencyBudgetMs: 3000,
+		expectShape: (d) => (Array.isArray(d) && d.length === EXPECT_SEGMENTS) || `segments=${Array.isArray(d) ? d.length : 'none'} (want ${EXPECT_SEGMENTS})`,
+	});
+	await testEndpoint('GET /api/v1/corridor/summary', '/api/v1/corridor/summary', {
+		latencyBudgetMs: 3000,
+		expectShape: (d) => (Number.isInteger(d?.total_segments) && d.total_segments > 0) || `total_segments=${d?.total_segments}`,
+	});
 }
 
 async function testPredictionEngine() {
-	console.log('\n[4/6] DSTGAT Prediction Engine (ONNX inference)');
-
-	await testEndpoint('POST /api/traffic/predict', `${BASE_URL}/api/traffic/predict`, {
+	console.log('\n[4/6] Flow forecaster (POST /api/v1/predict/flow — compute)');
+	await testEndpoint('POST /api/v1/predict/flow', '/api/v1/predict/flow', {
 		method: 'POST',
-		body: {
-			segment_ids: TEST_SEGMENT_IDS,
-			horizons_min: [5, 10, 15, 30],
-		},
-		expectStatus: [200],
+		body: { segment_ids: [1001, 1005, 1013], horizons_min: [5, 15] },
 		latencyBudgetMs: 5000,
-		isBackendProxy: true,
+		expectShape: (d) => (d?.predictions && Object.keys(d.predictions).length >= 1) || 'no predictions',
 	});
 }
 
 async function testAnomalyDetection() {
-	console.log('\n[5/6] Anomaly Detection Pipeline');
-
-	await testEndpoint(
-		'GET /api/v1/anomalies/recent',
-		`${BASE_URL}/api/v1/anomalies/recent?hours=1&limit=100`,
-		{
-			expectStatus: [200],
-			expectShape: (d) => d && typeof d === 'object',
-			latencyBudgetMs: 3000,
-			isBackendProxy: true,
-		},
-	);
+	console.log('\n[5/6] Anomaly feed');
+	await testEndpoint('GET /api/v1/anomalies/recent', '/api/v1/anomalies/recent?hours=1&limit=100', {
+		latencyBudgetMs: 3000,
+		expectShape: (d) => Array.isArray(d?.anomalies) || 'no anomalies[]',
+	});
 }
 
-async function testConvoyOptimization() {
-	console.log('\n[6/6] Convoy Route Optimization (MIP solver)');
-
-	// Step 1: Create a test movement
-	const createResult = await testEndpoint(
-		'POST /api/convoy/movements (create)',
-		`${BASE_URL}/api/convoy/movements`,
-		{
-			method: 'POST',
-			body: {
-				origin: [77.2090, 28.6139], // India Gate
-				destination: [77.1855, 28.6127], // Rashtrapati Bhavan
-				vvip_class: 'z_plus',
-				planned_departure: new Date(Date.now() + 3600000).toISOString(),
-			},
-			expectStatus: [200, 201],
-			latencyBudgetMs: 5000,
-			isBackendProxy: true,
-		},
-	);
-
-	if (createResult?.movement_id) {
-		// Step 2: Plan the movement (triggers MIP solver + diversion planner)
-		await testEndpoint(
-			'POST /api/convoy/movements/:id/plan (route optimization)',
-			`${BASE_URL}/api/convoy/movements/${createResult.movement_id}/plan`,
-			{
-				method: 'POST',
-				body: {
-					origin: [77.2090, 28.6139],
-					destination: [77.1855, 28.6127],
-					vvip_class: 'z_plus',
-					planned_departure: new Date(Date.now() + 3600000).toISOString(),
-				},
-				expectStatus: [200],
-				// MIP solver budget: 2s + network + prediction = ~5s
-				latencyBudgetMs: 8000,
-				isBackendProxy: true,
-			},
-		);
-	} else {
-		skip('POST /plan', 'No movement_id from create step (backend likely offline)');
-	}
+async function testRouteOptimization() {
+	console.log('\n[6/6] Route optimizer (POST /api/v1/optimize/routes — compute, no movement)');
+	// Lal Darwaja's Relief Road (1005) → the airport spur (1029): the Z route.
+	await testEndpoint('POST /api/v1/optimize/routes', '/api/v1/optimize/routes', {
+		method: 'POST',
+		body: { origin_segment: 1005, destination_segment: 1029, max_candidates: 3 },
+		latencyBudgetMs: 8000,
+		expectShape: (d) => (Array.isArray(d?.routes) && d.routes.length >= 1 && d.routes[0].segment_ids?.length >= 1) || 'no route',
+	});
 }
 
 // ─── Main ────────────────────────────────────────────────────────────────────
 
 async function main() {
 	console.log('╔══════════════════════════════════════════════════════════════╗');
-	console.log('║  VVIP Integration Test Agent                                ║');
-	console.log('║  Simulates UI interactions → verifies backend algorithms    ║');
+	console.log('║  Veer Integration Test Agent                                 ║');
+	console.log('║  Walks the deck proxy as the UI does → verifies the stack    ║');
 	console.log('╠══════════════════════════════════════════════════════════════╣');
-	console.log(`║  Target: ${BASE_URL.padEnd(49)}║`);
-	console.log(`║  Time:   ${new Date().toISOString().padEnd(49)}║`);
+	console.log(`║  Target: ${BASE_URL.padEnd(52)}║`);
+	console.log(`║  Time:   ${new Date().toISOString().padEnd(52)}║`);
 	console.log('╚══════════════════════════════════════════════════════════════╝');
 
-	// Wait for server to be ready
-	let serverReady = false;
-	for (let i = 0; i < 10; i++) {
-		try {
-			const res = await fetch(BASE_URL, { signal: AbortSignal.timeout(2000) });
-			if (res.ok) {
-				serverReady = true;
-				break;
-			}
-		} catch {
-			// Server not ready yet
-		}
-		log('WAIT', `Server not ready, retrying in 2s (${i + 1}/10)...`);
-		await new Promise((r) => setTimeout(r, 2000));
+	session = await signIn(BASE_URL, 'Integration agent (automated check)');
+	try {
+		await testDeckAndGate();
+		await testHealthEndpoints();
+		await testTrafficDataPipeline();
+		await testPredictionEngine();
+		await testAnomalyDetection();
+		await testRouteOptimization();
+	} finally {
+		await signOut(session);
 	}
 
-	if (!serverReady) {
-		console.log('\nERROR: Frontend server not reachable at ' + BASE_URL);
-		console.log('Start it first: bun run dev (or ./infra/scripts/launch-frontend.sh)');
-		process.exit(1);
-	}
-
-	// Run all test scenarios sequentially (simulates real user flow)
-	await testFrontendServing();
-	await testHealthEndpoints();
-	await testTrafficDataPipeline();
-	await testPredictionEngine();
-	await testAnomalyDetection();
-	await testConvoyOptimization();
-
-	// ─── Summary ───────────────────────────────────────────────────────────
 	console.log('\n' + '═'.repeat(62));
-	console.log(`  Results: ${passCount} passed, ${failCount} failed, ${skipCount} skipped`);
+	console.log(`  Results: ${passCount} passed, ${failCount} failed (operator gate ${session.gate ? 'on — signed in' : 'off'})`);
 	console.log('═'.repeat(62));
-
-	if (failCount > 0 && passCount === 0) {
-		console.log('\n  All endpoints unreachable — backend services likely offline.');
-		console.log('  The frontend is serving correctly if test [1/6] passed.');
-		console.log('  Start backend: docker compose -f infra/compose.yml up -d');
-	}
-
-	process.exit(failCount > 0 && passCount === 0 ? 1 : 0);
+	process.exit(failCount > 0 ? 1 : 0);
 }
 
-main().catch((err) => {
-	console.error('Integration agent crashed:', err);
+main().catch(async (err) => {
+	await signOut(session);
+	console.error('Integration agent crashed:', err instanceof Error ? err.message : err);
 	process.exit(1);
 });

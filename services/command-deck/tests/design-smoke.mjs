@@ -5,7 +5,13 @@
  * gods-eye-smoke pattern) and asserts under SwiftShader:
  *
  *   1. `/` IS the restored Convoy Command cockpit (the VVIP template
- *      home): 200 + the template root mounts
+ *      home): 200 + the template root in the server render (the frame
+ *      scripts/showcase_run.sh greps for), and the cockpit MOUNTS in the
+ *      browser once the operator gate's state is known, as /ops does —
+ *      the smoke signs in when the origin's gate is on (tests/lib/
+ *      operator-session.mjs: one attempt, PIN read at run time, never
+ *      logged, cookie set before navigation, revoked on exit), so the
+ *      cockpit itself must mount; only a sign-in card counts as a failure
  *   2. the live URLs return 200 (/, /ops, /gods-eye, /comms, /chat,
  *      /citizen, /driver) — a URL that resolves twice or zero times fails
  *      sync; this is the tripwire
@@ -22,27 +28,46 @@
  *      its honest 'band —' hollow chip when no page assigns state (R3)
  *
  * Usage: node tests/design-smoke.mjs [origin]    # default http://127.0.0.1:5199
+ * Env:   VEER_OPERATOR_PIN, else VEER_OPERATOR_PIN_FILE, else veer.env — read
+ *        only when the origin's operator gate is on
  * Exit 0 with `ok <name> — <detail>` lines; exit 1 on any failure.
  */
 
 import { createRequire } from 'node:module';
 import { spawn } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { puppeteerCookies, signIn, signOut } from './lib/operator-session.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const DECK = path.resolve(HERE, '..');
 
-// Puppeteer + cached Chrome live in the React frontend's tree (the e2e
-// harness pattern; same as tests/gods-eye-smoke.mjs).
-const require2 = createRequire('/home/sandy050405/Desktop/Veer/VVIP/frontend/package.json');
-const puppeteer = require2('puppeteer').default ?? require2('puppeteer');
+// Puppeteer + cached Chrome live in the repo's frontend/ tree (the e2e
+// harness pattern; the same candidates as tests/gods-eye-smoke.mjs): this
+// checkout's frontend first, then the argus tree — never the retired one.
+const PUPPETEER_CANDIDATES = [
+	process.env['PUPPETEER_FROM'],
+	path.resolve(DECK, '../../frontend/package.json'),
+	'/home/sandy050405/argus/veer/VVIP/frontend/package.json'
+].filter(Boolean);
+let puppeteer = null;
+for (const from of PUPPETEER_CANDIDATES) {
+	try {
+		const req = createRequire(from);
+		puppeteer = req('puppeteer').default ?? req('puppeteer');
+		break;
+	} catch {
+		// next candidate
+	}
+}
+if (!puppeteer) throw new Error(`puppeteer not resolvable from ${PUPPETEER_CANDIDATES.join(', ')}`);
 
 const CHROME_CANDIDATES = [
 	process.env['CHROME_PATH'],
-	'/home/sandy050405/.cache/puppeteer/chrome/linux_arm-153.0.8010.36/chrome-linux-arm64/chrome',
-	'/home/sandy050405/.cache/puppeteer/chrome/linux_arm-146.0.7680.76/chrome-linux-arm64/chrome'
+	path.join(os.homedir(), '.cache/puppeteer/chrome/linux_arm-153.0.8010.36/chrome-linux-arm64/chrome'),
+	path.join(os.homedir(), '.cache/puppeteer/chrome/linux_arm-146.0.7680.76/chrome-linux-arm64/chrome')
 ].filter(Boolean);
 const executablePath = CHROME_CANDIDATES.find(existsSync);
 if (!executablePath) throw new Error('no Chrome binary found (set CHROME_PATH)');
@@ -81,9 +106,14 @@ async function ensureOrigin(origin, port) {
 	if (!existsSync(path.join(DECK, 'build', 'index.js'))) {
 		throw new Error('no build/ output — run `npx vite build` first');
 	}
+	// A preview this smoke spawns is private: gate off and keyless, whatever
+	// this shell exported (the PIN, the session secret and the ion token stay
+	// with the deployed deck).
+	const env = { ...process.env, PORT: String(port), HOST: '127.0.0.1' };
+	for (const k of ['VEER_OPERATOR_PIN', 'VEER_OPERATOR_PIN_FILE', 'VEER_SESSION_SECRET', 'VEER_SESSION_SECURE', 'VEER_CESIUM_ION_TOKEN']) delete env[k];
 	const proc = spawn('node', ['build'], {
 		cwd: DECK,
-		env: { ...process.env, PORT: String(port), HOST: '127.0.0.1' },
+		env,
 		stdio: ['ignore', 'pipe', 'pipe']
 	});
 	proc.stdout.on('data', () => {});
@@ -122,22 +152,36 @@ const normColor = (s) =>
 
 const browser = await puppeteer.launch({ executablePath, headless: 'new', args: SWIFTSHADER_ARGS });
 let deckProc = null;
+let session = null;
 
 try {
 	const portArg = process.argv[2] ? Number(new URL(process.argv[2]).port) : 5199;
-	const origin = process.argv[2] ?? `http://127.0.0.1:${portArg}`;
+	const origin = (process.argv[2] ?? `http://127.0.0.1:${portArg}`).replace(/\/+$/, '');
 	deckProc = await ensureOrigin(origin, portArg);
 	ok('deck-origin up', true, origin);
+	session = await signIn(origin, 'Design smoke (automated check)');
+	ok('operator gate', true, session.gate ? 'on — signed in' : 'off');
 
 	// ── 1: `/` IS the restored Convoy Command cockpit (the VVIP template
 	// home, rebuilt on the live stack) ──────────────────────────────────
 	const root = await fetch(`${origin}/`, { redirect: 'manual' });
 	const rootHtml = root.ok ? await root.text() : '';
-	ok(
-		'/ is the Convoy Command cockpit (200, template mounted)',
-		root.status === 200 && rootHtml.includes('data-template="convoy-command"'),
-		`status=${root.status} template=${rootHtml.includes('data-template="convoy-command"')}`
-	);
+	{
+		const cockpit = await browser.newPage();
+		await cockpit.setViewport({ width: 1440, height: 900 });
+		if (session.gate) await cockpit.setCookie(...puppeteerCookies(session));
+		await cockpit.goto(`${origin}/`, { waitUntil: 'domcontentloaded', timeout: 60000 });
+		const mountedAs = await cockpit
+			.waitForSelector('[data-template="convoy-command"]:not([data-pending]), [data-testid="cockpit-signin-required"]', { timeout: 20000 })
+			.then((el) => el?.evaluate((e) => (e.dataset.template ? 'cockpit' : 'gate sign-in')))
+			.catch(() => null);
+		ok(
+			'/ is the Convoy Command cockpit (200, template mounted)',
+			root.status === 200 && rootHtml.includes('data-template="convoy-command"') && (session.gate ? mountedAs === 'cockpit' : !!mountedAs),
+			`status=${root.status} server-render template=${rootHtml.includes('data-template="convoy-command"')} · mounted=${mountedAs ?? 'nothing'}`
+		);
+		await cockpit.close();
+	}
 
 	// ── 2: the live URLs ─────────────────────────────────────────────────
 	const EIGHT = ['/', '/ops', '/gods-eye', '/comms', '/chat', '/citizen', '/driver'];
@@ -151,6 +195,7 @@ try {
 	// ── /design: primitives, parity, BLACK chip, modal, toast, motion ────
 	const page = await browser.newPage();
 	await page.setViewport({ width: 1440, height: 1000 });
+	if (session.gate) await page.setCookie(...puppeteerCookies(session));
 	const consoleErrors = [];
 	page.on('pageerror', (e) => consoleErrors.push(`pageerror: ${String(e).slice(0, 200)}`));
 
@@ -189,7 +234,7 @@ try {
 	);
 
 	// ── 4: token parity BOTH themes via getComputedStyle ─────────────────
-	const parity = await page.evaluate(async (DECLARED) => {
+	const parity = await page.evaluate(async () => {
 		const read = (sel) => {
 			const el = document.querySelector(sel);
 			const cs = getComputedStyle(el);
@@ -338,6 +383,7 @@ try {
 		consoleErrors.slice(0, 3).join(' | ') || 'none'
 	);
 } finally {
+	await signOut(session);
 	await browser.close().catch(() => {});
 	if (deckProc) deckProc.kill();
 }

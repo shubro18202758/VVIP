@@ -1,7 +1,7 @@
 {
   "chrome": "/home/sandy050405/.cache/puppeteer/chrome/linux_arm-153.0.8010.36/chrome-linux-arm64/chrome",
   "origin": "http://127.0.0.1:5273",
-  "pursuitTitle": "PURSUIT — stolen GJ27EM9001 (FIR 4401/2026, Kalupur PS)",
+  "pursuitTitle": "PURSUIT",
   "shots": {
     "pursuit": {
       "checks": {
@@ -11,7 +11,7 @@
         },
         "trace-positions": {
           "ok": true,
-          "detail": "points=4 source=emulated_anpr"
+          "detail": "points=13 source=emulated_anpr"
         }
       }
     },
@@ -21,9 +21,13 @@
           "ok": true,
           "detail": "phase=ready"
         },
+        "imagery": {
+          "ok": true,
+          "detail": "imagery=photoreal attempt=1"
+        },
         "entities-rendered": {
           "ok": true,
-          "detail": "entities=38 layers=[events,traces,signals,units]"
+          "detail": "entities=33 layers=[events,traces,enforcement,signals,units,photoreal-3d]"
         },
         "live-layer-on": {
           "ok": true,
@@ -35,11 +39,11 @@
         },
         "live-canvas-nonblank": {
           "ok": true,
-          "detail": "distinct colours=875"
+          "detail": "distinct colours=5338"
         },
         "png-nonblank": {
           "ok": true,
-          "detail": "png colours=2942 opaque=100.0%"
+          "detail": "png colours=10031 opaque=100.0%"
         }
       },
       "file": "showcase_pursuit_trace.png"
@@ -48,33 +52,63 @@
       "checks": {
         "advisory-rendered": {
           "ok": true,
-          "detail": "kicker=\"Your road, next 2 hours\" strip=watch"
+          "detail": "kicker=\"Your road, next 2 hours\" strip=calm"
         },
-        "live-restriction-shown": {
+        "pursuit-not-public": {
           "ok": true,
-          "detail": "1 live-source event card(s) of 1 (live corridor restriction rendered)"
+          "detail": "tactical operations stay operator-only (holds.ts PUBLIC_EVENT_KINDS); 0 card(s) by source {}"
+        },
+        "no-plate-on-public-page": {
+          "ok": true,
+          "detail": "none"
+        },
+        "emulated-never-labelled-live": {
+          "ok": true,
+          "detail": "0 emulated card(s) wearing LIVE; 0 card(s) by source {}"
         },
         "content-present": {
           "ok": true,
-          "detail": "body text 1007 chars"
+          "detail": "body text 910 chars"
         },
         "png-nonblank": {
           "ok": true,
-          "detail": "png colours=797 opaque=100.0%"
+          "detail": "png colours=2060 opaque=100.0%"
         }
       },
       "file": "showcase_citizen_advisory.png"
+    },
+    "opsWall": {
+      "checks": {
+        "phase-ready": {
+          "ok": true,
+          "detail": "phase=ready"
+        },
+        "imagery": {
+          "ok": true,
+          "detail": "imagery=photoreal attempt=1"
+        },
+        "decision-queue": {
+          "ok": true,
+          "detail": "2 queue card(s)"
+        },
+        "png-nonblank": {
+          "ok": true,
+          "detail": "png colours=7268 opaque=100.0%"
+        }
+      },
+      "file": "showcase_ops_wall.png"
     }
   },
+  "operatorGate": "on (signed in)",
   "pursuitFeed": {
     "found": true,
     "traceOk": true,
     "vehicleId": "1b94e9d2-7e11-4174-a735-7dd3be3189cf",
-    "points": 4,
+    "points": 13,
     "source": "emulated_anpr",
     "centroid": [
-      72.58433250000002,
-      23.023744999999998
+      72.58455761538461,
+      23.02320430769231
     ]
   }
 }

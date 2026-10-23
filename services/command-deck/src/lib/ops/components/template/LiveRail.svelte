@@ -1,9 +1,19 @@
 <script lang="ts">
 	/**
 	 * LiveRail — the template's right operations rail, rebuilt on real
-	 * feeds: corridor readouts (shared feed), the live event board
-	 * (click = select + camera subject-lock, the wall-mode contract), and
-	 * the decision-audit tail (the same FeedItem contract as /ops).
+	 * feeds: corridor readouts (shared feed — NO LIVE FEED in neutral ink when
+	 * no observation backs the summary, SIMULATED FEED when synthetic rows
+	 * do; never zeros-as-clear, never LIVE for a simulated feed), the live
+	 * event board (click = select + a focus request on the canvas bus: the
+	 * canvas flies to the event's spine and shows LOCKED only when the flight
+	 * lands — the rail never claims a lock itself; titles mask plates unless a
+	 * duty officer is named), and the decision-audit tail (the same FeedItem
+	 * contract as /ops; server rows carry their actor kind). C6 holds on every
+	 * text this rail prints: event titles, the focus note, audit rows and
+	 * their evidence payloads read GJ27EM•••1 until an officer is named.
+	 * A labelled test / rehearsal movement (event metadata.label, carried by
+	 * the brain from the movement's title) wears a TEST pill beside its kind,
+	 * as the dossier does — it never reads as a real Z movement.
 	 */
 	import Panel from '$lib/primitives/Panel.svelte';
 	import FeedItem from '$lib/primitives/FeedItem.svelte';
@@ -11,19 +21,41 @@
 	import Badge from '$lib/primitives/Badge.svelte';
 	import { ops } from '$lib/ops/store.svelte';
 	import { godsEye } from '$lib/gods-eye/store.svelte';
+	import { focus } from '$lib/gods-eye/focus.svelte';
 	import { corridor } from './corridor.svelte';
 	import { t } from '$lib/i18n/strings';
+	import { displayDetail, displayText } from '$lib/gods-eye/plates';
 	import type { AuditEntry } from '$lib/ops/types';
 
 	const liveEvents = $derived(ops.events.filter((e) => e.source !== 'offline-fixture'));
 	const auditTail = $derived(ops.audit.slice(-8).reverse());
 
 	function selectEvent(id: string) {
-		ops.selectEvent(id);
-		godsEye.subjectLockId = id; // wall camera follows the selected event
+		// Re-selecting the selected event must not reset its band + audit
+		// tail (selectEvent clears both and re-pushes the audit rows).
+		if (ops.selectedEventId !== id) ops.selectEvent(id);
+		focus.request(id); // the canvas flies, locks when it lands, then reports back
+	}
+
+	/** Honest per-row focus state: LOCKED only once the canvas holds the camera. */
+	function focusState(id: string): { label: string; tone: 'ok' | 'wait' | 'warn' } | null {
+		if (godsEye.subjectLockId === id) return { label: '⊕ locked', tone: 'ok' };
+		if (focus.eventId !== id) return null;
+		if (focus.outcome === 'pending') return { label: 'locating…', tone: 'wait' };
+		if (focus.outcome === 'no-geometry') return { label: 'no spine on canvas', tone: 'warn' };
+		if (focus.outcome === 'no-canvas') return { label: 'canvas unavailable', tone: 'warn' };
+		return null; // locked-then-released, or cancelled by the operator
+	}
+
+	/** The actor as the narrow rail shows it (mcp: prefix dropped, long officer labels cut; the text names them in full). */
+	function railActor(actor: string): string {
+		const a = actor.startsWith('mcp:') ? actor.slice(4) : actor;
+		return a.length > 26 ? `${a.slice(0, 25)}…` : a;
 	}
 
 	function actorKind(a: AuditEntry): 'human' | 'machine' {
+		// Server rows (C-C FeedItem) say who acted; only legacy rows are inferred.
+		if (a.actorKind) return a.actorKind === 'human' ? 'human' : 'machine';
 		if (a.source === 'operator' || a.actor === 'operator') return 'human';
 		if (a.actor.includes('Officer') || a.actor.includes('officer')) return 'human';
 		return 'machine';
@@ -32,7 +64,13 @@
 
 <div class="rail">
 	<Panel variant="glass" title={t(ops.lang, 'tpl_corridor')} lang={ops.lang}>
-		{#if corridor.row}
+		{#if corridor.row && corridor.noLiveFeed}
+			<p class="no-feed mono" data-testid="liverail-no-live-feed">{t(ops.lang, 'tpl_no_live_feed')}</p>
+			<p class="dim mono">the corridor summary has no fresh observation behind it — readouts withheld</p>
+		{:else if corridor.row}
+			{#if corridor.simulated}
+				<p class="sim mono" data-testid="liverail-simulated-feed">{t(ops.lang, 'cc_simulated_feed')}</p>
+			{/if}
 			<div class="tiles">
 				<span class="tile">
 					<b>{corridor.row.avgSpeedKmh.toFixed(1)}</b>
@@ -67,10 +105,31 @@
 							type="button"
 							class="event"
 							class:selected={ops.selectedEventId === ev.eventId}
+							data-event-id={ev.eventId}
 							onclick={() => selectEvent(ev.eventId)}
 						>
-							<span class="ev-name">{ev.name}</span>
-							<span class="ev-kind mono">{ev.eventKind}</span>
+							<span class="ev-name" title={displayText(ev.name, ops.officerOn)}>{displayText(ev.name, ops.officerOn)}</span>
+							<span class="ev-kind mono">
+								{ev.eventKind}
+								<!-- on the kind line, never inside the cut name: the marker always shows -->
+								{#if ev.emulated}<span class="ev-emu" data-testid="liverail-emulated">EMULATED</span>{/if}
+								{#if ev.metadata?.label}
+									<span
+										class="ev-test"
+										data-testid="liverail-test"
+										title={`${t(ops.lang, 'tpl_test_hint')}: ${displayText(ev.metadata.label, ops.officerOn)}`}
+									>{t(ops.lang, 'tpl_test')}</span>
+								{/if}
+								{#if focusState(ev.eventId)}
+									{@const fs = focusState(ev.eventId)!}
+									<span
+										class="ev-focus tone-{fs.tone}"
+										title={focus.eventId === ev.eventId && focus.note ? displayText(focus.note, ops.officerOn) : undefined}
+									>
+										· {fs.label}
+									</span>
+								{/if}
+							</span>
 							<Badge variant={ev.state === 'active' ? 'live' : 'pending'} label={ev.state} />
 						</button>
 					</li>
@@ -87,11 +146,11 @@
 				{#each auditTail as entry (entry.id)}
 					<FeedItem
 						ts={entry.ts}
-						actor={entry.actor.startsWith('mcp:') ? entry.actor.slice(4) : entry.actor}
+						actor={railActor(entry.actor)}
 						actorKind={actorKind(entry)}
 						level={entry.level}
-						text={entry.text}
-						detail={entry.detail}
+						text={displayText(entry.text, ops.officerOn)}
+						detail={displayDetail(entry.detail, ops.officerOn)}
 						lang={ops.lang}
 					/>
 				{/each}
@@ -134,16 +193,35 @@
 
 	.tile i {
 		font-style: normal;
-		font-size: 9px;
+		font-size: var(--v-text-2xs);
 		letter-spacing: var(--v-tracking-status);
 		text-transform: uppercase;
-		color: var(--v-ink-4);
+		color: var(--v-ink-3);
 	}
 
 	.dim {
 		margin: 0;
 		font-size: var(--v-text-2xs);
-		color: var(--v-ink-4);
+		color: var(--v-ink-3);
+	}
+
+	.no-feed {
+		margin: 0 0 var(--v-space-1);
+		font-size: var(--v-text-sm);
+		font-weight: 700;
+		letter-spacing: var(--v-tracking-status);
+		color: var(--v-ink-3);
+	}
+
+	.sim {
+		display: inline-block;
+		margin: 0 0 var(--v-space-2);
+		font-size: var(--v-text-2xs);
+		letter-spacing: 0.08em;
+		padding: 1px 6px;
+		border: 1px dashed var(--v-tool);
+		border-radius: var(--v-radius-pill);
+		color: var(--v-tool);
 	}
 
 	.events {
@@ -198,9 +276,43 @@
 
 	.ev-kind {
 		grid-area: kind;
-		font-size: 9px;
-		color: var(--v-ink-4);
+		font-size: var(--v-text-2xs);
+		color: var(--v-ink-3);
 		letter-spacing: 0.04em;
+	}
+
+	.ev-emu {
+		margin-left: var(--v-space-1);
+		padding: 0 5px;
+		border: 1px dashed var(--v-tool);
+		border-radius: var(--v-radius-pill);
+		color: var(--v-tool);
+		letter-spacing: 0.08em;
+	}
+
+	.ev-test {
+		margin-left: var(--v-space-1);
+		padding: 0 5px;
+		border: 1px solid var(--v-band-amber);
+		border-radius: var(--v-radius-pill);
+		color: var(--v-band-amber);
+		letter-spacing: 0.08em;
+	}
+
+	.ev-focus {
+		letter-spacing: 0.04em;
+	}
+
+	.ev-focus.tone-ok {
+		color: var(--v-data);
+	}
+
+	.ev-focus.tone-wait {
+		color: var(--v-ink-3);
+	}
+
+	.ev-focus.tone-warn {
+		color: var(--v-band-amber);
 	}
 
 	.audit {

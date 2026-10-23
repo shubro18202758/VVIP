@@ -14,6 +14,8 @@
 	import FeedItem from '$lib/primitives/FeedItem.svelte';
 	import EmptyState from '$lib/primitives/EmptyState.svelte';
 	import { ops } from '$lib/ops/store.svelte';
+	import { POLL_MS } from '$lib/ops/endpoints';
+	import { istClock } from '$lib/ops/format';
 	import { tOps } from '$lib/i18n/strings.ops';
 	import type { DegradationTaxonomyEntry } from '$lib/ops/types';
 
@@ -44,13 +46,9 @@
 		return 'info';
 	}
 
+	/** Epoch SECONDS (the taxonomy's unit) → IST HH:MM:SS. */
 	function clock(ts: number | null): string {
-		if (ts == null) return '—';
-		const d = new Date(ts * 1000);
-		const hh = String(d.getHours()).padStart(2, '0');
-		const mm = String(d.getMinutes()).padStart(2, '0');
-		const ss = String(d.getSeconds()).padStart(2, '0');
-		return `${hh}:${mm}:${ss}`;
+		return ts == null ? '—' : istClock(ts * 1000);
 	}
 
 	function rowText(entry: DegradationTaxonomyEntry): string {
@@ -65,6 +63,7 @@
 		? tOps(lang, 'ledgerScanLine', taxonomy.rowsScanned, taxonomy.contextsScanned)
 		: tOps(lang, 'ledgerSub')}
 	status={panelStatus}
+	pollMs={POLL_MS.ledger}
 	lang={lang}
 >
 	{#if taxonomy && taxonomy.entries.length}
@@ -108,8 +107,8 @@
 	}
 
 	.sample {
-		font-size: 10px;
-		color: var(--v-ink-4);
+		font-size: var(--v-text-2xs);
+		color: var(--v-ink-3);
 		border: 1px solid var(--v-line-1);
 		border-radius: var(--v-radius-pill);
 		padding: 0 var(--v-space-1);
@@ -124,7 +123,7 @@
 	.foot-note {
 		margin: var(--v-space-2) 0 0;
 		font-size: var(--v-text-2xs);
-		color: var(--v-ink-4);
+		color: var(--v-ink-3);
 	}
 
 	.mono {

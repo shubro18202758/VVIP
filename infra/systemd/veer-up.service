@@ -1,0 +1,28 @@
+# One-shot bring-up of the Veer stack at boot (and on `systemctl --user start
+# veer.target`): waits for Docker, then runs scripts/veer_up.sh --boot —
+# compose up -d, migrations, seed-if-empty, and a convergence report in the
+# journal (journalctl --user -u veer-up). Model hosts are started by
+# veer-models.target alongside it. Installed by scripts/veer_up.sh --install-units.
+[Unit]
+Description=Veer stack bring-up: compose services, migrations, readiness report
+PartOf=veer.target
+# retries (Restart= below) at most 10 an hour: a Docker wait that keeps
+# timing out is retried indefinitely (≤6/h), a step failing fast and for
+# good (a broken migration) stops after 10 and leaves the unit failed
+StartLimitIntervalSec=1h
+StartLimitBurst=10
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+EnvironmentFile=%h/.config/veer/veer.env
+ExecStart=/bin/bash ${VEER_ROOT}/scripts/veer_up.sh --boot
+# docker wait (≤10 min) + bring-up + convergence (decider cold load ≈5 min)
+TimeoutStartSec=30min
+# A bring-up step that failed (exit 3: Docker still unreachable after 10 min,
+# compose, migrations, seed) or a timeout is retried. Not "not converged"
+# (exit 1: everything is up and supervised, the journal has the readiness
+# table) nor a preflight refusal (exit 2: needs the operator).
+Restart=on-failure
+RestartSec=60
+RestartPreventExitStatus=1 2

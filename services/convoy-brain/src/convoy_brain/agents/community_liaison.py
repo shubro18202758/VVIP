@@ -21,11 +21,20 @@ logs whatever this agent returns; the agent itself never mutates state.
 ETHICS (C6/C10): vehicles only; every emulated input is source-labelled;
 directives reference plates and events, never persons; the framing is
 pro-government capability (assist the officer, never replace judgment).
+
+STOLEN VEHICLES (C-N): an approved R_STOLEN_SIGHTING is a sighting of a
+vehicle reported stolen — evidence for police control's (human-initiated)
+pursuit, NEVER a fine: the registered owner is the victim, so the oracle
+withholds every e-challan.  The routing table sends it to police_control,
+and a deterministic post-step holds every tier to that: any directive for a
+plate with an approved stolen sighting goes to police_control and carries
+no challan / fine wording, whatever the model drafted.
 """
 
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 import structlog
@@ -53,6 +62,10 @@ Hard rules:
   persons. No face, name, or identity inference.
 - Every emulated input carries source 'emulated_anpr' — keep that label
   in the directive so no reader mistakes it for a live feed.
+- R_STOLEN_SIGHTING is a STOLEN vehicle's sighting: route it to
+  police_control as pursuit support (pursuits are human-initiated). It is
+  NEVER a fine — the e-challan is withheld because the vehicle is reported
+  stolen; never direct a challan or a fine to a stolen vehicle's owner.
 - Pro-government framing: your directive ASSISTS the agency actor.
 
 Respond with structured JSON:
@@ -74,12 +87,92 @@ SPEC = AgentSpec(
 #: Agencies the liaison may direct (deterministic floor uses these).
 AGENCIES = ("jan_rakshak", "traffic_police", "police_control")
 
+#: The oracle's evidence rule for a vehicle reported stolen (C-N).
+STOLEN_SIGHTING_RULE = "R_STOLEN_SIGHTING"
+
 #: Rule id -> the agency that owns serving it (deterministic routing table).
+#: A stolen vehicle's sighting is police control's (pursuit support), never
+#: traffic police's challan desk.
 _RULE_AGENCY = {
     "R_SPD_SEGMENT": "traffic_police",
     "R_SIGNAL_VIOLATION": "traffic_police",
     "R_CLOSED_CORRIDOR_ENTRY": "police_control",
+    STOLEN_SIGHTING_RULE: "police_control",
 }
+
+#: Penalty wording (a stolen car's owner is the victim): a directive for a
+#: stolen plate that mentions one at all gets the deterministic hand-off.
+_PENALTY_RE = re.compile(r"challan|\bfines?\b|\bfined\b|penalt", re.IGNORECASE)
+
+
+_PRIORITY_RANK = {"low": 0, "medium": 1, "high": 2}
+
+
+def _plate_key(plate: object) -> str:
+    return re.sub(r"[\s-]", "", str(plate or "")).upper()
+
+
+def _fir_of(row: dict[str, Any]) -> str | None:
+    evidence = row.get("evidence") if isinstance(row.get("evidence"), dict) else {}
+    fir = evidence.get("fir_ref")
+    return str(fir) if fir else None
+
+
+def stolen_sighting_action(row: dict[str, Any]) -> str:
+    """The hand-off for an approved R_STOLEN_SIGHTING: pursuit support, no fine."""
+    fir = _fir_of(row)
+    return (
+        f"stolen vehicle sighted{f' (FIR {fir})' if fir else ''} — police control: "
+        "support the human-initiated pursuit from this sighting; e-challan "
+        "withheld (vehicle reported stolen), no fine to the owner"
+    )
+
+
+def guard_stolen_directives(
+    directives: list[dict[str, Any]], approved: list[dict[str, Any]]
+) -> tuple[list[dict[str, Any]], int]:
+    """Hold any tier's directives to C-N (pure).
+
+    A directive for a plate with an approved R_STOLEN_SIGHTING is routed to
+    police_control, and challan / fine wording on it is replaced by the
+    pursuit-support hand-off (an e-challan approved before the earmark is
+    withheld, never served on the victim).  Exact duplicates the rewrite
+    creates are dropped.  Returns (directives, rewritten count).
+    """
+    stolen = {
+        _plate_key(r.get("plate")): r for r in approved
+        if str(r.get("rule_id")) == STOLEN_SIGHTING_RULE and r.get("plate")
+    }
+    if not stolen:
+        return directives, 0
+    out: list[dict[str, Any]] = []
+    kept: dict[tuple[str, str, str], int] = {}
+    rewritten = 0
+    for d in directives:
+        if not isinstance(d, dict):
+            continue
+        row = stolen.get(_plate_key(d.get("vehicle_plate")))
+        if row is not None:
+            action = str(d.get("action") or "")
+            fixed = dict(d)
+            fixed["agency"] = "police_control"
+            if _PENALTY_RE.search(action):
+                fixed["action"] = stolen_sighting_action(row)
+            if fixed != d:
+                rewritten += 1
+            d = fixed
+        key = (str(d.get("agency")), _plate_key(d.get("vehicle_plate")), str(d.get("action")))
+        if key in kept:
+            # one hand-off per plate and action, at the higher priority
+            first = out[kept[key]]
+            if _PRIORITY_RANK.get(str(d.get("priority")), 0) > _PRIORITY_RANK.get(
+                str(first.get("priority")), 0
+            ):
+                first["priority"] = d.get("priority")
+            continue
+        kept[key] = len(out)
+        out.append(d)
+    return out, rewritten
 
 
 class CommunityLiaisonAgent:
@@ -114,13 +207,18 @@ class CommunityLiaisonAgent:
         def heuristic() -> dict:
             directives = []
             for row in approved:
-                agency = _RULE_AGENCY.get(str(row.get("rule_id")), "traffic_police")
+                rule = str(row.get("rule_id"))
+                agency = _RULE_AGENCY.get(rule, "traffic_police")
+                stolen = rule == STOLEN_SIGHTING_RULE
                 directives.append(
                     {
                         "agency": agency,
-                        "action": str(row.get("recommendation", "approved e-challan")),
+                        "action": (
+                            stolen_sighting_action(row) if stolen
+                            else str(row.get("recommendation", "approved e-challan"))
+                        ),
                         "vehicle_plate": str(row.get("plate", "unknown")),
-                        "priority": "medium",
+                        "priority": "high" if stolen else "medium",
                         "context": (
                             f"approved by {row.get('decided_by', 'officer')} at "
                             f"{row.get('decided_at', 'unknown time')}; evidence "
@@ -179,12 +277,18 @@ class CommunityLiaisonAgent:
             ),
         )
         result["_tier"] = tier
+        # C-N on every tier: a stolen vehicle's plate is never handed a fine
+        directives, stolen_guarded = guard_stolen_directives(
+            list(result.get("directives") or []), approved
+        )
+        result["directives"] = directives
         result["audit"] = {
             "actor": "community_liaison",
             "action": "draft_agency_directives",
             "approved_input_count": len(approved),
             "pursuit_included": pursuit_event is not None,
             "tier": tier,
+            "stolen_guarded": stolen_guarded,
             "note": (
                 "inputs were already human-approved; this agent drafts the "
                 "hand-off only — it never approves or escalates a penalty"
@@ -193,4 +297,11 @@ class CommunityLiaisonAgent:
         return result
 
 
-__all__ = ["CommunityLiaisonAgent", "SPEC", "AGENCIES"]
+__all__ = [
+    "AGENCIES",
+    "SPEC",
+    "STOLEN_SIGHTING_RULE",
+    "CommunityLiaisonAgent",
+    "guard_stolen_directives",
+    "stolen_sighting_action",
+]

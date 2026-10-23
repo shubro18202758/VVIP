@@ -2,56 +2,101 @@
  "vehicle_id": "1b94e9d2-7e11-4174-a735-7dd3be3189cf",
  "plate": "GJ27EM9001",
  "sightings": {
-  "stolen_total": 4,
-  "stolen_this_run": 4,
+  "stolen_total": 17,
+  "stolen_this_run": 6,
   "cameras": [
    "EM-CAM-01",
    "EM-CAM-02",
    "EM-CAM-03",
-   "EM-CAM-04"
+   "EM-CAM-04",
+   "EM-J01B",
+   "EM-J05"
   ],
   "speeds_kmh": [
-   112.0,
    95.0,
-   101.0,
-   92.0
+   102.0,
+   115.0,
+   103.0,
+   110.0,
+   113.0
   ],
   "source": "emulated_anpr"
  },
  "recommendation": {
   "fired_rules": [
-   "R_SPD_SEGMENT",
-   "R_SPD_SEGMENT",
-   "R_SPD_SEGMENT",
-   "R_SPD_SEGMENT"
+   "R_STOLEN_SIGHTING",
+   "R_STOLEN_SIGHTING",
+   "R_STOLEN_SIGHTING",
+   "R_STOLEN_SIGHTING",
+   "R_STOLEN_SIGHTING",
+   "R_STOLEN_SIGHTING"
   ],
-  "created": 4,
+  "withheld_rules": [
+   "R_SPD_SEGMENT",
+   "R_SPD_SEGMENT",
+   "R_SIGNAL_VIOLATION",
+   "R_SPD_SEGMENT",
+   "R_SPD_SEGMENT",
+   "R_SPD_SEGMENT",
+   "R_SPD_SEGMENT",
+   "R_SIGNAL_VIOLATION"
+  ],
+  "evidence_recs_this_run": 6,
+  "penal_recs_this_run": 0,
   "eval_errors": [],
   "chosen": {
-   "id": "e91d4591-390a-4c55-bcb0-ffd10c769c20",
-   "rule_id": "R_SPD_SEGMENT",
-   "text": "e-challan recommended: GJ27EM9001 read at 95 km/h in a 40 km/h segment"
+   "id": "3614dfa5-2ac8-4758-ae6e-38bef2447da9",
+   "rule_id": "R_STOLEN_SIGHTING",
+   "text": "stolen vehicle (FIR 4401/2026) sighted at EM-CAM-03 \u2014 e-challan withheld, vehicle reported stolen",
+   "camera_id": "EM-CAM-03",
+   "read_t": "2026-10-23T18:30:55.941771+00:00",
+   "withheld": [
+    {
+     "rule_id": "R_SPD_SEGMENT",
+     "speed_kmh": 95.0,
+     "speed_limit_kmh": 40.0
+    },
+    {
+     "rule_id": "R_CLOSED_CORRIDOR_ENTRY",
+     "speed_kmh": null,
+     "speed_limit_kmh": null
+    }
+   ]
   }
  },
  "approval": {
   "status": "approved",
-  "officer": "Duty Officer R. Mehta (God's Eye Morning)",
+  "officer": "Scripted demo officer (showcase script)",
+  "note": "pursuit authorised on a reported-stolen vehicle (evidence, no fine)",
   "audit_tail_last": {
-   "actor": "Duty Officer R. Mehta (God's Eye Morning)",
+   "actor": "Scripted demo officer (showcase script)",
    "action": "decision:approved",
-   "at": "2026-10-18T15:00:04.422902+00:00",
-   "note": "e-challan approved per FIR 4401/2026, Kalupur PS \u2014 speed evidence reviewed"
+   "at": "2026-10-23T18:31:27.801875+00:00",
+   "note": "pursuit authorised on a reported-stolen vehicle (evidence, no fine)"
   }
  },
+ "penal_approval_probe": {
+  "exercised": true,
+  "recommendation_id": "c20da1e8-40a4-4099-b54c-e7bcc3ee154c",
+  "rule_id": "R_SPD_SEGMENT",
+  "http": 409,
+  "detail": "e-challan withheld \u2014 vehicle reported stolen",
+  "reason": "stolen_vehicle_fir",
+  "precondition": {
+   "earmark_state": "flagged",
+   "lawful_basis": "stolen_vehicle_fir"
+  },
+  "still_pending": true
+ },
  "pursuit_event": {
-  "event_id": "4508d86d-566b-438f-8414-b3d67fd7e6e4",
+  "event_id": "38423ac5-bbd3-4e95-be53-180d734cad38",
   "kind": "vehicle_pursuit",
   "status": "planning",
   "metadata": {
    "fir": "FIR 4401/2026, Kalupur PS",
-   "opened_by": "Duty Officer R. Mehta (God's Eye Morning)",
+   "opened_by": "Scripted demo officer (showcase script)",
    "vehicle_id": "1b94e9d2-7e11-4174-a735-7dd3be3189cf",
-   "recommendation_id": "e91d4591-390a-4c55-bcb0-ffd10c769c20"
+   "recommendation_id": "3614dfa5-2ac8-4758-ae6e-38bef2447da9"
   },
   "title": "PURSUIT \u2014 stolen GJ27EM9001 (FIR 4401/2026, Kalupur PS)",
   "metadata_source": "events.corridor_events (persisted row merged; the POST response echoes metadata as {})"
@@ -59,34 +104,38 @@
  "interception": {
   "n_junctions": 10,
   "top": {
-   "junction_id": 3,
-   "junction_type": "signal",
-   "signal_control": true,
+   "junction_id": 15,
+   "name": "Kalupur (Relief Road - Station Road)",
+   "junction_type": "intersection",
+   "signal_control": false,
    "position": [
-    72.5798,
-    23.0254
+    72.600107,
+    23.027941
    ],
-   "graph_cost_sec": 0.0,
-   "choke_weight": 0.9,
-   "score": 0.9
+   "graph_cost_sec": 79.6,
+   "downstream": true,
+   "likely_passed": false,
+   "choke_weight": 0.7,
+   "score": 0.008683
   },
   "latest_sighting": {
-   "sighting_id": "921aa179-e2c4-5065-8dda-b12a9555bcad",
+   "sighting_id": "3dd9316a-7452-56d4-be32-6f9cb95a3916",
    "plate": "GJ27EM9001",
-   "t": "2026-10-18T15:19:59.301446+00:00",
+   "camera_id": "EM-CAM-03",
+   "t": "2026-10-23T18:30:55.941771+00:00",
    "position": [
-    72.573251,
-    23.02397
+    72.599157,
+    23.021345
    ],
-   "speed_kmh": 112.0,
-   "heading": 78.0,
+   "speed_kmh": 95.0,
+   "heading": 39.599998474121094,
    "source": "emulated_anpr"
   }
  },
  "trace": {
-  "points": 4,
+  "points": 12,
   "source": "emulated_anpr",
-  "first": "2026-10-18T15:00:23.301446+00:00",
-  "last": "2026-10-18T15:19:59.301446+00:00"
+  "first": "2026-10-23T18:23:58.742354+00:00",
+  "last": "2026-10-23T18:30:55.941771+00:00"
  }
 }

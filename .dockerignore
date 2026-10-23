@@ -1,0 +1,37 @@
+# Build-context hygiene for the images built with the repo root as context
+# (compose `context: ..`: Dockerfile.traffic-oracle.gb10,
+# Dockerfile.convoy-brain.gb10, Dockerfile.postgis.arm64). Without it the
+# context was ~2.4 GB (venvs, node_modules) and agent session state (.mimosa)
+# was baked into the oracle image. Services built from their own directory
+# (command-deck, signal-ingress, event-emulator) are not affected by this file.
+#
+# Keep: models-local/t0/ (the oracle image bakes the t0 artifact).
+
+# VCS, editors, agent/session state
+.git
+**/.mimosa
+**/.claude
+**/.idea
+**/.vscode
+
+# Python / Node / Rust build state
+.venvs
+**/.venv
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+**/.ruff_cache
+**/.mypy_cache
+**/node_modules
+**/.svelte-kit
+**/target
+
+# Host runtime state and machine glue — never part of an image
+.run-models
+models
+**/*.log
+
+# Not used by any repo-root build
+frontend
+showcase
+tests/artifacts

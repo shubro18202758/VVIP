@@ -1,0 +1,8 @@
+{
+	"cameras": [
+		{ "camera_id": "EM-CAM-01", "lon": 72.58117, "lat": 23.028233, "kind": "anpr", "source": "emulated", "junction_id": null, "heading_deg": null, "status": "active", "reads_15m": 0, "hits_15m": 0, "last_read_t": "2026-10-18T15:38:30.301446+00:00" },
+		{ "camera_id": "EM-CAM-02", "lon": 72.573018, "lat": 23.024527, "kind": "anpr", "source": "emulated", "junction_id": null, "heading_deg": null, "status": "active", "reads_15m": 0, "hits_15m": 0, "last_read_t": "2026-10-18T15:41:33.301446+00:00" },
+		{ "camera_id": "EM-CAM-03", "lon": 72.583615, "lat": 23.020444, "kind": "anpr", "source": "emulated", "junction_id": null, "heading_deg": null, "status": "active", "reads_15m": 0, "hits_15m": 0, "last_read_t": "2026-10-18T15:42:15.301446+00:00" },
+		{ "camera_id": "EM-CAM-04", "lon": 72.595431, "lat": 23.022001, "kind": "anpr", "source": "emulated", "junction_id": null, "heading_deg": null, "status": "active", "reads_15m": 0, "hits_15m": 0, "last_read_t": "2026-10-18T15:41:43.301446+00:00" }
+	]
+}

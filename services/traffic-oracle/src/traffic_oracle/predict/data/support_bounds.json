@@ -1,9 +1,18 @@
 {
   "schema": 1,
-  "recorded_from": "feature-space-defaults",
+  "recorded_from": "feature-space-defaults (speed_norm = speed_kmh / the segment's free flow, its speed limit; / 60 when unknown)",
   "features": {
     "speed_norm": [0.05, 1.25],
     "congestion_idx": [0.0, 1.0],
     "neighbor_ratio": [0.25, 4.0]
+  },
+  "rungs": {
+    "foundation": {
+      "recorded_from": "t0 univariate km/h physical envelope (labelled assumption: 0-140 km/h spans gridlock to every Indian urban limit)",
+      "features": {
+        "speed_kmh": [0.0, 140.0],
+        "congestion_idx": [0.0, 1.0]
+      }
+    }
   }
 }

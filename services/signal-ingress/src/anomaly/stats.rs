@@ -3,11 +3,15 @@ use std::collections::VecDeque;
 use std::hash::{Hash, Hasher};
 
 /// Per-segment rolling statistics for anomaly detection.
-/// Maintains a fixed-size window of recent speed and congestion values.
+/// Maintains a window of recent speed and congestion values bounded by
+/// count and, optionally, by age (relative to the newest sample seen).
 pub struct SegmentStats {
     speeds: VecDeque<f32>,
     congestions: VecDeque<f32>,
+    timestamps: VecDeque<i64>,
     window_size: usize,
+    max_age_ms: Option<i64>,
+    newest_ms: i64,
     pub last_timestamp_ms: i64,
     pub last_speed_kmh: f32,
     last_reading_hash: u64,
@@ -19,7 +23,10 @@ impl SegmentStats {
         Self {
             speeds: VecDeque::with_capacity(window_size),
             congestions: VecDeque::with_capacity(window_size),
+            timestamps: VecDeque::with_capacity(window_size),
             window_size,
+            max_age_ms: None,
+            newest_ms: i64::MIN,
             last_timestamp_ms: 0,
             last_speed_kmh: 0.0,
             last_reading_hash: 0,
@@ -27,16 +34,40 @@ impl SegmentStats {
         }
     }
 
+    /// Window bounded by `window_size` samples AND by `max_age_ms` behind
+    /// the newest sample's timestamp.
+    pub fn with_max_age(window_size: usize, max_age_ms: i64) -> Self {
+        Self {
+            max_age_ms: Some(max_age_ms),
+            ..Self::new(window_size)
+        }
+    }
+
     /// Push new speed and congestion values, maintaining window bounds.
     pub fn push(&mut self, speed: f32, congestion: f32, timestamp_ms: i64) {
         if self.speeds.len() >= self.window_size {
             self.speeds.pop_front();
-        }
-        if self.congestions.len() >= self.window_size {
             self.congestions.pop_front();
+            self.timestamps.pop_front();
         }
         self.speeds.push_back(speed);
         self.congestions.push_back(congestion);
+        self.timestamps.push_back(timestamp_ms);
+
+        // Age bound: evict from the front while the oldest sample is older
+        // than the newest sample seen by more than max_age_ms (reports can
+        // arrive slightly out of order; the front is the oldest arrival).
+        self.newest_ms = self.newest_ms.max(timestamp_ms);
+        if let Some(max_age) = self.max_age_ms {
+            while self.timestamps.len() > 1
+                && self.newest_ms - self.timestamps.front().copied().unwrap_or(self.newest_ms)
+                    > max_age
+            {
+                self.speeds.pop_front();
+                self.congestions.pop_front();
+                self.timestamps.pop_front();
+            }
+        }
 
         // Track repeated readings (phantom detection)
         let hash = Self::hash_reading(speed, congestion);
@@ -205,5 +236,17 @@ mod tests {
         assert_eq!(stats.count(), 3);
         // Oldest (10.0) should be evicted, mean should be (20+30+40)/3 = 30
         assert!((stats.speed_mean() - 30.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_age_eviction() {
+        let mut stats = SegmentStats::with_max_age(50, 10_000);
+        stats.push(10.0, 0.1, 1_000);
+        stats.push(20.0, 0.2, 5_000);
+        assert_eq!(stats.count(), 2);
+        // 30 s later both earlier samples are stale
+        stats.push(60.0, 0.6, 35_000);
+        assert_eq!(stats.count(), 1);
+        assert!((stats.speed_mean() - 60.0).abs() < 0.01);
     }
 }

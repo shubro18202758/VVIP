@@ -1,0 +1,25 @@
+# Veer strategic tier — model-host serving pplx-decider-v1-27b on
+# 127.0.0.1:8083 (cold load ≈285 s; ready when /decider/health reports
+# loaded:true). Pulled in by veer-models.target; installed (linked) by
+# scripts/veer_up.sh --install-units. Paths come from ~/.config/veer/veer.env.
+[Unit]
+Description=Veer strategic tier: pplx-decider-v1-27b model-host on 127.0.0.1:8083
+PartOf=veer-models.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+# a linger boot has no login session: pin the PATH the hand-launched hosts
+# ran with (CUDA tools for torch/llama.cpp; libraries resolve via ld.so.conf)
+Environment=PATH=%h/.local/bin:/usr/local/cuda/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+EnvironmentFile=%h/.config/veer/veer.env
+ExecStart=/bin/bash ${VEER_ROOT}/infra/scripts/serve_models.sh --foreground decider
+Restart=always
+RestartSec=5
+# 78 = EX_CONFIG: venv, snapshot or veer_models.yaml missing — report once, don't spin
+RestartPreventExitStatus=78
+# releasing ~49 GiB of unified memory takes a moment
+TimeoutStopSec=60
+# Shared GB10 unified pool: a model host must be the kernel's preferred OOM
+# victim (host convention, nemotron memguard notes), never the desktop session.
+OOMScoreAdjust=500

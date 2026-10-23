@@ -41,4 +41,21 @@ class Settings(BaseSettings):
     RL_MAX_EPISODES: int = 1000
     RL_MAX_SIGNALS: int = 20
 
+    # Live data plane (ingest/service.py): one supervised NATS connection
+    # (NATS_URL) consuming corridor.traffic.live (signal-ingress),
+    # corridor.traffic.emulated (event-emulator showcase, persisted as
+    # data_quality 'synthetic'), corridor.traffic.anomaly and
+    # corridor.units.emulated.  INGEST_ENABLED=false keeps the service off
+    # (the /health ingest block then says so); INGEST_EMULATED=false drops
+    # the showcase subjects only.
+    INGEST_ENABLED: bool = True
+    INGEST_EMULATED: bool = True
+    # Observation buffer → traffic.observations: flush every N seconds or
+    # every N rows, whichever comes first.
+    INGEST_FLUSH_INTERVAL_SEC: float = 5.0
+    INGEST_FLUSH_ROWS: int = 2000
+    # Daily traffic.observations partitions are detached + dropped once
+    # older than this many days (ingest/partitions.py, startup + hourly).
+    OBSERVATION_RETENTION_DAYS: int = 14
+
     model_config = {"env_prefix": "VVIP_"}

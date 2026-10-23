@@ -195,6 +195,69 @@ class TestSupportBoundsLeaf:
 # ─── Config surface ───────────────────────────────────────────────────────────
 
 
+class TestPerRungBounds:
+    def test_package_default_gates_the_foundation_rung_in_km_h(self):
+        bounds = SupportBounds.load(PACKAGE_DEFAULT_PATH)
+        assert bounds.rung_names == ("foundation",)
+        foundation = bounds.for_rung("foundation")
+        assert foundation.interval("speed_kmh") == (0.0, 140.0)
+        assert foundation.interval("congestion_idx") == (0.0, 1.0)
+        assert "speed_norm" not in foundation.feature_names
+        # a 100 km/h motorway and a 2 km/h gridlock are in the t0 support…
+        assert foundation.check_value("speed_kmh", 100.0).in_support
+        assert foundation.check_value("speed_kmh", 2.0).in_support
+        assert not foundation.check_value("speed_kmh", 150.0).in_support
+        # …while the DSTGAT rung keeps its normalised feature defaults
+        assert bounds.for_rung("dstgat") is bounds
+        assert not bounds.check_value("speed_norm", 2.0 / 60.0).in_support
+
+    def test_rung_entries_are_validated(self):
+        with pytest.raises(ValueError, match="rungs"):
+            SupportBounds.from_dict({"schema": 1, "features": {}, "rungs": []})
+        with pytest.raises(ValueError, match="needs a 'features' object"):
+            SupportBounds.from_dict(
+                {"schema": 1, "features": {}, "rungs": {"foundation": {}}}
+            )
+        rung_only = SupportBounds.from_dict(
+            {"schema": 1, "features": {},
+             "rungs": {"foundation": {"features": {"speed_kmh": [0, 140]}}}}
+        )
+        assert not rung_only.is_absent
+
+    async def test_foundation_rung_uses_its_own_bounds(self):
+        # The forecaster gates each rung with ITS bounds: a reading the
+        # DSTGAT defaults reject is answered by the foundation rung.
+        from traffic_oracle.predict.nn.foundation_adapter import T0FoundationAdapter
+
+        class Graph:
+            calls = 0
+
+            def __call__(self, feeds):
+                Graph.calls += 1
+                rows = feeds["target_context"].shape[0]
+                horizon = feeds["future_covariate_future"].shape[1]
+                q = np.zeros((rows, horizon, 5), dtype=np.float32)
+                q[...] = (1.0, 2.0, 3.0, 4.0, 5.0)
+                return q
+
+        now = 1_792_000_200 * 1000
+        cache = FakeCache({100: make_observation(segment_id=100, speed_kmh=95.0)})
+        forecaster = FlowForecaster(
+            onnx_model_path=None, cache=cache,
+            config=SimpleNamespace(max_nodes=8, lookback_steps=12, in_features=8),
+            clock_ms=lambda: now,
+        )
+        forecaster._foundation_adapter = T0FoundationAdapter(Graph())
+        for i in range(12):
+            forecaster.history_window.record(100, now - i * 300_000, 95.0)
+        result = await forecaster.predict([100])
+        assert Graph.calls == 1
+        assert forecaster.last_forecast_rung == "foundation"
+        assert forecaster.last_degradation_reason is None
+        assert "quantiles" in result[100][5]
+        forecaster.close()
+
+
 class TestConfigSurface:
     def test_bounds_path_setting_default_none_and_env_override(self, monkeypatch):
         monkeypatch.delenv("VVIP_FORECAST_SUPPORT_BOUNDS_PATH", raising=False)
